@@ -1,104 +1,176 @@
 name: Release
 
 on:
- workflow_dispatch:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., patch, minor, major, or specific version)'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      prerelease:
+        description: 'Is this a prerelease?'
+        required: true
+        default: false
+        type: boolean
+
+env:
+  TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TELEMETRY_DISABLED: 1
 
 concurrency:
- group: ${{ github.workflow }}-${{ github.ref }}
- cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
- release:
-   runs-on: ubuntu-latest
-   timeout-minutes: 15
-   environment:
-     name: release
-     url: https://www.npmjs.com/package/@drengskapur/core
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
 
-   permissions:
-     contents: write
-     id-token: write
-     packages: write
+    strategy:
+      matrix:
+        node-version: ['lts/-2', 'lts/-1', 'lts/*']
+      fail-fast: true
 
-   steps:
-     - name: Checkout repository
-       uses: actions/checkout@v4
-       with:
-         fetch-depth: 2
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-     - name: Setup pnpm
-       uses: pnpm/action-setup@v3
-       with:
-         version: 8
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 8
 
-     - name: Setup Node.js for npm
-       uses: actions/setup-node@v4
-       with:
-         node-version: 22
-         cache: 'pnpm'
-         registry-url: 'https://registry.npmjs.org'
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'pnpm'
 
-     - name: Setup Node.js for GitHub Packages
-       uses: actions/setup-node@v4
-       with:
-         node-version: 22
-         registry-url: 'https://npm.pkg.github.com'
-         scope: '@drengskapur'
+      - name: Install dependencies
+        run: |
+          NODE_ENV=development pnpm install --frozen-lockfile
+          pnpm husky install
 
-     - name: Install dependencies
-       run: pnpm install --frozen-lockfile
-       env:
-         NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Cache Turborepo
+        uses: actions/cache@v4
+        with:
+          path: |
+            .turbo
+            node_modules/.cache/turbo
+            node_modules/.cache/tsc
+            node_modules/.cache/biome
+          key: ${{ runner.os }}-turbo-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
 
-     - name: Type check
-       run: pnpm typecheck
+      - name: Validate
+        run: pnpm turbo lint typecheck build test
+        env:
+          NODE_ENV: production
+          VITEST_SEGFAULT_RETRY: 3
 
-     - name: Lint
-       run: pnpm lint
+  publish:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: release
+      url: https://www.npmjs.com/package/@model-context-protocol/core
 
-     - name: Build
-       run: pnpm build
+    permissions:
+      contents: write
+      id-token: write
+      packages: write
 
-     - name: Test
-       run: pnpm test
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-     - name: Get version from package.json
-       id: package-version
-       run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 8
 
-     - name: Create Git tag
-       run: |
-         git config --global user.name "github-actions[bot]"
-         git config --global user.email "github-actions[bot]@users.noreply.github.com"
-         git tag "v${{ steps.package-version.outputs.version }}"
-         git push origin "v${{ steps.package-version.outputs.version }}"
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: 'pnpm'
 
-     - name: Create GitHub Release
-       uses: softprops/action-gh-release@v1
-       with:
-         tag_name: v${{ steps.package-version.outputs.version }}
-         name: Release v${{ steps.package-version.outputs.version }}
-         draft: false
-         prerelease: false
-         generate_release_notes: true
+      - name: Install dependencies
+        run: NODE_ENV=development pnpm install --frozen-lockfile
 
-     - name: Test npm publish
-       run: pnpm publish --dry-run
-       env:
-         NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-     - name: Test GitHub Package publish
-       run: pnpm publish --dry-run
-       env:
-         NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Version packages
+        run: |
+          pnpm version ${{ github.event.inputs.version }} --no-git-tag-version
+          VERSION=$(node -p "require('./package.json').version")
+          echo "NEW_VERSION=${VERSION}" >> $GITHUB_ENV
+          git add .
+          git commit -m "chore: release v${VERSION}"
+          git tag "v${VERSION}"
 
-     - name: Publish to npm
-       run: pnpm publish --access public --provenance --no-git-checks
-       env:
-         NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-         NPM_CONFIG_PROVENANCE: true
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ env.NEW_VERSION }}
+          name: Release v${{ env.NEW_VERSION }}
+          draft: false
+          prerelease: ${{ github.event.inputs.prerelease }}
+          generate_release_notes: true
 
-     - name: Publish to GitHub Packages
-       run: pnpm publish --no-git-checks
-       env:
-         NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Setup npmjs.org registry
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > .npmrc
+          echo "registry=https://registry.npmjs.org/" >> .npmrc
+          echo "always-auth=true" >> .npmrc
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish to npm
+        run: |
+          if [[ "${{ github.event.inputs.prerelease }}" == "true" ]]; then
+            NODE_ENV=production pnpm publish --access public --provenance --no-git-checks --tag next
+          else
+            NODE_ENV=production pnpm publish --access public --provenance --no-git-checks
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
+
+      - name: Setup GitHub registry
+        run: |
+          echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" > .npmrc
+          echo "registry=https://npm.pkg.github.com/" >> .npmrc
+          echo "always-auth=true" >> .npmrc
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to GitHub Packages
+        run: |
+          if [[ "${{ github.event.inputs.prerelease }}" == "true" ]]; then
+            NODE_ENV=production pnpm publish --no-git-checks --tag next
+          else
+            NODE_ENV=production pnpm publish --no-git-checks
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push changes
+        run: |
+          git push origin HEAD:${{ github.ref }}
+          git push origin "v${{ env.NEW_VERSION }}"
