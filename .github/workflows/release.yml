@@ -1,0 +1,104 @@
+name: Release
+
+on:
+ workflow_dispatch:
+
+concurrency:
+ group: ${{ github.workflow }}-${{ github.ref }}
+ cancel-in-progress: true
+
+jobs:
+ release:
+   runs-on: ubuntu-latest
+   timeout-minutes: 15
+   environment:
+     name: release
+     url: https://www.npmjs.com/package/@drengskapur/core
+
+   permissions:
+     contents: write
+     id-token: write
+     packages: write
+
+   steps:
+     - name: Checkout repository
+       uses: actions/checkout@v4
+       with:
+         fetch-depth: 2
+
+     - name: Setup pnpm
+       uses: pnpm/action-setup@v3
+       with:
+         version: 8
+
+     - name: Setup Node.js for npm
+       uses: actions/setup-node@v4
+       with:
+         node-version: 22
+         cache: 'pnpm'
+         registry-url: 'https://registry.npmjs.org'
+
+     - name: Setup Node.js for GitHub Packages
+       uses: actions/setup-node@v4
+       with:
+         node-version: 22
+         registry-url: 'https://npm.pkg.github.com'
+         scope: '@drengskapur'
+
+     - name: Install dependencies
+       run: pnpm install --frozen-lockfile
+       env:
+         NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+     - name: Type check
+       run: pnpm type-check
+
+     - name: Lint
+       run: pnpm lint
+
+     - name: Build
+       run: pnpm build
+
+     - name: Test
+       run: pnpm test
+
+     - name: Get version from package.json
+       id: package-version
+       run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+     - name: Create Git tag
+       run: |
+         git config --global user.name "github-actions[bot]"
+         git config --global user.email "github-actions[bot]@users.noreply.github.com"
+         git tag "v${{ steps.package-version.outputs.version }}"
+         git push origin "v${{ steps.package-version.outputs.version }}"
+
+     - name: Create GitHub Release
+       uses: softprops/action-gh-release@v1
+       with:
+         tag_name: v${{ steps.package-version.outputs.version }}
+         name: Release v${{ steps.package-version.outputs.version }}
+         draft: false
+         prerelease: false
+         generate_release_notes: true
+
+     - name: Test npm publish
+       run: pnpm publish --dry-run
+       env:
+         NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+     - name: Test GitHub Package publish
+       run: pnpm publish --dry-run
+       env:
+         NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+     - name: Publish to npm
+       run: pnpm publish --access public --provenance --no-git-checks
+       env:
+         NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+         NPM_CONFIG_PROVENANCE: true
+
+     - name: Publish to GitHub Packages
+       run: pnpm publish --no-git-checks
+       env:
+         NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
