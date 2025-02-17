@@ -1,0 +1,128 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+---
+version: "3"
+
+set: [pipefail]
+shopt: [globstar]
+
+vars:
+  TURBO: turbo
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  install:
+    desc: Install dependencies
+    cmds:
+      - pnpm install
+
+  build:
+    desc: Build the project
+    cmds:
+      - pnpm build
+
+  dev:
+    desc: Start development mode
+    cmds:
+      - pnpm dev
+
+  test:
+    desc: Run tests
+    deps: [build]
+    cmds:
+      - pnpm test
+
+  test:watch:
+    desc: Run tests in watch mode
+    deps: [build]
+    cmds:
+      - pnpm test:watch
+
+  lint:
+    desc: Run linter
+    cmds:
+      - pnpm lint
+
+  format:
+    desc: Format code
+    cmds:
+      - pnpm format
+
+  typecheck:
+    desc: Run type checking
+    cmds:
+      - pnpm typecheck
+
+  quality:
+    desc: Run all quality checks
+    cmds:
+      - task: lint
+      - task: format
+      - task: typecheck
+
+  verify:
+    desc: Verify the project (build, test, and quality checks)
+    cmds:
+      - task: build
+      - task: test
+      - task: quality
+
+  clean:
+    desc: Clean build artifacts and dependencies
+    cmds:
+      - rm -rf dist
+      - rm -rf node_modules
+
+  upgrade:
+    desc: Upgrade all dependencies interactively
+    cmds:
+      - pnpm update -i
+      - task: verify
+
+  upgrade:latest:
+    desc: Upgrade all dependencies to their latest versions
+    cmds:
+      - pnpm update --latest
+      - task: verify
+
+  upgrade:deps:
+    desc: Upgrade only production dependencies
+    cmds:
+      - pnpm update
+      - task: verify
+
+  upgrade:dev:
+    desc: Upgrade only development dependencies
+    cmds:
+      - pnpm update -D
+      - task: verify
+
+  release:patch:
+    desc: Release a patch version
+    cmds:
+      - task: verify
+      - pnpm version patch
+      - pnpm publish
+
+  release:minor:
+    desc: Release a minor version
+    cmds:
+      - task: verify
+      - pnpm version minor
+      - pnpm publish
+
+  release:major:
+    desc: Release a major version
+    cmds:
+      - task: verify
+      - pnpm version major
+      - pnpm publish
+
+  ci:
+    desc: Run CI pipeline
+    cmds:
+      - task: install
+      - task: verify
