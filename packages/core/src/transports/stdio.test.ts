@@ -55,11 +55,13 @@ describe('StdioTransport', () => {
       params: { foo: 'bar' },
     };
 
-    const handler = vi.fn().mockImplementation(async () => {});
+    const handler = vi.fn().mockImplementation(async () => {
+      // Mock handler - intentionally empty
+    });
     transport.onMessage(handler);
     await transport.connect();
 
-    input.push(JSON.stringify(message) + '\n');
+    input.push(`${JSON.stringify(message)}\n`);
 
     // Wait for message processing
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -83,11 +85,13 @@ describe('StdioTransport', () => {
       },
     ];
 
-    const handler = vi.fn().mockImplementation(async () => {});
+    const handler = vi.fn().mockImplementation(async () => {
+      // Mock handler - intentionally empty
+    });
     transport.onMessage(handler);
     await transport.connect();
 
-    input.push(messages.map((m) => JSON.stringify(m) + '\n').join(''));
+    input.push(messages.map((m) => `${JSON.stringify(m)}\n`).join(''));
 
     // Wait for message processing
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -106,11 +110,13 @@ describe('StdioTransport', () => {
       params: { foo: 'bar' },
     };
 
-    const handler = vi.fn().mockImplementation(async () => {});
+    const handler = vi.fn().mockImplementation(async () => {
+      // Mock handler - intentionally empty
+    });
     transport.onMessage(handler);
     await transport.connect();
 
-    const messageStr = JSON.stringify(message) + '\n';
+    const messageStr = `${JSON.stringify(message)}\n`;
     input.push(messageStr.slice(0, 10));
     await new Promise((resolve) => setTimeout(resolve, 10));
     input.push(messageStr.slice(10));

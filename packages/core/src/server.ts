@@ -1,19 +1,18 @@
 import {
   type InitializeResult,
+  type JSONRPCError,
   type JSONRPCMessage,
+  type JSONRPCNotification,
   type JSONRPCRequest,
   type JSONRPCResponse,
-  type JSONRPCError,
-  type JSONRPCNotification,
-  type Result,
-  type RequestId,
   JSONRPC_VERSION,
   LATEST_PROTOCOL_VERSION,
+  type RequestId,
+  type Result,
 } from './schema.js';
 
-import type { McpTransport } from './transport';
 import type { BaseSchema, Output } from 'valibot';
-import { parse, object, string } from 'valibot';
+import { object, parse, string } from 'valibot';
 import {
   InvalidParamsError,
   InvalidRequestError,
@@ -22,6 +21,7 @@ import {
   ParseError,
   ServerNotInitializedError,
 } from './errors.js';
+import type { McpTransport } from './transport';
 
 const initializeParamsSchema = object({
   protocolVersion: string(),
@@ -84,7 +84,13 @@ export class Server {
         await this.transport.send(
           this.createErrorResponse(
             'id' in message ? message.id : null,
-            error instanceof McpError ? error : new McpError(-32603, 'Internal error', error instanceof Error ? error.message : String(error))
+            error instanceof McpError
+              ? error
+              : new McpError(
+                  -32603,
+                  'Internal error',
+                  error instanceof Error ? error.message : String(error)
+                )
           )
         );
       }
@@ -165,7 +171,12 @@ export class Server {
       }));
     } catch (error) {
       return Promise.resolve(
-        this.createErrorResponse(message.id, new InvalidParamsError(error instanceof Error ? error.message : String(error)))
+        this.createErrorResponse(
+          message.id,
+          new InvalidParamsError(
+            error instanceof Error ? error.message : String(error)
+          )
+        )
       );
     }
   }
@@ -185,7 +196,9 @@ export class Server {
       if (params.protocolVersion !== LATEST_PROTOCOL_VERSION) {
         return this.createErrorResponse(
           request.id,
-          new InvalidRequestError(`Protocol version mismatch. Server: ${LATEST_PROTOCOL_VERSION}, Client: ${params.protocolVersion}`)
+          new InvalidRequestError(
+            `Protocol version mismatch. Server: ${LATEST_PROTOCOL_VERSION}, Client: ${params.protocolVersion}`
+          )
         );
       }
 
@@ -252,8 +265,9 @@ export class McpServer {
   }
 
   public async disconnect(): Promise<void> {
-    if (this.server['transport']) {
-      await this.server['transport'].disconnect();
-    }
+    await this.server.handleMessage({
+      jsonrpc: JSONRPC_VERSION,
+      method: 'disconnect',
+    });
   }
 }

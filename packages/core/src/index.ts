@@ -12,14 +12,14 @@ export {
   resourceTemplateSchema,
   toolSchema,
   promptSchema,
-  promptMessageSchema
+  promptMessageSchema,
 } from './schemas.js';
 
 // Export implementations
 export { McpServer } from './server.js';
 export { McpClient } from './client.js';
 export { McpTransport, MessageHandler } from './transport.js';
-export { InMemoryTransport } from './inMemory.js';
+export { InMemoryTransport } from './in-memory.js';
 
 // Export transports
 export * from './transports/stdio.js';

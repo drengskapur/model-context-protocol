@@ -1,8 +1,8 @@
 import type { Readable, Writable } from 'node:stream';
-import type { McpTransport, MessageHandler } from '../transport.js';
-import type { JSONRPCMessage, ProgressToken } from '../schema.js';
 import { parse } from 'valibot';
+import type { JSONRPCMessage, ProgressToken } from '../schema.js';
 import { jsonRpcMessageSchema } from '../schemas.js';
+import type { McpTransport, MessageHandler } from '../transport.js';
 
 /**
  * Transport implementation that uses stdin/stdout for communication.
@@ -79,7 +79,9 @@ export class StdioTransport implements McpTransport {
           });
         } catch (error) {
           this._handleError(
-            new Error(`Error parsing message: ${error instanceof Error ? error.message : String(error)}`)
+            new Error(
+              `Error parsing message: ${error instanceof Error ? error.message : String(error)}`
+            )
           );
         }
       }
@@ -168,7 +170,7 @@ export class StdioTransport implements McpTransport {
 
     // Validate message against schema before sending
     const validatedMessage = parse(jsonRpcMessageSchema, message);
-    const serialized = JSON.stringify(validatedMessage) + '\n';
+    const serialized = `${JSON.stringify(validatedMessage)}\n`;
     await new Promise<void>((resolve, reject) => {
       this._stdout.write(serialized, (error) => {
         if (error) {
@@ -188,7 +190,11 @@ export class StdioTransport implements McpTransport {
     this._messageHandlers.delete(handler);
   }
 
-  public async sendProgress(token: ProgressToken, progress: number, total?: number): Promise<void> {
+  public async sendProgress(
+    token: ProgressToken,
+    progress: number,
+    total?: number
+  ): Promise<void> {
     await this.send({
       jsonrpc: '2.0',
       method: 'notifications/progress',
@@ -200,7 +206,10 @@ export class StdioTransport implements McpTransport {
     });
   }
 
-  public async cancelRequest(requestId: string | number, reason?: string): Promise<void> {
+  public async cancelRequest(
+    requestId: string | number,
+    reason?: string
+  ): Promise<void> {
     await this.send({
       jsonrpc: '2.0',
       method: 'notifications/cancelled',

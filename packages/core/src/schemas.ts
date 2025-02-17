@@ -1,17 +1,17 @@
 import {
   type Output,
-  object,
-  string,
-  number,
-  union,
-  optional,
-  record,
-  unknown,
-  literal,
+  any,
   array,
   boolean,
-  any,
   intersect,
+  literal,
+  number,
+  object,
+  optional,
+  record,
+  string,
+  union,
+  unknown,
 } from 'valibot';
 import { JSONRPC_VERSION } from './schema';
 
@@ -22,25 +22,21 @@ export const requestIdSchema = union([string(), number()]);
 
 // Base schemas
 export const metaSchema = object({
-  _meta: optional(object({
-    progressToken: optional(progressTokenSchema),
-  })),
+  _meta: optional(
+    object({
+      progressToken: optional(progressTokenSchema),
+    })
+  ),
 });
 
 export const requestSchema = object({
   method: string(),
-  params: optional(intersect([
-    record(string(), unknown()),
-    metaSchema,
-  ])),
+  params: optional(intersect([record(string(), unknown()), metaSchema])),
 });
 
 export const notificationSchema = object({
   method: string(),
-  params: optional(intersect([
-    record(string(), unknown()),
-    metaSchema,
-  ])),
+  params: optional(intersect([record(string(), unknown()), metaSchema])),
 });
 
 export const resultSchema = intersect([
@@ -92,25 +88,33 @@ export const jsonRpcMessageSchema = union([
 // Initialization
 export const clientCapabilitiesSchema = object({
   experimental: optional(record(string(), object({}))),
-  roots: optional(object({
-    listChanged: optional(boolean()),
-  })),
+  roots: optional(
+    object({
+      listChanged: optional(boolean()),
+    })
+  ),
   sampling: optional(object({})),
 });
 
 export const serverCapabilitiesSchema = object({
   experimental: optional(record(string(), object({}))),
   logging: optional(object({})),
-  prompts: optional(object({
-    listChanged: optional(boolean()),
-  })),
-  resources: optional(object({
-    subscribe: optional(boolean()),
-    listChanged: optional(boolean()),
-  })),
-  tools: optional(object({
-    listChanged: optional(boolean()),
-  })),
+  prompts: optional(
+    object({
+      listChanged: optional(boolean()),
+    })
+  ),
+  resources: optional(
+    object({
+      subscribe: optional(boolean()),
+      listChanged: optional(boolean()),
+    })
+  ),
+  tools: optional(
+    object({
+      listChanged: optional(boolean()),
+    })
+  ),
 });
 
 export const implementationSchema = object({

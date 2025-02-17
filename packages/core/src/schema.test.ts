@@ -1,10 +1,10 @@
 import { parse } from 'valibot';
 import { describe, expect, it } from 'vitest';
 import {
+  type JSONRPCErrorResponse,
   type JSONRPCNotification,
   type JSONRPCRequest,
   type JSONRPCResponse,
-  type JSONRPCErrorResponse,
   JSONRPC_VERSION,
   jsonRpcMessageSchema,
 } from './types.js';

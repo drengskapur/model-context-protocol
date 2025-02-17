@@ -40,5 +40,5 @@ export class ReadBuffer {
  * Serialize a message for transport.
  */
 export function serializeMessage(message: JSONRPCMessage): string {
-  return JSON.stringify(message) + '\n';
-} 
+  return `${JSON.stringify(message)}\n`;
+}

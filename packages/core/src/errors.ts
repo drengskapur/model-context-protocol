@@ -2,12 +2,13 @@
  * Base error class for MCP errors.
  */
 export class McpError extends Error {
-  constructor(
-    public readonly code: number,
-    message: string,
-    public readonly data?: unknown
-  ) {
+  readonly code: number;
+  readonly data?: unknown;
+
+  constructor(code: number, message: string, data?: unknown) {
     super(message);
+    this.code = code;
+    this.data = data;
     this.name = 'McpError';
   }
 
@@ -43,8 +44,8 @@ export const INTERNAL_ERROR = -32603;
  * Parse error indicates that the JSON sent is not a valid JSON-RPC object.
  */
 export class ParseError extends McpError {
-  constructor(data?: unknown) {
-    super(PARSE_ERROR, 'Parse error', data);
+  constructor(message = 'Parse error') {
+    super(PARSE_ERROR, message);
     this.name = 'ParseError';
   }
 }
@@ -53,8 +54,8 @@ export class ParseError extends McpError {
  * Invalid request error indicates that the JSON sent is not a valid Request object.
  */
 export class InvalidRequestError extends McpError {
-  constructor(data?: unknown) {
-    super(INVALID_REQUEST, 'Invalid Request', data);
+  constructor(message = 'Invalid request') {
+    super(INVALID_REQUEST, message);
     this.name = 'InvalidRequestError';
   }
 }
@@ -63,8 +64,8 @@ export class InvalidRequestError extends McpError {
  * Method not found error indicates that the method does not exist / is not available.
  */
 export class MethodNotFoundError extends McpError {
-  constructor(data?: unknown) {
-    super(METHOD_NOT_FOUND, 'Method not found', data);
+  constructor(message = 'Method not found') {
+    super(METHOD_NOT_FOUND, message);
     this.name = 'MethodNotFoundError';
   }
 }
@@ -73,8 +74,8 @@ export class MethodNotFoundError extends McpError {
  * Invalid params error indicates that invalid method parameters were sent.
  */
 export class InvalidParamsError extends McpError {
-  constructor(data?: unknown) {
-    super(INVALID_PARAMS, 'Invalid params', data);
+  constructor(message = 'Invalid parameters') {
+    super(INVALID_PARAMS, message);
     this.name = 'InvalidParamsError';
   }
 }
@@ -93,8 +94,8 @@ export class InternalError extends McpError {
  * Server not initialized error indicates that the server has not been initialized.
  */
 export class ServerNotInitializedError extends McpError {
-  constructor(data?: unknown) {
-    super(-32002, 'Server not initialized', data);
+  constructor(message = 'Server not initialized') {
+    super(INVALID_REQUEST, message);
     this.name = 'ServerNotInitializedError';
   }
 }
@@ -103,8 +104,8 @@ export class ServerNotInitializedError extends McpError {
  * Request failed error indicates that a request to the server failed.
  */
 export class RequestFailedError extends McpError {
-  constructor(data?: unknown) {
-    super(-32003, 'Request failed', data);
+  constructor(message: string) {
+    super(-32000, message);
     this.name = 'RequestFailedError';
   }
-} 
+}

@@ -1,23 +1,23 @@
-import { describe, it, expect, vi } from 'vitest';
-import { Server } from './server.js';
-import type { JSONRPCMessage, JSONRPCRequest, JSONRPCResponse, JSONRPCError } from './schema.js';
+import { number, object, string } from 'valibot';
+import { beforeEach, describe, expect, it } from 'vitest';
+import type { JSONRPCMessage } from './schema.js';
 import { JSONRPC_VERSION, LATEST_PROTOCOL_VERSION } from './schema.js';
-import { object, string, number } from 'valibot';
+import { Server } from './server.js';
 import type { McpTransport } from './transport.js';
 
 class TestTransport implements McpTransport {
   messages: JSONRPCMessage[] = [];
   handler: ((message: JSONRPCMessage) => Promise<void>) | null = null;
 
-  async connect(): Promise<void> {
+  connect(): Promise<void> {
     return Promise.resolve();
   }
 
-  async disconnect(): Promise<void> {
+  disconnect(): Promise<void> {
     return Promise.resolve();
   }
 
-  async send(message: JSONRPCMessage): Promise<void> {
+  send(message: JSONRPCMessage): Promise<void> {
     this.messages.push(message);
     return Promise.resolve();
   }
@@ -26,11 +26,13 @@ class TestTransport implements McpTransport {
     this.handler = handler;
   }
 
-  offMessage(): void {
-    this.handler = null;
+  offMessage(handler: (message: JSONRPCMessage) => Promise<void>): void {
+    if (this.handler === handler) {
+      this.handler = null;
+    }
   }
 
-  async close(): Promise<void> {
+  close(): Promise<void> {
     return Promise.resolve();
   }
 
@@ -41,7 +43,7 @@ class TestTransport implements McpTransport {
   }
 }
 
-describe('McpServer', () => {
+describe('Server', () => {
   let server: Server;
   let transport: TestTransport;
 
@@ -190,7 +192,7 @@ describe('McpServer', () => {
       id: 2,
       error: {
         code: -32602,
-        message: 'Invalid params',
+        message: 'Invalid type: Expected number but received "invalid"',
       },
     });
   });
@@ -212,8 +214,7 @@ describe('McpServer', () => {
       id: 0,
       error: {
         code: -32600,
-        message: 'Invalid Request',
-        data: 'Initialize must be a request',
+        message: 'Initialize must be a request',
       },
     });
   });
@@ -236,8 +237,7 @@ describe('McpServer', () => {
       id: 1,
       error: {
         code: -32600,
-        message: 'Invalid Request',
-        data: `Protocol version mismatch. Server: ${LATEST_PROTOCOL_VERSION}, Client: 0.1.0`,
+        message: `Protocol version mismatch. Server: ${LATEST_PROTOCOL_VERSION}, Client: 0.1.0`,
       },
     });
   });

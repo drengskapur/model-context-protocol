@@ -1,17 +1,16 @@
 import type { Readable, Writable } from 'node:stream';
 import {
+  intersect,
   literal,
+  never,
+  null_,
   number,
   object,
   optional,
-  string,
-  transform,
-  union,
   record,
+  string,
+  union,
   unknown,
-  null_,
-  intersect,
-  never,
 } from 'valibot';
 
 export const LATEST_PROTOCOL_VERSION = '2024-11-05';
@@ -121,18 +120,24 @@ export interface JSONRPCError {
   data?: unknown;
 }
 
-export type JSONRPCMessage = JSONRPCRequest | JSONRPCResponse | JSONRPCNotification | JSONRPCErrorResponse;
+export type JSONRPCMessage =
+  | JSONRPCRequest
+  | JSONRPCResponse
+  | JSONRPCNotification
+  | JSONRPCErrorResponse;
 
 // Base schema for all messages
-const baseMessageSchema = object({
+const _baseMessageSchema = object({
   jsonrpc: literal(JSONRPC_VERSION),
 });
 
 // Schema for metadata
 const metaSchema = object({
-  _meta: optional(object({
-    progressToken: optional(union([string(), number()])),
-  })),
+  _meta: optional(
+    object({
+      progressToken: optional(union([string(), number()])),
+    })
+  ),
 });
 
 // Schema for request messages
@@ -140,10 +145,7 @@ const requestSchema = object({
   jsonrpc: literal(JSONRPC_VERSION),
   id: union([string(), number()]),
   method: string(),
-  params: optional(intersect([
-    record(string(), unknown()),
-    metaSchema,
-  ])),
+  params: optional(intersect([record(string(), unknown()), metaSchema])),
   result: optional(never()),
   error: optional(never()),
 });
@@ -152,10 +154,7 @@ const requestSchema = object({
 const notificationSchema = object({
   jsonrpc: literal(JSONRPC_VERSION),
   method: string(),
-  params: optional(intersect([
-    record(string(), unknown()),
-    metaSchema,
-  ])),
+  params: optional(intersect([record(string(), unknown()), metaSchema])),
   id: optional(never()),
   result: optional(never()),
   error: optional(never()),

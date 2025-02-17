@@ -1,7 +1,7 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "globalEnv": ["NODE_ENV"],
-  "globalDependencies": ["tsup.config.ts", "tsconfig.json"],
+  "globalDependencies": ["tsup.config.ts", "tsconfig.json", "**/.env.*local"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -21,8 +21,9 @@
       "outputs": []
     },
     "test": {
-      "dependsOn": ["build"],
-      "outputs": ["coverage/**"]
+      "dependsOn": ["^build"],
+      "inputs": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "test/**/*.tsx"],
+      "cache": false
     },
     "test:watch": {
       "dependsOn": ["build"],
@@ -33,4 +34,4 @@
       "cache": false
     }
   }
-} 
+}

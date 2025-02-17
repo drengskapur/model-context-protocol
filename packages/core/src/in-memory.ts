@@ -15,26 +15,28 @@ export class InMemoryTransport implements McpTransport {
     return [transport1, transport2];
   }
 
-  async connect(): Promise<void> {
+  connect(): Promise<void> {
     this._connected = true;
+    return Promise.resolve();
   }
 
-  async disconnect(): Promise<void> {
+  disconnect(): Promise<void> {
     this._connected = false;
     this._messageHandlers.clear();
     this._errorHandlers.clear();
+    return Promise.resolve();
   }
 
   async send(message: JSONRPCMessage): Promise<void> {
     if (!this._connected) {
       throw new Error('Transport not connected');
     }
-    if (!this._otherTransport) {
-      throw new Error('No linked transport');
-    }
-    for (const handler of this._otherTransport._messageHandlers) {
-      await handler(message);
-    }
+
+    // Process message in next tick to simulate async behavior
+    await Promise.resolve();
+    await Promise.all(
+      Array.from(this._messageHandlers).map((handler) => handler(message))
+    );
   }
 
   onMessage(handler: MessageHandler): void {
@@ -55,10 +57,13 @@ export class InMemoryTransport implements McpTransport {
 
   async close(): Promise<void> {
     await this.disconnect();
-    this._otherTransport = null;
   }
 
-  async sendProgress(token: ProgressToken, progress: number, total?: number): Promise<void> {
+  async sendProgress(
+    token: ProgressToken,
+    progress: number,
+    total?: number
+  ): Promise<void> {
     await this.send({
       jsonrpc: '2.0',
       method: 'notifications/progress',
@@ -70,7 +75,10 @@ export class InMemoryTransport implements McpTransport {
     });
   }
 
-  async cancelRequest(requestId: string | number, reason?: string): Promise<void> {
+  async cancelRequest(
+    requestId: string | number,
+    reason?: string
+  ): Promise<void> {
     await this.send({
       jsonrpc: '2.0',
       method: 'notifications/cancelled',

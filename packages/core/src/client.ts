@@ -1,19 +1,22 @@
-import type { McpTransport } from './transport.js';
+import {
+  McpError,
+  RequestFailedError,
+  ServerNotInitializedError,
+} from './errors.js';
 import type {
-  JSONRPCMessage,
-  JSONRPCRequest,
-  JSONRPCResponse,
-  JSONRPCError,
-  JSONRPCNotification,
-  ProgressToken,
-  Result,
   ClientCapabilities,
   InitializeResult,
+  JSONRPCError,
+  JSONRPCMessage,
+  JSONRPCNotification,
+  JSONRPCRequest,
+  JSONRPCResponse,
+  ProgressToken,
   ServerCapabilities,
 } from './schema.js';
-import type { MessageHandler } from './transport.js';
 import { JSONRPC_VERSION, LATEST_PROTOCOL_VERSION } from './schema.js';
-import { McpError, RequestFailedError, ServerNotInitializedError } from './errors.js';
+import type { McpTransport } from './transport.js';
+import type { MessageHandler } from './transport.js';
 
 export interface McpClientOptions {
   name: string;
@@ -34,7 +37,10 @@ export class McpClient {
   private nextMessageId = 1;
   private messageHandlers = new Set<MessageHandler>();
   private pendingRequests = new Map<number | string, PendingRequest>();
-  private progressHandlers = new Map<ProgressToken, (progress: number, total?: number) => void>();
+  private progressHandlers = new Map<
+    ProgressToken,
+    (progress: number, total?: number) => void
+  >();
   private serverCapabilities: ServerCapabilities | null = null;
   private initialized = false;
 
@@ -56,7 +62,7 @@ export class McpClient {
     transport.onMessage(this.handleMessage);
 
     // Send initialize message
-    const response = await this.send({
+    const response = (await this.send({
       jsonrpc: JSONRPC_VERSION,
       id: this.nextMessageId++,
       method: 'initialize',
@@ -68,10 +74,12 @@ export class McpClient {
           version: this.options.version,
         },
       },
-    } as JSONRPCRequest) as InitializeResult;
+    } as JSONRPCRequest)) as InitializeResult;
 
     if (response.protocolVersion !== LATEST_PROTOCOL_VERSION) {
-      throw new RequestFailedError(`Protocol version mismatch. Client: ${LATEST_PROTOCOL_VERSION}, Server: ${response.protocolVersion}`);
+      throw new RequestFailedError(
+        `Protocol version mismatch. Client: ${LATEST_PROTOCOL_VERSION}, Server: ${response.protocolVersion}`
+      );
     }
 
     this.serverCapabilities = response.capabilities;
@@ -87,34 +95,55 @@ export class McpClient {
     }
   }
 
+  private handleResponse(response: JSONRPCResponse | JSONRPCError): void {
+    const id = response.id;
+    const pendingRequest = this.pendingRequests.get(id);
+    if (!pendingRequest) {
+      return;
+    }
+
+    clearTimeout(pendingRequest.timeout);
+    this.pendingRequests.delete(id);
+
+    if ('error' in response) {
+      pendingRequest.reject(McpError.fromJSON(response.error));
+    } else {
+      pendingRequest.resolve(response.result);
+    }
+  }
+
+  private handleProgressNotification(params: {
+    progressToken: ProgressToken;
+    progress: number;
+    total?: number;
+  }): void {
+    const handler = this.progressHandlers.get(params.progressToken);
+    if (handler) {
+      handler(params.progress, params.total);
+    }
+  }
+
   private handleMessage = async (message: JSONRPCMessage): Promise<void> => {
     // Handle responses
     if ('id' in message && message.id !== null) {
-      const response = message as JSONRPCResponse | JSONRPCError;
-      const id = response.id as string | number;
-      const pendingRequest = this.pendingRequests.get(id);
-      if (pendingRequest) {
-        clearTimeout(pendingRequest.timeout);
-        this.pendingRequests.delete(id);
-
-        if ('error' in response) {
-          pendingRequest.reject(McpError.fromJSON(response.error));
-        } else {
-          pendingRequest.resolve(response.result);
-        }
-        return;
-      }
+      this.handleResponse(message as JSONRPCResponse | JSONRPCError);
+      return;
     }
 
     // Handle notifications
     if ('method' in message && !('id' in message)) {
       const notification = message as JSONRPCNotification;
-      if (notification.method === 'notifications/progress' && notification.params) {
-        const params = notification.params as { progressToken: ProgressToken; progress: number; total?: number };
-        const handler = this.progressHandlers.get(params.progressToken);
-        if (handler) {
-          handler(params.progress, params.total);
-        }
+      if (
+        notification.method === 'notifications/progress' &&
+        notification.params
+      ) {
+        this.handleProgressNotification(
+          notification.params as {
+            progressToken: ProgressToken;
+            progress: number;
+            total?: number;
+          }
+        );
       }
     }
 
@@ -140,7 +169,11 @@ export class McpClient {
       return new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
           this.pendingRequests.delete(message.id);
-          reject(new RequestFailedError(`Request timed out after ${this.options.requestTimeout}ms`));
+          reject(
+            new RequestFailedError(
+              `Request timed out after ${this.options.requestTimeout}ms`
+            )
+          );
         }, this.options.requestTimeout);
 
         this.pendingRequests.set(message.id, {
@@ -160,7 +193,10 @@ export class McpClient {
     this.messageHandlers.delete(handler);
   }
 
-  public onProgress(token: ProgressToken, handler: (progress: number, total?: number) => void): void {
+  public onProgress(
+    token: ProgressToken,
+    handler: (progress: number, total?: number) => void
+  ): void {
     this.progressHandlers.set(token, handler);
   }
 
@@ -172,7 +208,11 @@ export class McpClient {
     return this.serverCapabilities;
   }
 
-  public async callTool(name: string, params: Record<string, unknown>, progressHandler?: (progress: number, total?: number) => void): Promise<unknown> {
+  public async callTool(
+    name: string,
+    params: Record<string, unknown>,
+    progressHandler?: (progress: number, total?: number) => void
+  ): Promise<unknown> {
     if (!this.initialized) {
       throw new ServerNotInitializedError('Client not initialized');
     }

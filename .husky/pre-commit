@@ -1,1 +1,4 @@
-pnpm test
+pnpm turbo typecheck
+pnpm turbo lint
+pnpm turbo build
+pnpm turbo test

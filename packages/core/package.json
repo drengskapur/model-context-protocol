@@ -1,6 +1,6 @@
 {
   "name": "@model-context-protocol/core",
-  "version": "0.1.0",
+  "version": "0.1.0-rc.1",
   "private": false,
   "description": "Core implementation of the Model Context Protocol (MCP), a protocol for communication between LLMs and their context",
   "type": "module",
@@ -48,10 +48,10 @@
       "import": "./dist/server.js",
       "require": "./dist/server.cjs"
     },
-    "./inMemory": {
-      "types": "./dist/inMemory.d.ts",
-      "import": "./dist/inMemory.js",
-      "require": "./dist/inMemory.cjs"
+    "./in-memory": {
+      "types": "./dist/in-memory.d.ts",
+      "import": "./dist/in-memory.js",
+      "require": "./dist/in-memory.cjs"
     }
   },
   "main": "./dist/index.js",
