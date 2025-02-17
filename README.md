@@ -6,6 +6,12 @@ A protocol for communication between Large Language Models (LLMs) and their cont
 - Manage prompts and completions
 - Handle real-time updates through subscriptions
 
+## Protocol Version
+
+This package implements:
+- Protocol Version: `2024-11-05`
+- JSON-RPC Version: `2.0`
+
 ## Installation
 
 ```bash
@@ -41,30 +47,44 @@ await client.connect(transport);
 - **Extensible**: Easy to add new capabilities and custom message types
 - **Real-time**: Support for subscriptions and real-time updates
 - **Versioned**: Clear protocol versioning for compatibility
-
-## Protocol Version
-
-This package implements protocol version 2024-11-05.
+- **Quality Assurance**: Enforced code quality through Husky git hooks and lint-staged
 
 ## Development
 
 ```bash
 # Install dependencies
-npm install
+pnpm install
 
 # Build
-npm run build
+pnpm build
 
 # Test
-npm test
+pnpm test
 
-# Lint
-npm run lint
+# Lint and format code
+pnpm lint
+pnpm format
 
-# Format
-npm run format
+# Type check
+pnpm typecheck
+
+# Watch mode for development
+pnpm dev
 ```
+
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes
+4. Commit your changes (uses commitlint to enforce conventional commits)
+5. Push to the branch (`git push origin feature/amazing-feature`)
+6. Open a Pull Request
 
 ## License
 
 MIT
+
+## About
+
+This server implementation is part of the Model Context Protocol ecosystem, enabling standardized communication between LLM applications and context providers.
