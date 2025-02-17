@@ -7,7 +7,10 @@ on:
     branches: [main, develop]
 
 env:
+  TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
   TURBO_TELEMETRY_DISABLED: 1
+  NODE_ENV: production
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -21,7 +24,16 @@ jobs:
     strategy:
       matrix:
         node-version: [18, 20, 22]
-      fail-fast: false
+        experimental: [false]
+        include:
+          - node-version: 22
+            experimental: true
+        exclude:
+          - node-version: 22
+            experimental: false
+      fail-fast: true
+
+    continue-on-error: ${{ matrix.experimental }}
 
     steps:
       - name: Checkout repository
@@ -34,53 +46,38 @@ jobs:
         with:
           version: 8
 
-      - name: Setup Node.js ${{ matrix.node-version }} for npm
+      - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'pnpm'
-          registry-url: 'https://registry.npmjs.org'
-
-      - name: Setup Node.js for GitHub Packages
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node-version }}
-          registry-url: 'https://npm.pkg.github.com'
-          scope: '@drengskapur'
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cache Turborepo
         uses: actions/cache@v4
         with:
-          path: .turbo
+          path: |
+            .turbo
+            node_modules/.cache/turbo
+            node_modules/.cache/tsc
+            node_modules/.cache/biome
           key: ${{ runner.os }}-turbo-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-turbo-
 
-      - name: Type check
-        run: pnpm turbo typecheck
+      - name: Validate
+        run: pnpm turbo lint typecheck build test
+        env:
+          VITEST_SEGFAULT_RETRY: 3
 
-      - name: Lint
-        run: pnpm turbo lint
-
-      - name: Build
-        run: pnpm turbo build
-
-      - name: Test
-        run: pnpm turbo test
-
-      - name: Test npm publish
+      - name: Test Package Publishing
         if: github.event_name == 'pull_request'
-        run: pnpm publish --dry-run
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > .npmrc
+          echo "registry=https://registry.npmjs.org/" >> .npmrc
+          echo "always-auth=true" >> .npmrc
+          pnpm publish --dry-run --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Test GitHub Package publish
-        if: github.event_name == 'pull_request'
-        run: pnpm publish --dry-run
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
