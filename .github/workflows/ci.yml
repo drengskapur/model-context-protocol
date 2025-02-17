@@ -10,7 +10,6 @@ env:
   TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
   TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
   TURBO_TELEMETRY_DISABLED: 1
-  NODE_ENV: production
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -23,13 +22,13 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [18, 20, 22]
+        node-version: ['lts/-2', 'lts/-1', 'lts/*', 'current']
         experimental: [false]
         include:
-          - node-version: 22
+          - node-version: current
             experimental: true
         exclude:
-          - node-version: 22
+          - node-version: current
             experimental: false
       fail-fast: true
 
@@ -53,7 +52,9 @@ jobs:
           cache: 'pnpm'
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm husky install
 
       - name: Cache Turborepo
         uses: actions/cache@v4
@@ -70,13 +71,39 @@ jobs:
       - name: Validate
         run: pnpm turbo lint typecheck build test
         env:
+          NODE_ENV: production
           VITEST_SEGFAULT_RETRY: 3
+
+  test-publish:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 8
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Test Package Publishing
         run: |
           echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > .npmrc
           echo "registry=https://registry.npmjs.org/" >> .npmrc
           echo "always-auth=true" >> .npmrc
-          pnpm publish --dry-run --no-git-checks
+          NODE_ENV=production pnpm publish --dry-run --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
