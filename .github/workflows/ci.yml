@@ -53,7 +53,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pnpm install --frozen-lockfile
+          NODE_ENV=development pnpm install --frozen-lockfile
           pnpm husky install
 
       - name: Cache Turborepo
