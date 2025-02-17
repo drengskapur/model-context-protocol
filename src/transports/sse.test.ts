@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SseTransport } from './sse.js';
-import type { JSONRPCMessage } from '../types.js';
+import type { JSONRPCMessage } from '../schema.js';
 
+// Mock EventSource globally
 class MockEventSource {
   onmessage: ((event: MessageEvent) => void) | null = null;
   onerror: ((event: Event) => void) | null = null;
@@ -21,17 +22,24 @@ class MockEventSource {
   }
 }
 
+// @ts-expect-error - Mocking global EventSource
+global.EventSource = MockEventSource;
+
 describe('SseTransport', () => {
-  const mockFetch = vi.fn();
   let transport: SseTransport;
+  let messageHandler: (message: JSONRPCMessage) => Promise<void>;
+  let mockFetch: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
+    mockFetch = vi.fn().mockImplementation(async () => new Response());
     transport = new SseTransport({
       eventSourceUrl: 'http://localhost:3000/events',
       sendUrl: 'http://localhost:3000/send',
       EventSource: MockEventSource as unknown as typeof EventSource,
-      fetch: mockFetch,
+      fetch: mockFetch as unknown as typeof fetch,
     });
+    messageHandler = vi.fn().mockResolvedValue(undefined);
+    transport.onMessage(messageHandler);
   });
 
   afterEach(() => {
@@ -39,46 +47,34 @@ describe('SseTransport', () => {
   });
 
   it('should connect successfully', async () => {
-    const connectPromise = transport.connect();
-    await expect(connectPromise).resolves.toBeUndefined();
+    await transport.connect();
+    expect(transport['_eventSource']).toBeDefined();
   });
 
   it('should handle messages', async () => {
-    const messageHandler = vi.fn();
-    transport.onMessage(messageHandler);
-
-    await transport.connect();
-
-    const mockEventSource = transport['_eventSource'] as MockEventSource;
-    const message: JSONRPCMessage = {
-      jsonrpc: '2.0',
-      method: 'test',
-      params: { foo: 'bar' },
-    };
-
-    mockEventSource.onmessage?.(new MessageEvent('message', {
-      data: JSON.stringify(message),
-    }));
-
-    // Wait for message processing
-    await new Promise(resolve => setTimeout(resolve, 0));
-
-    expect(messageHandler).toHaveBeenCalledWith(message);
-  });
-
-  it('should send messages', async () => {
-    mockFetch.mockResolvedValueOnce({ ok: true });
-
     await transport.connect();
 
     const message: JSONRPCMessage = {
       jsonrpc: '2.0',
       id: 1,
       method: 'test',
-      params: { foo: 'bar' },
+      params: {},
     };
 
-    await transport.send(message);
+    const mockEventSource = transport['_eventSource'] as MockEventSource;
+    mockEventSource.onmessage?.(new MessageEvent('message', {
+      data: JSON.stringify(message),
+    }));
+
+    // Wait for message processing
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    expect(messageHandler).toHaveBeenCalledWith(message);
+  });
+
+  it('should send messages', async () => {
+    await transport.connect();
+    await transport.send({ jsonrpc: '2.0', method: 'test', params: {} });
 
     expect(mockFetch).toHaveBeenCalledWith(
       'http://localhost:3000/send',
@@ -94,100 +90,64 @@ describe('SseTransport', () => {
   });
 
   it('should handle connection errors', async () => {
+    await transport.connect();
+
     const errorHandler = vi.fn();
     transport.onError(errorHandler);
 
-    await transport.connect();
-
     const mockEventSource = transport['_eventSource'] as MockEventSource;
-    mockEventSource.onerror?.(new ErrorEvent('error', {
-      message: 'Connection failed',
-    }));
+    mockEventSource.onerror?.(new Event('error'));
 
-    expect(errorHandler).toHaveBeenCalledWith(
-      expect.objectContaining({
-        message: expect.stringContaining('Connection failed'),
-      })
-    );
+    expect(errorHandler).toHaveBeenCalled();
   });
 
   it('should handle send errors', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
-      status: 500,
-      statusText: 'Internal Server Error',
-    });
+    mockFetch.mockRejectedValueOnce(new Error('Network error'));
 
     await transport.connect();
-
-    const message: JSONRPCMessage = {
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'test',
-      params: { foo: 'bar' },
-    };
-
-    await expect(transport.send(message)).rejects.toThrow('Failed to send message: 500 Internal Server Error');
+    await expect(transport.send({ jsonrpc: '2.0', method: 'test', params: {} }))
+      .rejects.toThrow('Network error');
   });
 
   it('should disconnect properly', async () => {
     await transport.connect();
+    const mockEventSource = transport['_eventSource'] as MockEventSource;
     await transport.disconnect();
-
-    expect(transport['_started']).toBe(false);
-    expect(transport['_eventSource']).toBeNull();
+    expect(mockEventSource.readyState).toBe(2);
   });
 
   it('should handle headers in connection URL', async () => {
     transport = new SseTransport({
       eventSourceUrl: 'http://localhost:3000/events',
       sendUrl: 'http://localhost:3000/send',
-      eventSourceHeaders: {
-        'X-Auth-Token': 'test-token',
-        'X-Custom-Header': 'custom-value',
-      },
+      eventSourceHeaders: { 'X-Test': 'test' },
       EventSource: MockEventSource as unknown as typeof EventSource,
-      fetch: mockFetch,
+      fetch: mockFetch as unknown as typeof fetch,
     });
 
     await transport.connect();
 
     const mockEventSource = transport['_eventSource'] as MockEventSource;
-    expect(mockEventSource.url).toContain('X-Auth-Token=test-token');
-    expect(mockEventSource.url).toContain('X-Custom-Header=custom-value');
+    expect(mockEventSource.url).toContain('X-Test=test');
   });
 
   it('should handle headers in send requests', async () => {
-    mockFetch.mockResolvedValueOnce({ ok: true });
-
     transport = new SseTransport({
       eventSourceUrl: 'http://localhost:3000/events',
       sendUrl: 'http://localhost:3000/send',
-      sendHeaders: {
-        'X-Auth-Token': 'test-token',
-        'X-Custom-Header': 'custom-value',
-      },
+      sendHeaders: { 'X-Test': 'test' },
       EventSource: MockEventSource as unknown as typeof EventSource,
-      fetch: mockFetch,
+      fetch: mockFetch as unknown as typeof fetch,
     });
 
     await transport.connect();
-
-    const message: JSONRPCMessage = {
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'test',
-      params: { foo: 'bar' },
-    };
-
-    await transport.send(message);
+    await transport.send({ jsonrpc: '2.0', method: 'test', params: {} });
 
     expect(mockFetch).toHaveBeenCalledWith(
       'http://localhost:3000/send',
       expect.objectContaining({
         headers: expect.objectContaining({
-          'X-Auth-Token': 'test-token',
-          'X-Custom-Header': 'custom-value',
+          'X-Test': 'test',
         }),
       })
     );

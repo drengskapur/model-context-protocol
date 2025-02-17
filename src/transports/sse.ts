@@ -1,6 +1,5 @@
 import type { McpTransport, MessageHandler } from '../transport.js';
-import type { JSONRPCMessage } from '../types.js';
-import { ReadBuffer, serializeMessage } from '../buffer.js';
+import type { JSONRPCMessage } from '../schema.js';
 import { parse } from 'valibot';
 import { jsonRpcMessageSchema } from '../schemas.js';
 
@@ -43,7 +42,6 @@ interface SseTransportOptions {
  * and HTTP POST for sending messages.
  */
 export class SseTransport implements McpTransport {
-  private _readBuffer: ReadBuffer = new ReadBuffer();
   private _started = false;
   private _messageHandlers = new Set<MessageHandler>();
   private _errorHandlers = new Set<(error: Error) => void>();
@@ -79,12 +77,18 @@ export class SseTransport implements McpTransport {
         throw new Error('Invalid message data type');
       }
 
-      this._readBuffer.append(Buffer.from(data));
-      this.processReadBuffer().catch((error) => {
+      try {
+        const message = JSON.parse(data);
+        this._handleMessage(message).catch((error) => {
+          this._handleError(
+            new Error(`Error processing message: ${error.message}`)
+          );
+        });
+      } catch (error) {
         this._handleError(
-          new Error(`Error processing read buffer: ${error.message}`)
+          new Error(`Error parsing message: ${error instanceof Error ? error.message : String(error)}`)
         );
-      });
+      }
     } catch (error) {
       this._handleError(
         new Error(
@@ -97,19 +101,6 @@ export class SseTransport implements McpTransport {
   private _onError = (event: Event) => {
     this._handleError(new Error(`SSE error: ${(event as ErrorEvent).message}`));
   };
-
-  private processReadBuffer(): Promise<void> {
-    return new Promise<void>((resolve) => {
-      while (true) {
-        const message = this._readBuffer.readMessage();
-        if (!message) {
-          break;
-        }
-        this._handleMessage(message);
-      }
-      resolve();
-    });
-  }
 
   private async _handleMessage(message: unknown): Promise<void> {
     try {
@@ -202,7 +193,7 @@ export class SseTransport implements McpTransport {
 
     // Validate message against schema before sending
     const validatedMessage = parse(jsonRpcMessageSchema, message);
-    const serialized = serializeMessage(validatedMessage);
+    const serialized = JSON.stringify(validatedMessage) + '\n';
 
     const response = await this._options.fetch(this._options.sendUrl, {
       method: 'POST',

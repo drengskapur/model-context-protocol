@@ -1,6 +1,6 @@
 import { Readable, Writable } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { JSONRPCMessage } from '../types.js';
+import type { JSONRPCMessage } from '../schema.js';
 import { StdioTransport } from './stdio.js';
 
 describe('StdioTransport', () => {
@@ -55,11 +55,11 @@ describe('StdioTransport', () => {
       params: { foo: 'bar' },
     };
 
-    const handler = vi.fn(async () => {});
+    const handler = vi.fn().mockImplementation(async () => {});
     transport.onMessage(handler);
     await transport.connect();
 
-    input.push(`${JSON.stringify(message)}\n`);
+    input.push(JSON.stringify(message) + '\n');
 
     // Wait for message processing
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -83,11 +83,11 @@ describe('StdioTransport', () => {
       },
     ];
 
-    const handler = vi.fn(async () => {});
+    const handler = vi.fn().mockImplementation(async () => {});
     transport.onMessage(handler);
     await transport.connect();
 
-    input.push(messages.map((m) => `${JSON.stringify(m)}\n`).join(''));
+    input.push(messages.map((m) => JSON.stringify(m) + '\n').join(''));
 
     // Wait for message processing
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -106,11 +106,11 @@ describe('StdioTransport', () => {
       params: { foo: 'bar' },
     };
 
-    const handler = vi.fn(async () => {});
+    const handler = vi.fn().mockImplementation(async () => {});
     transport.onMessage(handler);
     await transport.connect();
 
-    const messageStr = `${JSON.stringify(message)}\n`;
+    const messageStr = JSON.stringify(message) + '\n';
     input.push(messageStr.slice(0, 10));
     await new Promise((resolve) => setTimeout(resolve, 10));
     input.push(messageStr.slice(10));
@@ -123,7 +123,6 @@ describe('StdioTransport', () => {
 
   it('should handle parse errors gracefully', async () => {
     const handler = vi.fn();
-    const _errorHandler = vi.fn();
     transport.onMessage(handler);
     await transport.connect();
 

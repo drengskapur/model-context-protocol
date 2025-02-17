@@ -1,16 +1,15 @@
 import type { Readable, Writable } from 'node:stream';
-import { ReadBuffer, serializeMessage } from '../buffer.js';
 import type { McpTransport, MessageHandler } from '../transport.js';
-import type { JSONRPCMessage, ProgressToken } from '../types.js';
+import type { JSONRPCMessage, ProgressToken } from '../schema.js';
 import { parse } from 'valibot';
-import { jsonRpcMessageSchema } from '../types.js';
+import { jsonRpcMessageSchema } from '../schemas.js';
 
 /**
  * Transport implementation that uses stdin/stdout for communication.
  * This transport is only available in Node.js environments.
  */
 export class StdioTransport implements McpTransport {
-  private _readBuffer: ReadBuffer = new ReadBuffer();
+  private _buffer = '';
   private _started = false;
   private _messageHandlers = new Set<MessageHandler>();
   private _errorHandlers = new Set<(error: Error) => void>();
@@ -41,10 +40,10 @@ export class StdioTransport implements McpTransport {
   // Arrow functions to bind 'this' properly while maintaining function identity
   private _onData = (chunk: Buffer | string) => {
     try {
-      this._readBuffer.append(Buffer.from(chunk));
-      this.processReadBuffer().catch((error) => {
+      this._buffer += chunk.toString();
+      this.processBuffer().catch((error) => {
         this._handleError(
-          new Error(`Error processing read buffer: ${error.message}`)
+          new Error(`Error processing buffer: ${error.message}`)
         );
       });
     } catch (error) {
@@ -60,14 +59,29 @@ export class StdioTransport implements McpTransport {
     this._handleError(new Error(`Stream error: ${error.message}`));
   };
 
-  private processReadBuffer(): Promise<void> {
+  private processBuffer(): Promise<void> {
     return new Promise<void>((resolve) => {
       while (true) {
-        const message = this._readBuffer.readMessage();
-        if (!message) {
+        const newlineIndex = this._buffer.indexOf('\n');
+        if (newlineIndex === -1) {
           break;
         }
-        this._handleMessage(message);
+
+        const messageStr = this._buffer.slice(0, newlineIndex);
+        this._buffer = this._buffer.slice(newlineIndex + 1);
+
+        try {
+          const message = JSON.parse(messageStr);
+          this._handleMessage(message).catch((error) => {
+            this._handleError(
+              new Error(`Error processing message: ${error.message}`)
+            );
+          });
+        } catch (error) {
+          this._handleError(
+            new Error(`Error parsing message: ${error instanceof Error ? error.message : String(error)}`)
+          );
+        }
       }
       resolve();
     });
@@ -154,7 +168,7 @@ export class StdioTransport implements McpTransport {
 
     // Validate message against schema before sending
     const validatedMessage = parse(jsonRpcMessageSchema, message);
-    const serialized = serializeMessage(validatedMessage);
+    const serialized = JSON.stringify(validatedMessage) + '\n';
     await new Promise<void>((resolve, reject) => {
       this._stdout.write(serialized, (error) => {
         if (error) {

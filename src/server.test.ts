@@ -1,57 +1,57 @@
-import { number, object, string } from 'valibot';
-import { beforeEach, describe, expect, it } from 'vitest';
-import { McpServer } from './server.js';
-import {
-  type JSONRPCMessage,
-  JSONRPC_VERSION,
-  LATEST_PROTOCOL_VERSION,
-  type McpTransport,
-} from './types.js';
+import { describe, it, expect, vi } from 'vitest';
+import { Server } from './server.js';
+import type { JSONRPCMessage, JSONRPCRequest, JSONRPCResponse, JSONRPCError } from './schema.js';
+import { JSONRPC_VERSION, LATEST_PROTOCOL_VERSION } from './schema.js';
+import { object, string, number } from 'valibot';
+import type { McpTransport } from './transport.js';
+
+class TestTransport implements McpTransport {
+  messages: JSONRPCMessage[] = [];
+  handler: ((message: JSONRPCMessage) => Promise<void>) | null = null;
+
+  async connect(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  async disconnect(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  async send(message: JSONRPCMessage): Promise<void> {
+    this.messages.push(message);
+    return Promise.resolve();
+  }
+
+  onMessage(handler: (message: JSONRPCMessage) => Promise<void>): void {
+    this.handler = handler;
+  }
+
+  offMessage(): void {
+    this.handler = null;
+  }
+
+  async close(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  async simulateMessage(message: JSONRPCMessage): Promise<void> {
+    if (this.handler) {
+      await this.handler(message);
+    }
+  }
+}
 
 describe('McpServer', () => {
-  let server: McpServer;
+  let server: Server;
   let transport: TestTransport;
 
   beforeEach(() => {
-    server = new McpServer({ name: 'test', version: '1.0.0' });
+    server = new Server({
+      name: 'test-server',
+      version: '1.0.0',
+    });
     transport = new TestTransport();
   });
-
-  class TestTransport implements McpTransport {
-    messages: JSONRPCMessage[] = [];
-    handler: ((message: JSONRPCMessage) => Promise<void>) | null = null;
-
-    async connect(): Promise<void> {
-      return Promise.resolve();
-    }
-
-    async disconnect(): Promise<void> {
-      return Promise.resolve();
-    }
-
-    async send(message: JSONRPCMessage): Promise<void> {
-      this.messages.push(message);
-      return Promise.resolve();
-    }
-
-    onMessage(handler: (message: JSONRPCMessage) => Promise<void>): void {
-      this.handler = handler;
-    }
-
-    offMessage(): void {
-      this.handler = null;
-    }
-
-    async close(): Promise<void> {
-      await this.disconnect();
-    }
-
-    async simulateMessage(message: JSONRPCMessage): Promise<void> {
-      if (this.handler) {
-        await this.handler(message);
-      }
-    }
-  }
 
   it('should handle initialization', async () => {
     await server.connect(transport);
@@ -72,7 +72,7 @@ describe('McpServer', () => {
       result: {
         protocolVersion: LATEST_PROTOCOL_VERSION,
         serverInfo: {
-          name: 'test',
+          name: 'test-server',
           version: '1.0.0',
         },
         capabilities: {},
@@ -81,21 +81,16 @@ describe('McpServer', () => {
   });
 
   it('should register and expose tools', async () => {
-    const server = new McpServer({
-      name: 'test',
-      version: '1.0.0',
-    });
-
-    const transport = new TestTransport();
     const schema = object({
       name: string(),
       age: number(),
     });
 
-    server.tool('greet', schema, (params) => {
-      return `Hello ${params.name}, you are ${params.age} years old`;
-    });
-
+    server.tool(
+      'greet',
+      schema,
+      async (params) => `Hello ${params.name}, you are ${params.age} years old`
+    );
     await server.connect(transport);
 
     await transport.simulateMessage({
@@ -152,7 +147,7 @@ describe('McpServer', () => {
       id: 2,
       error: {
         code: -32601,
-        message: 'Tool not found',
+        message: 'Method not found',
       },
     });
   });
