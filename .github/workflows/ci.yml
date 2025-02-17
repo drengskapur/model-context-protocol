@@ -73,7 +73,6 @@ jobs:
           VITEST_SEGFAULT_RETRY: 3
 
       - name: Test Package Publishing
-        if: github.event_name == 'pull_request'
         run: |
           echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > .npmrc
           echo "registry=https://registry.npmjs.org/" >> .npmrc
