@@ -62,7 +62,7 @@ jobs:
             ${{ runner.os }}-turbo-
 
       - name: Type check
-        run: pnpm turbo type-check
+        run: pnpm turbo typecheck
 
       - name: Lint
         run: pnpm turbo lint

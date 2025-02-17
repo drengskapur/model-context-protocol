@@ -51,7 +51,7 @@ jobs:
          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
      - name: Type check
-       run: pnpm type-check
+       run: pnpm typecheck
 
      - name: Lint
        run: pnpm lint
