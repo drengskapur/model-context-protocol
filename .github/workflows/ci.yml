@@ -97,7 +97,7 @@ jobs:
           cache: 'pnpm'
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: NODE_ENV=development pnpm install --frozen-lockfile
 
       - name: Test Package Publishing
         run: |
