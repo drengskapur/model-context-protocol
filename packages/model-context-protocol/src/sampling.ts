@@ -4,12 +4,13 @@
  * Provides types and utilities for working with AI model outputs.
  */
 
-import { z } from 'zod';
+import { object, string, number, array, union, literal, optional, minValue, maxValue, parse, enumType } from 'valibot';
 import { McpError } from './errors';
 import type {
   CreateMessageRequest,
   ModelPreferences,
   SamplingMessage,
+  Role,
 } from './schema';
 
 /**
@@ -70,7 +71,7 @@ export interface SamplingResponse {
 /**
  * Sampling client interface.
  */
-export interface ISamplingClient {
+export interface SamplingClient {
   /**
    * Creates a message using sampling.
    * @param messages Messages to use as context.
@@ -91,7 +92,7 @@ export interface ISamplingClient {
    * @returns Promise that resolves with the response
    */
   respondToSampling(
-    role: string,
+    role: Role,
     content: string,
     name?: string,
     metadata?: Record<string, unknown>
@@ -101,7 +102,7 @@ export interface ISamplingClient {
 /**
  * Base class for sampling clients.
  */
-export abstract class BaseSamplingClient implements ISamplingClient {
+export abstract class BaseSamplingClient implements SamplingClient {
   /**
    * Creates a message using sampling.
    * @param messages Messages to use as context.
@@ -120,32 +121,25 @@ export abstract class BaseSamplingClient implements ISamplingClient {
    */
   protected validateOptions(options: SamplingOptions): SamplingOptions {
     try {
-      return z
-        .object({
-          maxTokens: z.number().int().positive().optional(),
-          temperature: z.number().min(0).max(2).optional(),
-          topP: z.number().min(0).max(1).optional(),
-          frequencyPenalty: z.number().min(-2).max(2).optional(),
-          presencePenalty: z.number().min(-2).max(2).optional(),
-          stop: z.array(z.string()).optional(),
-          modelPreferences: z
-            .object({
-              hints: z
-                .array(
-                  z.object({
-                    name: z.string().optional(),
-                  })
-                )
-                .optional(),
-              costPriority: z.number().min(0).max(1).optional(),
-              speedPriority: z.number().min(0).max(1).optional(),
-              intelligencePriority: z.number().min(0).max(1).optional(),
-            })
-            .optional(),
-        })
-        .parse(options);
+      const schema = object({
+        maxTokens: optional(number([minValue(1)])),
+        temperature: optional(number([minValue(0), maxValue(2)])),
+        topP: optional(number([minValue(0), maxValue(1)])),
+        frequencyPenalty: optional(number([minValue(-2), maxValue(2)])),
+        presencePenalty: optional(number([minValue(-2), maxValue(2)])),
+        stop: optional(array(string())),
+        modelPreferences: optional(object({
+          hints: optional(array(object({
+            name: optional(string()),
+          }))),
+          costPriority: optional(number([minValue(0), maxValue(1)])),
+          speedPriority: optional(number([minValue(0), maxValue(1)])),
+          intelligencePriority: optional(number([minValue(0), maxValue(1)])),
+        })),
+      });
+      return parse(schema, options);
     } catch (error) {
-      throw new McpError('validation', 'Invalid sampling options', error as Error);
+      throw new McpError(-32402, 'Invalid sampling options', error);
     }
   }
 
@@ -155,41 +149,37 @@ export abstract class BaseSamplingClient implements ISamplingClient {
    */
   protected validateMessages(messages: SamplingMessage[]): void {
     try {
-      z.array(
-        z.object({
-          role: z.enum(['system', 'user', 'assistant', 'function', 'tool']),
-          content: z.union([
-            z.object({
-              type: z.literal('text'),
-              text: z.string(),
+      const schema = array(object({
+        role: enumType(['user', 'assistant']),
+        content: union([
+          object({
+            type: literal('text'),
+            text: string(),
+          }),
+          object({
+            type: literal('function_call'),
+            function: object({
+              name: string(),
+              arguments: string(),
             }),
-            z.object({
-              type: z.literal('function_call'),
-              function: z.object({
-                name: z.string(),
-                arguments: z.string(),
+          }),
+          object({
+            type: literal('tool_calls'),
+            tool_calls: array(object({
+              id: string(),
+              type: literal('function'),
+              function: object({
+                name: string(),
+                arguments: string(),
               }),
-            }),
-            z.object({
-              type: z.literal('tool_calls'),
-              tool_calls: z.array(
-                z.object({
-                  id: z.string(),
-                  type: z.literal('function'),
-                  function: z.object({
-                    name: z.string(),
-                    arguments: z.string(),
-                  }),
-                })
-              ),
-            }),
-          ]),
-          name: z.string().optional(),
-          tool_call_id: z.string().optional(),
-        })
-      ).parse(messages);
+            })),
+          }),
+        ]),
+        tool_call_id: optional(string()),
+      }));
+      parse(schema, messages);
     } catch (error) {
-      throw new McpError('validation', 'Invalid messages', error as Error);
+      throw new McpError(-32402, 'Invalid messages', error);
     }
   }
 
@@ -202,7 +192,7 @@ export abstract class BaseSamplingClient implements ISamplingClient {
    * @returns Promise that resolves with the response
    */
   respondToSampling(
-    role: string,
+    role: Role,
     content: string,
     name?: string,
     metadata?: Record<string, unknown>
@@ -213,7 +203,6 @@ export abstract class BaseSamplingClient implements ISamplingClient {
         type: 'text',
         text: content,
       },
-      name,
     };
 
     return Promise.resolve({
@@ -238,45 +227,39 @@ export class Sampling {
     options: SamplingOptions
   ): Promise<SamplingResponse> {
     // Validate messages
-    for (const message of messages) {
-      try {
-        z.object({
-          role: z.enum(['system', 'user', 'assistant', 'function', 'tool']),
-          content: z.union([
-            z.object({
-              type: z.literal('text'),
-              text: z.string(),
+    const messageSchema = array(object({
+      role: enumType(['user', 'assistant']),
+      content: union([
+        object({
+          type: literal('text'),
+          text: string(),
+        }),
+        object({
+          type: literal('function_call'),
+          function: object({
+            name: string(),
+            arguments: string(),
+          }),
+        }),
+        object({
+          type: literal('tool_calls'),
+          tool_calls: array(object({
+            id: string(),
+            type: literal('function'),
+            function: object({
+              name: string(),
+              arguments: string(),
             }),
-            z.object({
-              type: z.literal('function_call'),
-              function: z.object({
-                name: z.string(),
-                arguments: z.string(),
-              }),
-            }),
-            z.object({
-              type: z.literal('tool_calls'),
-              tool_calls: z.array(
-                z.object({
-                  id: z.string(),
-                  type: z.literal('function'),
-                  function: z.object({
-                    name: z.string(),
-                    arguments: z.string(),
-                  }),
-                })
-              ),
-            }),
-          ]),
-          name: z.string().optional(),
-          tool_call_id: z.string().optional(),
-        }).parse(message);
-      } catch (error) {
-        if (error instanceof z.ZodError) {
-          throw new McpError(`Invalid message: ${error.message}`, error);
-        }
-        throw error;
-      }
+          })),
+        }),
+      ]),
+      tool_call_id: optional(string()),
+    }));
+
+    try {
+      parse(messageSchema, messages);
+    } catch (error) {
+      throw new McpError(-32402, 'Invalid message', error);
     }
 
     // Create request
@@ -286,7 +269,7 @@ export class Sampling {
         messages,
         modelPreferences: options.modelPreferences,
         temperature: options.temperature,
-        maxTokens: options.maxTokens,
+        maxTokens: options.maxTokens ?? 0,
         stopSequences: options.stop,
       },
     };
@@ -310,7 +293,7 @@ export class Sampling {
    * @returns A promise that resolves to the response message.
    */
   respondToSampling(
-    role: string,
+    role: Role,
     content: string,
     name?: string,
     metadata?: Record<string, unknown>
@@ -322,14 +305,13 @@ export class Sampling {
           type: 'text',
           text: content,
         },
-        name,
       },
       metadata,
     });
   }
 }
 
-export class SamplingClient implements ISamplingClient {
+export class SamplingClient implements SamplingClient {
   /**
    * Creates a message using sampling.
    * @param messages Messages to use as context.
@@ -341,45 +323,39 @@ export class SamplingClient implements ISamplingClient {
     options: SamplingOptions
   ): Promise<SamplingResponse> {
     // Validate messages
-    for (const message of messages) {
-      try {
-        z.object({
-          role: z.enum(['system', 'user', 'assistant', 'function', 'tool']),
-          content: z.union([
-            z.object({
-              type: z.literal('text'),
-              text: z.string(),
+    const messageSchema = array(object({
+      role: enumType(['user', 'assistant']),
+      content: union([
+        object({
+          type: literal('text'),
+          text: string(),
+        }),
+        object({
+          type: literal('function_call'),
+          function: object({
+            name: string(),
+            arguments: string(),
+          }),
+        }),
+        object({
+          type: literal('tool_calls'),
+          tool_calls: array(object({
+            id: string(),
+            type: literal('function'),
+            function: object({
+              name: string(),
+              arguments: string(),
             }),
-            z.object({
-              type: z.literal('function_call'),
-              function: z.object({
-                name: z.string(),
-                arguments: z.string(),
-              }),
-            }),
-            z.object({
-              type: z.literal('tool_calls'),
-              tool_calls: z.array(
-                z.object({
-                  id: z.string(),
-                  type: z.literal('function'),
-                  function: z.object({
-                    name: z.string(),
-                    arguments: z.string(),
-                  }),
-                })
-              ),
-            }),
-          ]),
-          name: z.string().optional(),
-          tool_call_id: z.string().optional(),
-        }).parse(message);
-      } catch (error) {
-        if (error instanceof z.ZodError) {
-          throw new McpError(`Invalid message: ${error.message}`, error);
-        }
-        throw error;
-      }
+          })),
+        }),
+      ]),
+      tool_call_id: optional(string()),
+    }));
+
+    try {
+      parse(messageSchema, messages);
+    } catch (error) {
+      throw new McpError(-32402, 'Invalid message', error);
     }
 
     // Create request
@@ -389,7 +365,7 @@ export class SamplingClient implements ISamplingClient {
         messages,
         modelPreferences: options.modelPreferences,
         temperature: options.temperature,
-        maxTokens: options.maxTokens,
+        maxTokens: options.maxTokens ?? 0,
         stopSequences: options.stop,
       },
     };
@@ -415,7 +391,7 @@ export class SamplingClient implements ISamplingClient {
    * @returns Promise that resolves with the response
    */
   respondToSampling(
-    role: string,
+    role: Role,
     content: string,
     name?: string,
     metadata?: Record<string, unknown>
@@ -427,7 +403,6 @@ export class SamplingClient implements ISamplingClient {
           type: 'text',
           text: content,
         },
-        name,
       },
       metadata,
     });

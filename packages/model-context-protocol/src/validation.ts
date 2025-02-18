@@ -4,9 +4,9 @@
  * Provides functions and types for validating protocol messages and data.
  */
 
-import { z } from 'zod';
+import { type ValiError, type BaseSchema, type Input, enumType, number, object, string, array, parse, optional, minValue, maxValue, integer, union, literal } from 'valibot';
 import { McpError } from './errors';
-import type { JSONRPCRequest, JSONRPCResponse } from './schema';
+import type { JSONRPCRequest, JSONRPCResponse, Resource, Prompt, SamplingMessage, Tool, PromptReference, ResourceReference } from './schema';
 
 /**
  * Validation error code.
@@ -17,9 +17,9 @@ export const VALIDATION_ERROR = -32402;
  * Custom validation error class.
  */
 export class ValidationError extends McpError {
-  constructor(message: string, cause?: z.ZodError) {
+  constructor(message: string, cause?: ValiError) {
     super(VALIDATION_ERROR, message, {
-      errors: cause?.errors,
+      errors: cause?.issues,
     });
     this.name = 'ValidationError';
   }
@@ -32,18 +32,14 @@ export class ValidationError extends McpError {
  * @returns Validated request parameters
  * @throws {ValidationError} If validation fails
  */
-export function validateRequest<T>(
+export function validateRequest<T extends BaseSchema>(
   request: JSONRPCRequest,
-  schema: z.ZodType<T>
-): T {
+  schema: T
+): Input<T> {
   try {
-    return schema.parse(request.params);
+    return parse(schema, request.params);
   } catch (error) {
-    throw new McpError(
-      'validation',
-      'Invalid request parameters',
-      error as Error
-    );
+    throw new ValidationError('Invalid request parameters', error as ValiError);
   }
 }
 
@@ -54,14 +50,14 @@ export function validateRequest<T>(
  * @returns Validated response result
  * @throws {ValidationError} If validation fails
  */
-export function validateResponse<T>(
+export function validateResponse<T extends BaseSchema>(
   response: JSONRPCResponse,
-  schema: z.ZodType<T>
-): T {
+  schema: T
+): Input<T> {
   try {
-    return schema.parse(response.result);
+    return parse(schema, response.result);
   } catch (error) {
-    throw new McpError('validation', 'Invalid response result', error as Error);
+    throw new ValidationError('Invalid response result', error as ValiError);
   }
 }
 
@@ -73,9 +69,9 @@ export function validateResponse<T>(
  */
 export function validateLoggingLevel(level: unknown): string {
   try {
-    return z.enum(['debug', 'info', 'warn', 'error']).parse(level);
+    return parse(enumType(['debug', 'info', 'warn', 'error']), level);
   } catch (error) {
-    throw new ValidationError('Invalid logging level', error as z.ZodError);
+    throw new ValidationError('Invalid logging level', error as ValiError);
   }
 }
 
@@ -94,17 +90,141 @@ export function validateSamplingOptions(options: unknown): {
   stop?: string[];
 } {
   try {
-    return z
-      .object({
-        maxTokens: z.number().int().positive().optional(),
-        temperature: z.number().min(0).max(2).optional(),
-        topP: z.number().min(0).max(1).optional(),
-        frequencyPenalty: z.number().min(-2).max(2).optional(),
-        presencePenalty: z.number().min(-2).max(2).optional(),
-        stop: z.array(z.string()).optional(),
-      })
-      .parse(options);
+    const schema = object({
+      maxTokens: optional(number([integer(), minValue(1)])),
+      temperature: optional(number([minValue(0), maxValue(2)])),
+      topP: optional(number([minValue(0), maxValue(1)])),
+      frequencyPenalty: optional(number([minValue(-2), maxValue(2)])),
+      presencePenalty: optional(number([minValue(-2), maxValue(2)])),
+      stop: optional(array(string())),
+    });
+    return parse(schema, options);
   } catch (error) {
-    throw new ValidationError('Invalid sampling options', error as z.ZodError);
+    throw new ValidationError('Invalid sampling options', error as ValiError);
+  }
+}
+
+/**
+ * Validates a resource.
+ * @param resource Resource to validate
+ * @returns Validated resource
+ * @throws {ValidationError} If validation fails
+ */
+export function validateResource(resource: unknown): Promise<void> {
+  try {
+    const schema = object({
+      uri: string(),
+      name: string(),
+      description: optional(string()),
+      mimeType: optional(string()),
+      size: optional(number([minValue(0)])),
+    });
+    parse(schema, resource);
+    return Promise.resolve();
+  } catch (error) {
+    return Promise.reject(new ValidationError('Invalid resource', error as ValiError));
+  }
+}
+
+/**
+ * Validates a prompt.
+ * @param prompt Prompt to validate
+ * @returns Validated prompt
+ * @throws {ValidationError} If validation fails
+ */
+export function validatePrompt(prompt: unknown): Promise<void> {
+  try {
+    const schema = object({
+      name: string(),
+      description: optional(string()),
+      arguments: optional(array(object({
+        name: string(),
+        description: optional(string()),
+        required: optional(literal(true)),
+      }))),
+    });
+    parse(schema, prompt);
+    return Promise.resolve();
+  } catch (error) {
+    return Promise.reject(new ValidationError('Invalid prompt', error as ValiError));
+  }
+}
+
+/**
+ * Validates a sampling message.
+ * @param message Message to validate
+ * @returns Validated message
+ * @throws {ValidationError} If validation fails
+ */
+export function validateSamplingMessage(message: unknown): Promise<void> {
+  try {
+    const schema = object({
+      role: enumType(['user', 'assistant', 'system', 'function', 'tool']),
+      content: union([
+        object({
+          type: literal('text'),
+          text: string(),
+        }),
+        object({
+          type: literal('image'),
+          data: string(),
+          mimeType: string(),
+        }),
+      ]),
+      name: optional(string()),
+    });
+    parse(schema, message);
+    return Promise.resolve();
+  } catch (error) {
+    return Promise.reject(new ValidationError('Invalid sampling message', error as ValiError));
+  }
+}
+
+/**
+ * Validates a tool.
+ * @param tool Tool to validate
+ * @returns Validated tool
+ * @throws {ValidationError} If validation fails
+ */
+export function validateTool(tool: unknown): Promise<void> {
+  try {
+    const schema = object({
+      name: string(),
+      description: optional(string()),
+      inputSchema: object({
+        type: literal('object'),
+        properties: optional(object({})),
+        required: optional(array(string())),
+      }),
+    });
+    parse(schema, tool);
+    return Promise.resolve();
+  } catch (error) {
+    return Promise.reject(new ValidationError('Invalid tool', error as ValiError));
+  }
+}
+
+/**
+ * Validates a reference.
+ * @param ref Reference to validate
+ * @returns Validated reference
+ * @throws {ValidationError} If validation fails
+ */
+export function validateReference(ref: unknown): Promise<void> {
+  try {
+    const schema = union([
+      object({
+        type: literal('ref/prompt'),
+        name: string(),
+      }),
+      object({
+        type: literal('ref/resource'),
+        uri: string(),
+      }),
+    ]);
+    parse(schema, ref);
+    return Promise.resolve();
+  } catch (error) {
+    return Promise.reject(new ValidationError('Invalid reference', error as ValiError));
   }
 }
