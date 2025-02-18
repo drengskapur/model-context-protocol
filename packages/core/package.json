@@ -2,36 +2,15 @@
   "name": "@model-context-protocol/core",
   "version": "0.1.0-rc.1",
   "private": false,
-  "description": "Core implementation of the Model Context Protocol (MCP), a protocol for communication between LLMs and their context",
+  "description": "Core implementation of the Model Context Protocol (MCP) with TypeScript",
   "type": "module",
-  "license": "MIT",
-  "author": "Drengskapur",
   "packageManager": "pnpm@8.15.4",
-  "homepage": "https://github.com/drengskapur/model-context-protocol#readme",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/drengskapur/model-context-protocol.git"
-  },
-  "bugs": {
-    "url": "https://github.com/drengskapur/model-context-protocol/issues"
-  },
-  "keywords": [
-    "llm",
-    "ai",
-    "protocol",
-    "json-rpc",
-    "typescript",
-    "context",
-    "agent",
-    "tools",
-    "resources",
-    "prompts",
-    "sse",
-    "stdio"
-  ],
   "engines": {
     "node": ">=18.0.0"
   },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -54,31 +33,21 @@
       "require": "./dist/in-memory.cjs"
     }
   },
-  "main": "./dist/index.js",
-  "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "files": [
-    "dist",
-    "src",
-    "README.md",
-    "LICENSE",
-    "SECURITY.md",
-    "CODE_OF_CONDUCT.md"
-  ],
+  "files": ["dist", "src", "README.md"],
   "scripts": {
     "build": "tsup",
-    "dev": "tsup --watch",
-    "lint": "biome check .",
-    "format": "biome format --write .",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run --run",
-    "test:watch": "vitest",
     "clean": "rm -rf dist",
+    "dev": "tsup --watch",
+    "format": "biome format --write .",
+    "lint": "biome check .",
     "prepare": "husky",
     "prepublishOnly": "pnpm run build",
     "preversion": "pnpm run lint && pnpm run test",
-    "version": "pnpm run format && git add -A src",
-    "postversion": "git push && git push --tags"
+    "postversion": "git push && git push --tags",
+    "test": "vitest run --run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "version": "pnpm run format && git add -A src"
   },
   "dependencies": {
     "valibot": "^0.28.1"
