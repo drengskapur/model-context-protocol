@@ -6,7 +6,7 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import { InMemoryTransport } from './in-memory';
-import type { JSONRPCRequest, JSONRPCResponse, JSONRPCMessage } from './schema';
+import type { JSONRPCRequest } from './schema';
 import { JSONRPC_VERSION } from './schema';
 
 describe('InMemoryTransport', () => {
@@ -184,10 +184,10 @@ describe('InMemoryTransport', () => {
       expect(await received).toEqual(message);
     });
 
-    it('should reject invalid messages in simulation', async () => {
+    it('should handle invalid message format', async () => {
       const invalidMessage = { invalid: 'message' };
       await expect(
-        transport1.simulateIncomingMessage(invalidMessage as any)
+        transport1.simulateIncomingMessage(invalidMessage as unknown)
       ).rejects.toThrow('Invalid message format');
     });
 
@@ -242,7 +242,9 @@ describe('InMemoryTransport', () => {
     });
 
     it('should handle error event subscription/unsubscription', () => {
-      const handler = (error: Error) => {};
+      const handler = (_error: Error) => {
+        // Handler intentionally empty
+      };
       transport1.onError(handler);
       transport1.offError(handler);
       // No assertion needed - just verifying the methods don't throw

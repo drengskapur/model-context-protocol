@@ -7,9 +7,18 @@
 import { EventEmitter } from 'node:events';
 import { VError } from 'verror';
 import { InMemoryTransport } from './in-memory.js';
-import type { JSONRPCMessage, JSONRPCRequest } from './schema.js';
-import { LATEST_PROTOCOL_VERSION, JSONRPC_VERSION } from './schema.js';
-import type { McpTransport, MessageHandler } from './transport.js';
+import {
+  type ClientCapabilities,
+  type InitializeResult,
+  type JSONRPCMessage,
+  type JSONRPCNotification,
+  type JSONRPCRequest,
+  JSONRPC_VERSION,
+  LATEST_PROTOCOL_VERSION,
+  type RequestId,
+  type ServerCapabilities,
+} from './schema.js';
+import type { McpTransport } from './transport.js';
 
 /**
  * Client options for Model Context Protocol.
@@ -33,7 +42,7 @@ export interface ClientOptions {
   /**
    * Request timeout in milliseconds
    */
-  requestTimeout?: number;
+  timeout?: number;
 }
 
 /**
@@ -41,23 +50,41 @@ export interface ClientOptions {
  */
 export class McpClient {
   private readonly transport: McpTransport;
-  private readonly capabilities: Record<string, unknown>;
+  private readonly capabilities: ClientCapabilities;
   private readonly events: EventEmitter;
   private readonly name: string;
   private readonly version: string;
   private readonly timeout: number;
   private initialized = false;
-  private serverCapabilities: Record<string, unknown> | null = null;
+  private serverCapabilities: ServerCapabilities | null = null;
+  private _pendingRequests = new Map<
+    RequestId,
+    {
+      resolve: (value: unknown) => void;
+      reject: (reason: unknown) => void;
+      progressHandler?: (progress: number, total: number) => void;
+    }
+  >();
 
   constructor(options: ClientOptions, transport?: McpTransport) {
     this.transport = transport ?? new InMemoryTransport();
     this.capabilities = options.capabilities ?? {};
     this.name = options.name;
     this.version = options.version;
-    this.timeout = options.requestTimeout ?? 30000;
+    this.timeout = options.timeout ?? 30000;
     this.events = new EventEmitter();
 
-    this.transport.onMessage(this.handleMessage.bind(this));
+    // Set up message handler
+    this.transport.onMessage(async (message: unknown) => {
+      if (!this.isJSONRPCMessage(message)) {
+        return;
+      }
+      try {
+        await this.handleMessage(message);
+      } catch (error) {
+        this.events.emit('error', error);
+      }
+    });
   }
 
   /**
@@ -95,68 +122,69 @@ export class McpClient {
   /**
    * Returns the server capabilities.
    */
-  getServerCapabilities(): Record<string, unknown> | null {
+  getServerCapabilities(): ServerCapabilities | null {
     return this.serverCapabilities;
   }
 
   /**
    * Send a request to the server
    */
-  public async request<T = unknown>(
+  public async request<T>(
     method: string,
     params?: Record<string, unknown>
   ): Promise<T> {
+    if (!this.transport) {
+      throw new VError('Transport not initialized');
+    }
+
     if (!this.initialized && method !== 'initialize') {
       throw new VError('Client not initialized');
     }
 
     const request: JSONRPCRequest = {
       jsonrpc: JSONRPC_VERSION,
-      id: Math.random().toString(36).slice(2),
+      id: Date.now().toString(),
       method,
       params,
     };
 
     return new Promise((resolve, reject) => {
-      try {
-        const handler: MessageHandler = (msg: unknown): Promise<void> => {
-          if (!this.isJSONRPCMessage(msg)) {
-            return Promise.resolve();
-          }
-          const message = msg as JSONRPCMessage;
+      const timeoutId = setTimeout(() => {
+        const pendingRequest = this._pendingRequests.get(request.id);
+        if (pendingRequest) {
+          this._pendingRequests.delete(request.id);
+          reject(
+            new VError(
+              {
+                name: 'RequestTimeoutError',
+                info: {
+                  method,
+                  requestId: request.id,
+                  timeout: this.timeout,
+                },
+              },
+              `Request timed out after ${this.timeout}ms`
+            )
+          );
+        }
+      }, this.timeout);
 
-          if ('id' in message && message.id === request.id) {
-            this.transport.offMessage(handler);
+      this._pendingRequests.set(request.id, {
+        resolve: (value: unknown) => {
+          clearTimeout(timeoutId);
+          resolve(value as T);
+        },
+        reject: (error: unknown) => {
+          clearTimeout(timeoutId);
+          reject(error);
+        },
+      });
 
-            if ('error' in message) {
-              reject(new VError(message.error.message));
-              return Promise.resolve();
-            }
-
-            if ('result' in message) {
-              resolve(message.result as T);
-              return Promise.resolve();
-            }
-          }
-          return Promise.resolve();
-        };
-
-        this.transport.onMessage(handler);
-
-        // Send the request after setting up the handler
-        this.transport.send(request).catch((err) => {
-          this.transport.offMessage(handler);
-          reject(err);
-        });
-
-        // Add timeout
-        setTimeout(() => {
-          this.transport.offMessage(handler);
-          reject(new VError('Request timed out'));
-        }, this.timeout);
-      } catch (err) {
+      // Send the request after setting up the handler
+      this.transport.send(request).catch((err) => {
+        this._pendingRequests.delete(request.id);
         reject(err);
-      }
+      });
     });
   }
 
@@ -167,13 +195,12 @@ export class McpClient {
     method: string,
     params?: Record<string, unknown>
   ): Promise<void> {
-    if (!this.initialized) {
-      throw new VError('Client not initialized');
+    if (!this.transport) {
+      throw new VError('Transport not initialized');
     }
 
-    const request: JSONRPCRequest = {
+    const request: JSONRPCNotification = {
       jsonrpc: JSONRPC_VERSION,
-      id: Math.random().toString(36).slice(2),
       method,
       params,
     };
@@ -406,12 +433,12 @@ export class McpClient {
    * Initializes the client.
    */
   private async initialize(): Promise<void> {
+    if (this.initialized) {
+      throw new VError('Client already initialized');
+    }
+
     try {
-      const response = await this.request<{
-        protocolVersion: string;
-        serverInfo: { name: string; version: string };
-        capabilities: Record<string, unknown>;
-      }>('initialize', {
+      const response = await this.request<InitializeResult>('initialize', {
         protocolVersion: LATEST_PROTOCOL_VERSION,
         clientInfo: {
           name: this.name,
@@ -420,6 +447,7 @@ export class McpClient {
         capabilities: this.capabilities,
       });
 
+      // Check protocol version before proceeding with initialization
       if (response.protocolVersion !== LATEST_PROTOCOL_VERSION) {
         throw new VError(
           `Protocol version mismatch. Server: ${response.protocolVersion}, Client: ${LATEST_PROTOCOL_VERSION}`
@@ -428,8 +456,22 @@ export class McpClient {
 
       this.serverCapabilities = response.capabilities;
       this.initialized = true;
-      await this.notify('notifications/initialized', {});
+
+      // Send initialized notification
+      await this.notify('notifications/initialized', {}).catch(() => {
+        // Ignore notification errors during initialization
+      });
     } catch (error) {
+      // Reset initialization state on error
+      this.initialized = false;
+      this.serverCapabilities = null;
+
+      if (
+        error instanceof VError &&
+        error.message.includes('Protocol version mismatch')
+      ) {
+        throw error; // Re-throw protocol version mismatch errors directly
+      }
       throw new VError(error as Error, 'Failed to initialize client');
     }
   }
@@ -438,31 +480,131 @@ export class McpClient {
    * Handles an incoming message.
    * @param message Incoming message
    */
-  private handleMessage(message: unknown): Promise<void> {
-    if (!this.isJSONRPCMessage(message)) {
-      throw new VError('Invalid message format');
+  private async handleMessage(message: JSONRPCMessage): Promise<void> {
+    if (!('id' in message)) {
+      // Handle notifications
+      if ('method' in message) {
+        await this.handleNotification(message);
+      }
+      return;
     }
 
-    // Handle the message
-    this.events.emit('message', message);
+    const { id } = message;
+    const handler = this._pendingRequests.get(id.toString());
+    if (!handler) {
+      // No handler found for this message ID
+      return;
+    }
 
-    if ('method' in message) {
-      // Handle notifications
-      if (message.method === 'notifications/progress' && 'params' in message) {
-        const params = message.params;
-        if (params && typeof params === 'object' && 'progressToken' in params) {
-          const { progressToken, progress, total } = params as {
-            progressToken: string;
-            progress: number;
-            total: number;
+    this._pendingRequests.delete(id.toString());
+
+    try {
+      if ('error' in message) {
+        const error = new VError(
+          {
+            name: message.error.code?.toString() || 'RPCError',
+            info: message.error.data || {},
+          },
+          message.error.message
+        );
+        handler.reject(error);
+      } else if ('result' in message) {
+        handler.resolve(message.result);
+      } else {
+        handler.reject(new VError('Invalid response message'));
+      }
+    } catch (error) {
+      handler.reject(error);
+    }
+  }
+
+  /**
+   * Handles a notification message.
+   * @param notification Notification to handle
+   */
+  private handleNotification(notification: JSONRPCNotification): Promise<void> {
+    try {
+      switch (notification.method) {
+        case 'notifications/cancelled': {
+          const params = notification.params as unknown as CancellationParams;
+          if (!params?.requestId) {
+            throw new VError(
+              'Invalid cancellation notification: missing requestId'
+            );
+          }
+          const pendingRequest = this._pendingRequests.get(params.requestId);
+          if (pendingRequest) {
+            pendingRequest.reject(
+              new VError(
+                `Request cancelled: ${params.reason || 'No reason provided'}`
+              )
+            );
+            this._pendingRequests.delete(params.requestId);
+          }
+          break;
+        }
+        case 'notifications/progress': {
+          const params = notification.params as unknown as ProgressParams;
+          if (
+            !params?.token ||
+            typeof params.progress !== 'number' ||
+            typeof params.total !== 'number'
+          ) {
+            throw new VError(
+              'Invalid progress notification: missing required fields'
+            );
+          }
+          this.events.emit(
+            `progress:${params.token}`,
+            params.progress,
+            params.total
+          );
+          break;
+        }
+        case 'notifications/resource': {
+          const params = notification.params as {
+            name: string;
+            content: unknown;
           };
-          this.events.emit(`progress:${progressToken}`, progress, total);
+          if (!params?.name) {
+            throw new VError(
+              'Invalid resource notification: missing resource name'
+            );
+          }
+          this.events.emit(`resource:${params.name}`, params.content);
+          break;
+        }
+        case 'notifications/message': {
+          const params = notification.params as { message: unknown };
+          if (!params?.message) {
+            throw new VError(
+              'Invalid message notification: missing message content'
+            );
+          }
+          this.events.emit('messageCreated', params.message);
+          break;
+        }
+        default: {
+          // Log unknown notification methods but don't throw
+          if (this.events.listenerCount('error') > 0) {
+            this.events.emit(
+              'error',
+              new VError(
+                `Received unknown notification method: ${notification.method}`
+              )
+            );
+          }
         }
       }
-      // Handle other notifications
-      this.events.emit('method', message);
+      return Promise.resolve();
+    } catch (error) {
+      // Emit error but don't throw to prevent breaking the message handling loop
+      this.events.emit(
+        'error',
+        new VError(error as Error, 'Failed to handle notification')
+      );
+      return Promise.resolve(); // Still resolve since we handled the error
     }
-    return Promise.resolve();
   }
 
   private isJSONRPCMessage(message: unknown): message is JSONRPCMessage {
@@ -502,18 +644,31 @@ export class McpClient {
       return false;
     }
 
-    let current = this.serverCapabilities;
-    for (const part of path.split('.')) {
+    const parts = path.split('.');
+    let current: unknown = this.serverCapabilities;
+
+    for (const part of parts) {
       if (
         typeof current !== 'object' ||
         current === null ||
-        !(part in current)
+        !Object.prototype.hasOwnProperty.call(current, part)
       ) {
         return false;
       }
-      current = current[part] as Record<string, unknown>;
+      current = (current as Record<string, unknown>)[part];
     }
 
     return true;
   }
+}
+
+interface CancellationParams {
+  requestId: string;
+  reason?: string;
+}
+
+interface ProgressParams {
+  token: string;
+  progress: number;
+  total?: number;
 }

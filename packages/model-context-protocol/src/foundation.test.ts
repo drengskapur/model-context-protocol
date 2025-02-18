@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
+import { McpClient } from './client';
 import { InMemoryTransport } from './in-memory';
 import { JSONRPC_VERSION, LATEST_PROTOCOL_VERSION } from './schema';
-import { McpClient } from './client';
-import { McpServer } from './server';
 import type { JSONRPCMessage, JSONRPCRequest, JSONRPCResponse } from './schema';
+import { McpServer } from './server';
 
 // Regex patterns
 const PROTOCOL_VERSION_MISMATCH = /Protocol version mismatch/;

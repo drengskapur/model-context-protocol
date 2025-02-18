@@ -5,13 +5,13 @@
  */
 
 import {
-  object,
-  string,
-  number,
-  union,
   literal,
-  optional,
   never,
+  number,
+  object,
+  optional,
+  string,
+  union,
   unknown,
 } from 'valibot';
 

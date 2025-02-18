@@ -6,19 +6,21 @@
 
 import { EventEmitter } from 'eventemitter3';
 import { JSONRPCClient, JSONRPCServer } from 'json-rpc-2.0';
+import { VError } from 'verror';
 import type {
   JSONRPCMessage,
   JSONRPCRequest,
   JSONRPCResponse,
   RequestId,
 } from './schema.js';
-import { VError } from 'verror';
 
 /**
  * Event types for transport events
  */
 export type TransportEventMap = {
-  message: [message: JSONRPCRequest | (Omit<JSONRPCResponse, 'id'> & { id: RequestId })];
+  message: [
+    message: JSONRPCRequest | (Omit<JSONRPCResponse, 'id'> & { id: RequestId }),
+  ];
   error: [error: Error];
   connect: never[];
   disconnect: never[];
@@ -35,7 +37,9 @@ export interface BaseEventEmitter {
    */
   on<K extends keyof TransportEventMap>(
     event: K,
-    handler: K extends 'connect' | 'disconnect' ? () => void : (...args: TransportEventMap[K]) => void
+    handler: K extends 'connect' | 'disconnect'
+      ? () => void
+      : (...args: TransportEventMap[K]) => void
   ): void;
 
   /**
@@ -45,7 +49,9 @@ export interface BaseEventEmitter {
    */
   off<K extends keyof TransportEventMap>(
     event: K,
-    handler: K extends 'connect' | 'disconnect' ? () => void : (...args: TransportEventMap[K]) => void
+    handler: K extends 'connect' | 'disconnect'
+      ? () => void
+      : (...args: TransportEventMap[K]) => void
   ): void;
 }
 
@@ -74,7 +80,9 @@ export interface McpTransport {
    */
   on<K extends keyof TransportEventMap>(
     event: K,
-    handler: K extends 'connect' | 'disconnect' ? () => void : (...args: TransportEventMap[K]) => void
+    handler: K extends 'connect' | 'disconnect'
+      ? () => void
+      : (...args: TransportEventMap[K]) => void
   ): void;
 
   /**
@@ -82,7 +90,9 @@ export interface McpTransport {
    */
   off<K extends keyof TransportEventMap>(
     event: K,
-    handler: K extends 'connect' | 'disconnect' ? () => void : (...args: TransportEventMap[K]) => void
+    handler: K extends 'connect' | 'disconnect'
+      ? () => void
+      : (...args: TransportEventMap[K]) => void
   ): void;
 
   /**
@@ -120,6 +130,18 @@ export interface McpTransport {
    * Close the transport and clean up any resources.
    */
   close(): Promise<void>;
+
+  /**
+   * Registers an error handler.
+   * @param handler Error handler function
+   */
+  onError(handler: ErrorHandler): void;
+
+  /**
+   * Unregisters an error handler.
+   * @param handler Error handler function
+   */
+  offError(handler: ErrorHandler): void;
 }
 
 /**
@@ -131,13 +153,17 @@ export abstract class BaseTransport implements McpTransport {
     return {
       on: <K extends keyof TransportEventMap>(
         event: K,
-        handler: K extends 'connect' | 'disconnect' ? () => void : (...args: TransportEventMap[K]) => void
+        handler: K extends 'connect' | 'disconnect'
+          ? () => void
+          : (...args: TransportEventMap[K]) => void
       ) => {
         this._events.on(event, handler);
       },
       off: <K extends keyof TransportEventMap>(
         event: K,
-        handler: K extends 'connect' | 'disconnect' ? () => void : (...args: TransportEventMap[K]) => void
+        handler: K extends 'connect' | 'disconnect'
+          ? () => void
+          : (...args: TransportEventMap[K]) => void
       ) => {
         this._events.off(event, handler);
       },
@@ -177,7 +203,9 @@ export abstract class BaseTransport implements McpTransport {
    */
   on<K extends keyof TransportEventMap>(
     event: K,
-    handler: K extends 'connect' | 'disconnect' ? () => void : (...args: TransportEventMap[K]) => void
+    handler: K extends 'connect' | 'disconnect'
+      ? () => void
+      : (...args: TransportEventMap[K]) => void
   ): void {
     this._events.on(event, handler);
   }
@@ -189,7 +217,9 @@ export abstract class BaseTransport implements McpTransport {
    */
   off<K extends keyof TransportEventMap>(
     event: K,
-    handler: K extends 'connect' | 'disconnect' ? () => void : (...args: TransportEventMap[K]) => void
+    handler: K extends 'connect' | 'disconnect'
+      ? () => void
+      : (...args: TransportEventMap[K]) => void
   ): void {
     this._events.off(event, handler);
   }

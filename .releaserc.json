@@ -56,7 +56,11 @@
             { "type": "fix", "section": "🐛 Bug Fixes", "hidden": false },
             { "type": "perf", "section": "⚡️ Performance", "hidden": false },
             { "type": "revert", "section": "⏪️ Reverts", "hidden": false },
-            { "type": "refactor", "section": "♻️ Code Refactoring", "hidden": false },
+            {
+              "type": "refactor",
+              "section": "♻️ Code Refactoring",
+              "hidden": false
+            },
             { "type": "docs", "section": "📝 Documentation", "hidden": true },
             { "type": "style", "section": "💄 Styles", "hidden": true },
             { "type": "test", "section": "✅ Tests", "hidden": true },

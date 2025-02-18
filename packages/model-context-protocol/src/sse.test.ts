@@ -1,10 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { JSONRPCMessage } from './schema';
-import { SseTransport, type SseTransportOptions } from './sse.js';
-import type { Session, Channel } from 'better-sse';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { JSONRPCRequest } from './schema';
 import { JSONRPC_VERSION } from './schema';
+import { SseTransport } from './sse.js';
+
+const _CONNECT_ERROR_REGEX = /Failed to connect/;
+const _TRANSPORT_NOT_CONNECTED_REGEX = /Transport not connected/;
+const _SEND_ERROR_REGEX = /Failed to send message/;
 
 // Mock better-sse module
 vi.mock('better-sse', () => {
@@ -30,10 +32,6 @@ vi.mock('better-sse', () => {
     createChannel: vi.fn().mockReturnValue(mockChannel),
   };
 });
-
-const CONNECT_ERROR_REGEX = /Failed to connect/;
-const TRANSPORT_NOT_CONNECTED_REGEX = /Transport not connected/;
-const SEND_ERROR_REGEX = /Failed to send message/;
 
 describe('SseTransport', () => {
   let transport: SseTransport;
@@ -73,9 +71,10 @@ describe('SseTransport', () => {
 
       // Get the session mock and simulate a message
       const { createSession } = await import('better-sse');
-      const mockSession = await (createSession as any).mock.results[0].value;
+      const mockSession = await (createSession as unknown).mock.results[0]
+        .value;
       const messageHandler = mockSession.on.mock.calls.find(
-        (call: any[]) => call[0] === 'message'
+        (call: unknown[]) => call[0] === 'message'
       )?.[1];
 
       if (messageHandler) {
@@ -93,9 +92,10 @@ describe('SseTransport', () => {
 
       // Get the session mock and simulate an error
       const { createSession } = await import('better-sse');
-      const mockSession = await (createSession as any).mock.results[0].value;
+      const mockSession = await (createSession as unknown).mock.results[0]
+        .value;
       const errorHandler = mockSession.on.mock.calls.find(
-        (call: any[]) => call[0] === 'error'
+        (call: unknown[]) => call[0] === 'error'
       )?.[1];
 
       if (errorHandler) {
@@ -115,9 +115,10 @@ describe('SseTransport', () => {
 
       // Get the session mock and simulate a message
       const { createSession } = await import('better-sse');
-      const mockSession = await (createSession as any).mock.results[0].value;
+      const mockSession = await (createSession as unknown).mock.results[0]
+        .value;
       const messageHandler = mockSession.on.mock.calls.find(
-        (call: any[]) => call[0] === 'message'
+        (call: unknown[]) => call[0] === 'message'
       )?.[1];
 
       if (messageHandler) {
@@ -163,17 +164,18 @@ describe('SseTransport', () => {
 
       // Verify retry timeout was set
       const { createSession } = await import('better-sse');
-      const mockSession = await (createSession as any).mock.results[0].value;
+      const mockSession = await (createSession as unknown).mock.results[0]
+        .value;
       expect(mockSession.retry).toHaveBeenCalledWith(retryTimeout);
     });
 
     it('should handle connection errors', async () => {
       const { createSession } = await import('better-sse');
-      (createSession as any).mockRejectedValueOnce(
+      (createSession as unknown).mockRejectedValueOnce(
         new Error('Connection failed')
       );
 
-      await expect(transport.connect()).rejects.toThrow(/Failed to connect/);
+      await expect(transport.connect()).rejects.toThrow(_CONNECT_ERROR_REGEX);
     });
 
     it('should handle disconnection', async () => {

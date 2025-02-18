@@ -22,7 +22,7 @@ describe('Model Context Protocol', () => {
     );
 
     // Register a method on the server
-    server.registerMethod('greet', async (params) => {
+    server.registerMethod('greet', (params) => {
       const { name } = params as { name: string };
       return `Hello, ${name}!`;
     });
@@ -41,7 +41,7 @@ describe('Model Context Protocol', () => {
   });
 
   it('should handle authentication', async () => {
-    const auth = new Auth({
+    const _auth = new Auth({
       secret: 'test-secret',
       issuer: 'test-server',
       audience: 'test-client',

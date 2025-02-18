@@ -35,15 +35,39 @@ export abstract class JsonRpcTransport implements McpTransport {
     return {
       on: <K extends keyof TransportEventMap>(
         event: K,
-        handler: K extends 'connect' | 'disconnect' ? () => void : (...args: TransportEventMap[K]) => void
+        handler: (...args: TransportEventMap[K]) => void
       ) => {
-        this._events.on(event, handler as ((...args: any[]) => void) & ((...args: TransportEventMap[K]) => void));
+        this._events.on(
+          event,
+          handler as ((...args: unknown[]) => void) &
+            ((...args: TransportEventMap[K]) => void)
+        );
       },
       off: <K extends keyof TransportEventMap>(
         event: K,
-        handler: K extends 'connect' | 'disconnect' ? () => void : (...args: TransportEventMap[K]) => void
+        handler: (...args: TransportEventMap[K]) => void
       ) => {
-        this._events.off(event, handler as ((...args: any[]) => void) & ((...args: TransportEventMap[K]) => void));
+        this._events.off(
+          event,
+          handler as ((...args: unknown[]) => void) &
+            ((...args: TransportEventMap[K]) => void)
+        );
+      },
+      once: <K extends keyof TransportEventMap>(
+        event: K,
+        handler: (...args: TransportEventMap[K]) => void
+      ) => {
+        this._events.once(
+          event,
+          handler as ((...args: unknown[]) => void) &
+            ((...args: TransportEventMap[K]) => void)
+        );
+      },
+      emit: <K extends keyof TransportEventMap>(
+        event: K,
+        ...args: TransportEventMap[K]
+      ) => {
+        return this._events.emit(event, ...args);
       },
     };
   }
@@ -79,21 +103,31 @@ export abstract class JsonRpcTransport implements McpTransport {
   /**
    * Subscribe to transport events.
    */
-  on<K extends keyof TransportEventMap>(
+  public on<K extends keyof TransportEventMap>(
     event: K,
-    handler: K extends 'connect' | 'disconnect' ? () => void : (...args: TransportEventMap[K]) => void
+    handler: (...args: TransportEventMap[K]) => void
   ): void {
-    this._events.on(event, handler as (...args: any[]) => void);
+    this._events.on(event, handler as (...args: unknown[]) => void);
   }
 
   /**
    * Unsubscribe from transport events.
    */
-  off<K extends keyof TransportEventMap>(
+  public once<K extends keyof TransportEventMap>(
     event: K,
-    handler: K extends 'connect' | 'disconnect' ? () => void : (...args: TransportEventMap[K]) => void
+    handler: (...args: TransportEventMap[K]) => void
   ): void {
-    this._events.off(event, handler as (...args: any[]) => void);
+    this._events.once(event, handler as (...args: unknown[]) => void);
+  }
+
+  /**
+   * Unsubscribe from transport events.
+   */
+  public off<K extends keyof TransportEventMap>(
+    event: K,
+    handler: (...args: TransportEventMap[K]) => void
+  ): void {
+    this._events.off(event, handler as (...args: unknown[]) => void);
   }
 
   /**

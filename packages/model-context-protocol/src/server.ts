@@ -7,35 +7,35 @@
 import { EventEmitter } from 'eventemitter3';
 import { VError } from 'verror';
 import type { Auth } from './auth';
-import type { McpTransport } from './transport';
 import {
-  LATEST_PROTOCOL_VERSION,
-  JSONRPC_VERSION,
-  type JSONRPCRequest,
-  type JSONRPCResponse,
-  type JSONRPCNotification,
-  type JSONRPCError,
-  type Result,
-  type Resource,
-  type ListResourcesResult,
-  type ReadResourceResult,
+  AuthError,
+  INTERNAL_ERROR,
+  InvalidRequestError,
+  McpError,
+  MethodNotFoundError,
+} from './errors';
+import {
+  type ClientCapabilities,
   type EmptyResult,
-  type Prompt,
-  type Tool,
-  type ServerCapabilities,
-  type LoggingLevel,
   type Implementation,
   type InitializeResult,
-  type ClientCapabilities,
+  type JSONRPCError,
+  type JSONRPCNotification,
+  type JSONRPCRequest,
+  type JSONRPCResponse,
+  JSONRPC_VERSION,
+  LATEST_PROTOCOL_VERSION,
+  type ListResourcesResult,
+  type LoggingLevel,
+  type Prompt,
   type PromptMessage,
+  type ReadResourceResult,
+  type Resource,
+  type Result,
+  type ServerCapabilities,
+  type Tool,
 } from './schema';
-import {
-  McpError,
-  AuthError,
-  InvalidRequestError,
-  MethodNotFoundError,
-  INTERNAL_ERROR,
-} from './errors';
+import type { McpTransport } from './transport';
 
 type MethodHandler = (params: unknown) => Promise<unknown>;
 
@@ -66,25 +66,47 @@ export class McpServer {
   private _transport: McpTransport | null = null;
   private _loggingLevel: LoggingLevel | null = null;
   private _initialized = false;
+  private readonly implementation: Implementation;
+  private readonly serverCapabilities: ServerCapabilities;
+  private readonly auth?: Auth;
 
   constructor(
-    private readonly implementation: Implementation,
-    private readonly serverCapabilities: ServerCapabilities = {},
-    private readonly auth?: Auth
+    implementation: Implementation,
+    serverCapabilities: ServerCapabilities = {},
+    auth?: Auth
   ) {
+    this.implementation = implementation;
+    this.serverCapabilities = serverCapabilities;
+    this.auth = auth;
+
     // Register built-in methods
-    this.registerMethod('initialize', async (params: unknown) => await this.handleInitialize(params));
+    this.registerMethod('initialize', (params: unknown) =>
+      this.handleInitialize(params)
+    );
     this.registerMethod('ping', async () => ({}));
-    
+
     if (serverCapabilities.logging) {
-      this.registerMethod('logging/setLevel', async (params: unknown) => await this.handleSetLoggingLevel(params));
+      this.registerMethod(
+        'logging/setLevel',
+        async (params: unknown) => await this.handleSetLoggingLevel(params)
+      );
     }
-    
+
     if (serverCapabilities.resources) {
-      this.registerMethod('resources/list', async () => await this.handleListResources());
-      this.registerMethod('resources/read', async (params: unknown) => await this.handleReadResource(params));
-      this.registerMethod('resources/subscribe', async (params: unknown) => await this.handleSubscribeResource(params));
-      this.registerMethod('resources/unsubscribe', async (params: unknown) => await this.handleUnsubscribeResource(params));
+      this.registerMethod('resources/list', async () =>
+        this.handleListResources()
+      );
+      this.registerMethod('resources/read', async (params: unknown) =>
+        this.handleReadResource(params)
+      );
+      this.registerMethod(
+        'resources/subscribe',
+        async (params: unknown) => await this.handleSubscribeResource(params)
+      );
+      this.registerMethod(
+        'resources/unsubscribe',
+        async (params: unknown) => await this.handleUnsubscribeResource(params)
+      );
     }
   }
 
@@ -126,12 +148,15 @@ export class McpServer {
   ): void {
     const wrappedHandler = async (params: unknown) => {
       if (roles && this.auth) {
-        const { token, ...rest } = params as { token?: string } & Record<string, unknown>;
+        const { token, ...rest } = params as { token?: string } & Record<
+          string,
+          unknown
+        >;
         if (!token) {
           throw new AuthError('Authentication token required');
         }
         const payload = await this.auth.validateToken(token);
-        if (!roles.every(role => payload.roles.includes(role))) {
+        if (!roles.every((role) => payload.roles.includes(role))) {
           throw new AuthError('Insufficient permissions');
         }
         return handler(rest);
@@ -145,46 +170,92 @@ export class McpServer {
   }
 
   /**
+   * Validate message format
+   */
+  private validateMessage(message: unknown): JSONRPCRequest {
+    if (
+      typeof message !== 'object' ||
+      message === null ||
+      !('jsonrpc' in message)
+    ) {
+      throw new InvalidRequestError('Invalid message format');
+    }
+
+    const msg = message as JSONRPCRequest;
+    if (!msg.method) {
+      throw new InvalidRequestError('Missing method');
+    }
+
+    return msg;
+  }
+
+  /**
+   * Get method handler
+   */
+  private getMethodHandler(method: string): MethodHandler {
+    const handler = this._methods.get(method);
+    if (!handler) {
+      throw new MethodNotFoundError(`Method not found: ${method}`);
+    }
+    return handler;
+  }
+
+  /**
+   * Send success response
+   */
+  private sendSuccessResponse(
+    id: string | number | null,
+    result: unknown
+  ): Promise<void> {
+    if (id === null) {
+      return Promise.resolve();
+    }
+    return (
+      this._transport?.send({
+        jsonrpc: JSONRPC_VERSION,
+        id,
+        result: result as Result,
+      } satisfies JSONRPCResponse) ?? Promise.resolve()
+    );
+  }
+
+  /**
+   * Send error response
+   */
+  private sendErrorResponse(
+    id: string | number | null,
+    error: unknown
+  ): Promise<void> {
+    if (id === null) {
+      return Promise.resolve();
+    }
+    const errorResponse: JSONRPCError = {
+      jsonrpc: JSONRPC_VERSION,
+      id,
+      error: {
+        code: error instanceof McpError ? error.code : INTERNAL_ERROR,
+        message: error instanceof Error ? error.message : String(error),
+        data: error instanceof McpError ? error.data : undefined,
+      },
+    };
+    return this._transport?.send(errorResponse) ?? Promise.resolve();
+  }
+
+  /**
    * Handle incoming messages
    */
   private async handleMessage(message: unknown): Promise<void> {
-    await Promise.resolve();
     try {
-      if (typeof message !== 'object' || message === null || !('jsonrpc' in message)) {
-        throw new InvalidRequestError('Invalid message format');
-      }
-
-      const msg = message as JSONRPCRequest;
-      if (!msg.method) {
-        throw new InvalidRequestError('Missing method');
-      }
-
-      const handler = this._methods.get(msg.method);
-      if (!handler) {
-        throw new MethodNotFoundError(`Method not found: ${msg.method}`);
-      }
-
-      const result = await handler(msg.params);
-      if ('id' in msg) {
-        void this._transport?.send({
-          jsonrpc: JSONRPC_VERSION,
-          id: msg.id,
-          result: result as Result,
-        } satisfies JSONRPCResponse);
-      }
+      const request = this.validateMessage(message);
+      const handler = this.getMethodHandler(request.method);
+      const result = await handler(request.params);
+      await this.sendSuccessResponse(request.id ?? null, result);
     } catch (error) {
-      if (typeof message === 'object' && message !== null && 'id' in message) {
-        const errorResponse: JSONRPCError = {
-          jsonrpc: JSONRPC_VERSION,
-          id: (message as { id: string | number }).id,
-          error: {
-            code: error instanceof McpError ? error.code : INTERNAL_ERROR,
-            message: error instanceof Error ? error.message : String(error),
-            data: error instanceof McpError ? error.data : undefined,
-          },
-        };
-        void this._transport?.send(errorResponse);
-      }
+      const id =
+        typeof message === 'object' && message !== null && 'id' in message
+          ? ((message as { id?: string | number | null }).id ?? null)
+          : null;
+      await this.sendErrorResponse(id, error);
     }
   }
 
@@ -197,76 +268,140 @@ export class McpServer {
     await transport.connect();
   }
 
-  private async handleInitialize(params: unknown): Promise<InitializeResult> {
-    if (this._initialized) {
-      throw new VError('Server already initialized');
+  private handleInitialize(params: unknown): Promise<InitializeResult> {
+    if (!this._transport) {
+      throw new VError('Transport not initialized');
     }
 
-    const { protocolVersion, capabilities: clientCapabilities } = params as {
+    // Validate params
+    const { protocolVersion } = params as {
       protocolVersion: string;
+      clientInfo: { name: string; version: string };
       capabilities: ClientCapabilities;
     };
 
+    // Check protocol version compatibility
     if (protocolVersion !== LATEST_PROTOCOL_VERSION) {
       throw new VError(
-        'Protocol version mismatch. Server: %s, Client: %s',
-        LATEST_PROTOCOL_VERSION,
-        protocolVersion
+        `Protocol version mismatch. Server: ${LATEST_PROTOCOL_VERSION}, Client: ${protocolVersion}`
       );
     }
 
     this._initialized = true;
 
-    return {
+    return Promise.resolve({
       protocolVersion: LATEST_PROTOCOL_VERSION,
-      serverInfo: this.implementation,
-      capabilities: this.capabilities,
-    };
+      serverInfo: {
+        name: this.implementation.name,
+        version: this.implementation.version,
+      },
+      capabilities: this.serverCapabilities,
+    });
   }
 
-  private async handleSetLoggingLevel(params: unknown): Promise<EmptyResult> {
+  private handleSetLoggingLevel(params: unknown): Promise<EmptyResult> {
     const { level } = params as { level: LoggingLevel };
     this._loggingLevel = level;
-    return {};
+    return Promise.resolve({});
   }
 
-  private async handleListResources(): Promise<ListResourcesResult> {
-    return {
-      resources: Array.from(this._resources.values()),
-    };
+  private handleListResources(): Promise<ListResourcesResult> {
+    if (!this.serverCapabilities.resources) {
+      return Promise.reject(new Error('Resources not supported'));
+    }
+
+    return Promise.resolve({
+      resources: this.serverCapabilities.resources,
+    });
   }
 
-  private async handleReadResource(params: unknown): Promise<ReadResourceResult> {
-    const { uri } = params as { uri: string };
-    const resource = this._resources.get(uri);
+  private handleReadResource(params: unknown): Promise<ReadResourceResult> {
+    if (!this.serverCapabilities.resources) {
+      return Promise.reject(new Error('Resources not supported'));
+    }
+
+    const readResourceParams = parseReadResourceParams(params);
+    if (!readResourceParams) {
+      return Promise.reject(new Error('Invalid read resource params'));
+    }
+
+    const resource = this.serverCapabilities.resources.find(
+      (r) => r.uri === readResourceParams.uri
+    );
     if (!resource) {
-      throw new VError('Resource not found: ' + uri);
+      return Promise.reject(new Error('Resource not found'));
     }
-    return {
-      contents: [{
-        uri: resource.uri,
-        mimeType: resource.mimeType ?? 'application/json',
-        text: JSON.stringify(resource),
-      }],
+
+    return Promise.resolve({
+      resource,
+    });
+  }
+
+  private handleSubscribeResource(params: unknown): Promise<EmptyResult> {
+    const { name } = params as { name: string };
+    if (!this._resources.has(name)) {
+      throw new VError(`Resource not found: ${name}`);
+    }
+    this._resourceSubscriptions.add(name);
+    return Promise.resolve({});
+  }
+
+  private handleUnsubscribeResource(params: unknown): Promise<EmptyResult> {
+    const { name } = params as { name: string };
+    this._resourceSubscriptions.delete(name);
+    return Promise.resolve({});
+  }
+
+  /**
+   * Send a notification to all connected clients
+   */
+  private async sendNotification(
+    method: string,
+    params?: { [key: string]: unknown; _meta?: { [key: string]: unknown } }
+  ): Promise<void> {
+    if (!this._transport) {
+      return;
+    }
+    const notification: JSONRPCNotification = {
+      jsonrpc: JSONRPC_VERSION,
+      method,
+      params,
     };
+    await this._transport.send(notification);
   }
 
-  private async handleSubscribeResource(params: unknown): Promise<EmptyResult> {
-    const { uri } = params as { uri: string };
-    if (!this._resources.has(uri)) {
-      throw new VError('Resource not found: ' + uri);
-    }
-    this._resourceSubscriptions.add(uri);
-    return {};
+  /**
+   * Send a progress notification
+   */
+  private async sendProgress(
+    token: string,
+    progress: number,
+    total: number
+  ): Promise<void> {
+    await this.sendNotification('notifications/progress', {
+      token,
+      progress,
+      total,
+    });
   }
 
-  private async handleUnsubscribeResource(params: unknown): Promise<EmptyResult> {
-    const { uri } = params as { uri: string };
-    if (!this._resources.has(uri)) {
-      throw new VError('Resource not found: ' + uri);
+  /**
+   * Send a cancellation notification
+   */
+  private async sendCancellation(requestId: string): Promise<void> {
+    await this.sendNotification('notifications/cancelled', { requestId });
+  }
+
+  /**
+   * Send a resource change notification
+   */
+  private async sendResourceChange(
+    name: string,
+    content: unknown
+  ): Promise<void> {
+    if (this._resourceSubscriptions.has(name)) {
+      await this.sendNotification('notifications/resource', { name, content });
     }
-    this._resourceSubscriptions.delete(uri);
-    return {};
   }
 
   /**
@@ -274,7 +409,7 @@ export class McpServer {
    */
   public registerTool(tool: Tool): void {
     if (this._tools.has(tool.name)) {
-      throw new VError('Tool already registered: %s', tool.name);
+      throw new VError(`Tool already registered: ${tool.name}`);
     }
     this._tools.set(tool.name, tool);
   }
@@ -284,24 +419,9 @@ export class McpServer {
    */
   public registerPrompt(prompt: Prompt): void {
     if (this._prompts.has(prompt.name)) {
-      throw new VError('Prompt already registered: %s', prompt.name);
+      throw new VError(`Prompt already registered: ${prompt.name}`);
     }
     this._prompts.set(prompt.name, prompt);
-  }
-
-  /**
-   * Send a notification to all connected clients
-   */
-  private async sendNotification(method: string, params: Record<string, unknown>): Promise<void> {
-    await Promise.resolve();
-    if (!this._transport) {
-      return;
-    }
-    await this._transport.send({
-      jsonrpc: JSONRPC_VERSION,
-      method,
-      params,
-    } satisfies JSONRPCNotification);
   }
 
   /**
@@ -321,31 +441,33 @@ export class McpServer {
     }
   }
 
-  public async sendLogMessage(level: LoggingLevel, data: unknown): Promise<void> {
-    await Promise.resolve();
-    if (!this._transport || !this._loggingLevel) return;
+  public sendLogMessage(
+    level: LoggingLevel,
+    message: string,
+    details?: Record<string, unknown>
+  ): void {
+    if (!this._transport) {
+      return;
+    }
 
-    const levels: LoggingLevel[] = [
-      'debug',
-      'info',
-      'notice',
-      'warning',
-      'error',
-      'critical',
-      'alert',
-      'emergency',
-    ];
+    const currentLevelIndex = this.loggingLevelIndex;
+    if (currentLevelIndex === -1) {
+      return;
+    }
 
-    const currentLevelIndex = levels.indexOf(this._loggingLevel);
-    const messageLevelIndex = levels.indexOf(level);
+    const messageLevelIndex = this.getLoggingLevelIndex(level);
+    if (messageLevelIndex === -1) {
+      return;
+    }
 
     if (messageLevelIndex >= currentLevelIndex) {
-      void this._transport.send({
+      this._transport.send({
         jsonrpc: JSONRPC_VERSION,
-        method: 'notifications/message',
+        method: 'logging/message',
         params: {
           level,
-          data,
+          message,
+          details,
         },
       } satisfies JSONRPCNotification);
     }
@@ -355,7 +477,11 @@ export class McpServer {
     this._prompts.set(prompt.name, prompt);
   }
 
-  public tool(name: string, schema: unknown, handler: (params: unknown) => Promise<unknown>): void {
+  public tool(
+    name: string,
+    _schema: unknown,
+    handler: (params: unknown) => Promise<unknown>
+  ): void {
     const tool: Tool = {
       name,
       inputSchema: {
@@ -369,16 +495,16 @@ export class McpServer {
 
   public resource(resource: Resource): void {
     this._resources.set(resource.uri, resource);
-    
+
     if (this._transport && this.capabilities.resources?.listChanged) {
-      void this._transport.send({
+      this._transport.send({
         jsonrpc: JSONRPC_VERSION,
         method: 'notifications/resources/list_changed',
       } satisfies JSONRPCNotification);
     }
 
     if (this._resourceSubscriptions.has(resource.uri)) {
-      void this._transport?.send({
+      this._transport?.send({
         jsonrpc: JSONRPC_VERSION,
         method: 'notifications/resources/updated',
         params: {
@@ -390,12 +516,25 @@ export class McpServer {
 
   public async disconnect(): Promise<void> {
     if (this._transport) {
-      void this._transport.send({
-        jsonrpc: JSONRPC_VERSION,
-        method: 'disconnect',
-      } satisfies JSONRPCNotification);
       await this._transport.disconnect();
       this._transport = null;
     }
+    // Reset server state
+    this._initialized = false;
+    this._loggingLevel = null;
+    this._resourceSubscriptions.clear();
   }
+}
+
+function parseReadResourceParams(params: unknown): { uri: string } | null {
+  if (!params || typeof params !== 'object' || !('uri' in params)) {
+    return null;
+  }
+
+  const uri = params.uri;
+  if (typeof uri !== 'string') {
+    return null;
+  }
+
+  return { uri };
 }

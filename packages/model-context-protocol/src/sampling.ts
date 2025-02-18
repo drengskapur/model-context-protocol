@@ -5,32 +5,32 @@
  */
 
 import {
-  object,
-  string,
-  number,
   array,
-  union,
-  literal,
-  optional,
-  minValue,
-  maxValue,
-  parse,
-  enumType,
-  minLength,
   custom,
+  enumType,
+  literal,
+  maxValue,
+  minLength,
+  minValue,
+  number,
+  object,
+  optional,
+  parse,
+  string,
+  union,
 } from 'valibot';
+import { VError } from 'verror';
+import type { McpClient } from './client';
 import { McpError } from './errors';
 import type {
   CreateMessageRequest,
-  ModelPreferences,
-  SamplingMessage,
-  Role,
   CreateMessageResult,
-  TextContent,
   ImageContent,
+  ModelPreferences,
+  Role,
+  SamplingMessage,
+  TextContent,
 } from './schema';
-import type { McpClient } from './client';
-import { VError } from 'verror';
 
 /**
  * Sampling options for message generation.
@@ -236,7 +236,7 @@ export abstract class BaseSamplingClient implements SamplingClient {
   respondToSampling(
     role: Role,
     content: string,
-    name?: string,
+    _name?: string,
     metadata?: Record<string, unknown>
   ): Promise<SamplingResponse> {
     const message: SamplingMessage = {
@@ -262,7 +262,9 @@ const contentSchema = union([
   }),
   object({
     type: literal('image'),
-    mimeType: string([custom((value) => value.startsWith('image/'), 'Invalid image MIME type')]),
+    mimeType: string([
+      custom((value) => value.startsWith('image/'), 'Invalid image MIME type'),
+    ]),
     data: string([minLength(1)]),
   }),
 ]);
@@ -275,7 +277,11 @@ const messageSchema = object({
 });
 
 export class Sampling {
-  constructor(private readonly client: McpClient) {}
+  private readonly client: McpClient;
+
+  constructor(client: McpClient) {
+    this.client = client;
+  }
 
   /**
    * Creates a message using sampling.
@@ -322,7 +328,7 @@ export class Sampling {
     try {
       await Promise.resolve(); // Add minimal await
       parse(contentSchema, content);
-      
+
       return {
         role: 'assistant',
         content,

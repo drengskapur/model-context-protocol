@@ -4,7 +4,7 @@
  * Contains unit tests for core transport functionality and event handling.
  */
 
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BaseTransport } from './base';
 import type { JSONRPCMessage, JSONRPCRequest } from './schema';
 import { JSONRPC_VERSION } from './schema';
@@ -34,7 +34,10 @@ class TestBaseTransport extends BaseTransport {
     await Promise.resolve(this.setConnected(false));
   }
 
-  async request<T>(method: string, params?: Record<string, unknown>): Promise<T> {
+  async request<T>(
+    method: string,
+    params?: Record<string, unknown>
+  ): Promise<T> {
     if (this.shouldFail) {
       throw new Error('Request failed');
     }
@@ -42,7 +45,7 @@ class TestBaseTransport extends BaseTransport {
       jsonrpc: JSONRPC_VERSION,
       id: '1',
       method,
-      params: params || {}
+      params: params || {},
     };
     await this.send(request);
     return {} as T;
@@ -107,7 +110,7 @@ describe('BaseTransport', () => {
         jsonrpc: JSONRPC_VERSION,
         id: '1',
         method: 'test',
-        params: {}
+        params: {},
       };
 
       transport.simulateMessage(testMessage);
@@ -132,7 +135,7 @@ describe('BaseTransport', () => {
         jsonrpc: JSONRPC_VERSION,
         id: '1',
         method: 'test',
-        params: {}
+        params: {},
       };
 
       transport.simulateMessage(testMessage);
@@ -147,7 +150,7 @@ describe('BaseTransport', () => {
       expect(transport.messages[0]).toMatchObject({
         jsonrpc: JSONRPC_VERSION,
         method: 'test',
-        params: { foo: 'bar' }
+        params: { foo: 'bar' },
       });
     });
 
@@ -161,7 +164,7 @@ describe('BaseTransport', () => {
       expect(transport.messages[0]).toMatchObject({
         jsonrpc: JSONRPC_VERSION,
         method: 'test',
-        params: {}
+        params: {},
       });
     });
   });
@@ -172,7 +175,7 @@ describe('BaseTransport', () => {
         jsonrpc: JSONRPC_VERSION,
         id: '1',
         method: 'test',
-        params: {}
+        params: {},
       };
 
       await transport.send(testMessage);
@@ -185,10 +188,10 @@ describe('BaseTransport', () => {
         jsonrpc: JSONRPC_VERSION,
         id: '1',
         method: 'test',
-        params: {}
+        params: {},
       };
 
       await expect(transport.send(testMessage)).rejects.toThrow('Send failed');
     });
   });
-}); 
+});

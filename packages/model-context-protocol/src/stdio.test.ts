@@ -1,8 +1,8 @@
 import { Readable, Writable } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { StdioTransport } from './stdio';
-import type { JSONRPCRequest, JSONRPCResponse } from './schema';
+import type { JSONRPCRequest } from './schema';
 import { JSONRPC_VERSION } from './schema';
+import { StdioTransport } from './stdio';
 
 const ALREADY_CONNECTED_REGEX = /already connected/;
 const WRITE_ERROR_REGEX = /Write error/;

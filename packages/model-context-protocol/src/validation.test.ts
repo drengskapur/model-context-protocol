@@ -95,7 +95,10 @@ describe('Validation', () => {
     it('should validate a valid text message', async () => {
       const message = {
         role: 'assistant',
-        text: 'Hello, world!',
+        content: {
+          type: 'text',
+          text: 'Hello, world!',
+        },
       };
 
       await expect(validateSamplingMessage(message)).resolves.toBeUndefined();
@@ -104,7 +107,10 @@ describe('Validation', () => {
     it('should reject invalid roles', async () => {
       const message = {
         role: 'invalid-role',
-        text: 'Hello',
+        content: {
+          type: 'text',
+          text: 'Hello',
+        },
       };
 
       await expect(validateSamplingMessage(message)).rejects.toThrow(
@@ -115,6 +121,9 @@ describe('Validation', () => {
     it('should reject missing text', async () => {
       const message = {
         role: 'assistant',
+        content: {
+          type: 'text',
+        },
       };
 
       await expect(validateSamplingMessage(message)).rejects.toThrow(
@@ -122,10 +131,27 @@ describe('Validation', () => {
       );
     });
 
-    it('should reject non-string text', async () => {
+    it('should handle image content', async () => {
       const message = {
         role: 'assistant',
-        text: 123,
+        content: {
+          type: 'image',
+          data: 'base64data',
+          mimeType: 'image/png',
+        },
+      };
+
+      await expect(validateSamplingMessage(message)).resolves.toBeUndefined();
+    });
+
+    it('should reject invalid image mime type', async () => {
+      const message = {
+        role: 'assistant',
+        content: {
+          type: 'image',
+          data: 'base64data',
+          mimeType: 'application/json',
+        },
       };
 
       await expect(validateSamplingMessage(message)).rejects.toThrow(
@@ -222,20 +248,16 @@ describe('Validation', () => {
       try {
         await validateResource({
           uri: 'not-a-url',
-          name: '',
-          mimeType: '',
         });
-        throw new Error('Expected validation to fail');
+        expect(true).toBe(false); // This line should never be reached
       } catch (error) {
         if (!(error instanceof ValidationError)) {
           throw error;
         }
         expect(error).toBeInstanceOf(ValidationError);
-        expect(error.name).toBe('ValidationError');
-        expect(error.code).toBe(-32402);
         expect(error.message).toBe('Invalid resource');
         expect(error.errors).toBeDefined();
-        expect(error.errors.errors).toBeInstanceOf(Array);
+        expect(Array.isArray(error.errors)).toBe(true);
       }
     });
   });

@@ -5,23 +5,23 @@
  */
 
 import {
-  type ValiError,
   type BaseSchema,
   type Input,
+  type ValiError,
+  array,
+  custom,
   enumType,
+  integer,
+  literal,
+  maxValue,
+  minLength,
+  minValue,
   number,
   object,
-  string,
-  array,
-  parse,
   optional,
-  minValue,
-  maxValue,
-  integer,
+  parse,
+  string,
   union,
-  literal,
-  custom,
-  minLength,
 } from 'valibot';
 import { McpError } from './errors';
 
@@ -142,14 +142,17 @@ export function validateSamplingOptions(options: unknown): {
  */
 export async function validateResource(resource: unknown): Promise<void> {
   const schema = object({
-    uri: string([minLength(1), custom((value) => {
-      try {
-        new URL(value);
-        return true;
-      } catch {
-        return false;
-      }
-    }, 'Invalid URI')]),
+    uri: string([
+      minLength(1),
+      custom((value) => {
+        try {
+          new URL(value);
+          return true;
+        } catch {
+          return false;
+        }
+      }, 'Invalid URI'),
+    ]),
     name: string([minLength(1)]),
     description: optional(string()),
     mimeType: optional(string([minLength(1)])),
@@ -208,9 +211,11 @@ export async function validateSamplingMessage(message: unknown): Promise<void> {
       object({
         type: literal('image'),
         data: string(),
-        mimeType: string([custom((value) => {
-          return value.startsWith('image/');
-        }, 'Invalid image MIME type')]),
+        mimeType: string([
+          custom((value) => {
+            return value.startsWith('image/');
+          }, 'Invalid image MIME type'),
+        ]),
       }),
     ]),
     name: optional(string()),

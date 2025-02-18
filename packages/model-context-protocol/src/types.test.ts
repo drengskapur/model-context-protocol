@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { CallToolResult, McpError, McpMessage, McpTool } from './types';
-import { isSuccess, isFailure } from './types';
+import { isFailure, isSuccess } from './types';
 import type { Result } from './types';
 
 describe('MCP Types', () => {
@@ -68,7 +68,7 @@ describe('Type Utilities', () => {
     it('should return true for successful results', () => {
       const result: Result<number> = {
         success: true,
-        value: 42
+        value: 42,
       };
       expect(isSuccess(result)).toBe(true);
     });
@@ -76,7 +76,7 @@ describe('Type Utilities', () => {
     it('should return false for failed results', () => {
       const result: Result<number> = {
         success: false,
-        error: { code: -1, message: 'Test error' }
+        error: { code: -1, message: 'Test error' },
       };
       expect(isSuccess(result)).toBe(false);
     });
@@ -84,7 +84,7 @@ describe('Type Utilities', () => {
     it('should properly narrow the type', () => {
       const result: Result<number> = {
         success: true,
-        value: 42
+        value: 42,
       };
 
       if (isSuccess(result)) {
@@ -98,7 +98,7 @@ describe('Type Utilities', () => {
     it('should return true for failed results', () => {
       const result: Result<number> = {
         success: false,
-        error: { code: -1, message: 'Test error' }
+        error: { code: -1, message: 'Test error' },
       };
       expect(isFailure(result)).toBe(true);
     });
@@ -106,7 +106,7 @@ describe('Type Utilities', () => {
     it('should return false for successful results', () => {
       const result: Result<number> = {
         success: true,
-        value: 42
+        value: 42,
       };
       expect(isFailure(result)).toBe(false);
     });
@@ -115,7 +115,7 @@ describe('Type Utilities', () => {
       const error = { code: -1, message: 'Test error' };
       const result: Result<number> = {
         success: false,
-        error
+        error,
       };
 
       if (isFailure(result)) {
@@ -129,19 +129,19 @@ describe('Type Utilities', () => {
     it('should work with different value types', () => {
       const stringResult: Result<string> = {
         success: true,
-        value: 'test'
+        value: 'test',
       };
       expect(isSuccess(stringResult)).toBe(true);
 
       const numberResult: Result<number> = {
         success: true,
-        value: 42
+        value: 42,
       };
       expect(isSuccess(numberResult)).toBe(true);
 
       const objectResult: Result<{ foo: string }> = {
         success: true,
-        value: { foo: 'bar' }
+        value: { foo: 'bar' },
       };
       expect(isSuccess(objectResult)).toBe(true);
     });
@@ -149,19 +149,19 @@ describe('Type Utilities', () => {
     it('should work with different error types', () => {
       const standardError: Result<string> = {
         success: false,
-        error: { code: -1, message: 'Standard error' }
+        error: { code: -1, message: 'Standard error' },
       };
       expect(isFailure(standardError)).toBe(true);
 
       const customError: Result<string, string> = {
         success: false,
-        error: 'Custom error'
+        error: 'Custom error',
       };
       expect(isFailure(customError)).toBe(true);
 
       const objectError: Result<string, { code: number; message: string }> = {
         success: false,
-        error: { code: 404, message: 'Not found' }
+        error: { code: 404, message: 'Not found' },
       };
       expect(isFailure(objectError)).toBe(true);
     });

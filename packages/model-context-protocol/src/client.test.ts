@@ -7,13 +7,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { McpClient } from './client.js';
 import { InMemoryTransport } from './in-memory.js';
-import { 
-  JSONRPC_VERSION, 
-  LATEST_PROTOCOL_VERSION,
+import {
+  type JSONRPCNotification,
   type JSONRPCRequest,
   type JSONRPCResponse,
-  type JSONRPCNotification,
-  type JSONRPCMessage
+  JSONRPC_VERSION,
+  LATEST_PROTOCOL_VERSION,
 } from './schema.js';
 import { McpServer } from './server.js';
 
@@ -26,8 +25,10 @@ describe('McpClient', () => {
   let server: McpServer;
 
   beforeEach(async () => {
+    // Create fresh transport pair for each test
     [clientTransport, serverTransport] = InMemoryTransport.createPair();
 
+    // Create fresh client and server instances
     client = new McpClient(
       {
         name: 'test-client',
@@ -42,96 +43,32 @@ describe('McpClient', () => {
       version: '1.0.0',
     });
 
+    // Connect server first
     await server.connect(serverTransport);
-
-    // Start client connection
-    const connectPromise = client.connect();
-
-    // Wait for transport connection
-    await Promise.resolve();
-
-    // Simulate server response to initialize request
-    const response: JSONRPCResponse = {
-      jsonrpc: JSONRPC_VERSION,
-      id: clientTransport.getMessages()[0].id,
-      result: {
-        protocolVersion: LATEST_PROTOCOL_VERSION,
-        serverInfo: {
-          name: 'test-server',
-          version: '1.0.0',
-        },
-        capabilities: {},
-      },
-    };
-    await serverTransport.simulateIncomingMessage(response);
-
-    // Wait for initialization to complete
-    await connectPromise;
   });
 
   afterEach(async () => {
+    // Clean up in reverse order
+    if (client.isInitialized()) {
+      await client.disconnect();
+    }
+    if (server) {
+      await server.disconnect();
+    }
     await clientTransport.close();
     await serverTransport.close();
   });
 
   it('should initialize successfully', async () => {
-    // Create a new client for this test since we don't want the beforeEach initialization
-    [clientTransport, serverTransport] = InMemoryTransport.createPair();
+    await client.connect();
 
-    client = new McpClient(
-      {
-        name: 'test-client',
-        version: '1.0.0',
-        requestTimeout: 1000,
-      },
-      clientTransport
-    );
-
-    server = new McpServer({
+    expect(client.isInitialized()).toBe(true);
+    const serverCapabilities = client.getServerCapabilities();
+    expect(serverCapabilities).toBeDefined();
+    expect(serverCapabilities).toMatchObject({
       name: 'test-server',
       version: '1.0.0',
     });
-
-    await server.connect(serverTransport);
-
-    // Start the connection
-    const connectPromise = client.connect();
-
-    // Wait a tick for the message to be sent
-    await Promise.resolve();
-
-    // Get the initialization message
-    const messages = clientTransport.getMessages();
-    expect(messages).toHaveLength(1);
-    expect(messages[0]).toMatchObject({
-      jsonrpc: JSONRPC_VERSION,
-      id: expect.any(String),
-      method: 'initialize',
-      params: {
-        protocolVersion: LATEST_PROTOCOL_VERSION,
-        clientInfo: {
-          name: 'test-client',
-          version: '1.0.0',
-        },
-        capabilities: {},
-      },
-    });
-
-    // Simulate successful response
-    await serverTransport.simulateIncomingMessage({
-      jsonrpc: JSONRPC_VERSION,
-      id: messages[0].id,
-      result: {
-        protocolVersion: LATEST_PROTOCOL_VERSION,
-        serverInfo: {
-          name: 'test-server',
-          version: '1.0.0',
-        },
-        capabilities: {},
-      },
-    });
-
-    await connectPromise;
   });
 
   it('should handle request cancellation', async () => {
@@ -688,7 +625,7 @@ describe('McpClient', () => {
     await Promise.resolve();
 
     const messages = clientTransport.getMessages();
-    const request = messages.at(-1) as JSONRPCRequest;
+    const _request = messages.at(-1) as JSONRPCRequest;
 
     // Simulate response with wrong id
     await clientTransport.simulateIncomingMessage({

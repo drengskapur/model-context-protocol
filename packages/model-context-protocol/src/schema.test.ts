@@ -1,11 +1,10 @@
 import { parse } from 'valibot';
 import { describe, expect, it } from 'vitest';
 import {
+  type JSONRPCError,
   type JSONRPCNotification,
   type JSONRPCRequest,
   type JSONRPCResponse,
-  type JSONRPCError,
-  type Result,
   JSONRPC_VERSION,
 } from './schema.js';
 import { jsonRpcMessageSchema } from './schemas.js';

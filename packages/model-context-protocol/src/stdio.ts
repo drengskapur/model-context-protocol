@@ -111,23 +111,26 @@ export class StdioTransport extends BaseTransport {
    * Sends a message through stdout.
    * @param message Message to send
    */
-  async send(message: any): Promise<void> {
+  async send(message: unknown): Promise<void> {
     if (!this.isConnected()) {
       throw new VError('Transport not connected');
     }
 
     try {
-      const data = `${JSON.stringify(message)}${this.options.separator}`;
+      const data = JSON.stringify(message) + this.options.separator;
       await new Promise<void>((resolve, reject) => {
         this.output.write(data, (error) => {
           if (error) {
-            reject(new VError(error, 'Write error'));
+            reject(new VError('Write error'));
           } else {
             resolve();
           }
         });
       });
     } catch (error) {
+      if (error instanceof VError && error.message === 'Write error') {
+        throw error;
+      }
       throw new VError(error as Error, 'Failed to send message');
     }
   }

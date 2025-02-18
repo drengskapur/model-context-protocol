@@ -1,10 +1,3 @@
-/**
- * @file transport.test.ts
- * @description Test suite for the Model Context Protocol transport layer.
- * Contains unit tests for message transport and connection handling.
- */
-
-import { EventEmitter } from 'eventemitter3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { JSONRPCMessage, JSONRPCRequest, JSONRPCResponse } from './schema';
 import { JSONRPC_VERSION } from './schema';
@@ -18,6 +11,7 @@ class TestTransport extends BaseTransport {
     if (this.shouldFail) {
       throw new Error('Send failed');
     }
+    await Promise.resolve();
     this.messages.push(message);
     this._events.emit('message', message);
   }
@@ -71,7 +65,7 @@ describe('BaseTransport', () => {
   afterEach(async () => {
     try {
       await transport.close();
-    } catch (error) {
+    } catch (_error) {
       // Ignore cleanup errors
     }
   });
