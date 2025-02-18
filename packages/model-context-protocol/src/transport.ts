@@ -6,17 +6,22 @@
 
 import { EventEmitter } from 'eventemitter3';
 import { JSONRPCClient, JSONRPCServer } from 'json-rpc-2.0';
-import type { JSONRPCMessage, JSONRPCRequest, JSONRPCResponse, RequestId } from './schema.js';
+import type {
+  JSONRPCMessage,
+  JSONRPCRequest,
+  JSONRPCResponse,
+  RequestId,
+} from './schema.js';
 import { VError } from 'verror';
 
 /**
  * Event types for transport events
  */
 export type TransportEventMap = {
-  message: [JSONRPCRequest | (Omit<JSONRPCResponse, 'id'> & { id: RequestId })];
-  error: [Error];
-  connect: [];
-  disconnect: [];
+  message: [message: JSONRPCRequest | (Omit<JSONRPCResponse, 'id'> & { id: RequestId })];
+  error: [error: Error];
+  connect: never[];
+  disconnect: never[];
 };
 
 /**
@@ -30,7 +35,7 @@ export interface BaseEventEmitter {
    */
   on<K extends keyof TransportEventMap>(
     event: K,
-    handler: (...args: TransportEventMap[K]) => void
+    handler: K extends 'connect' | 'disconnect' ? () => void : (...args: TransportEventMap[K]) => void
   ): void;
 
   /**
@@ -40,7 +45,7 @@ export interface BaseEventEmitter {
    */
   off<K extends keyof TransportEventMap>(
     event: K,
-    handler: (...args: TransportEventMap[K]) => void
+    handler: K extends 'connect' | 'disconnect' ? () => void : (...args: TransportEventMap[K]) => void
   ): void;
 }
 
@@ -69,7 +74,7 @@ export interface McpTransport {
    */
   on<K extends keyof TransportEventMap>(
     event: K,
-    handler: (...args: TransportEventMap[K]) => void
+    handler: K extends 'connect' | 'disconnect' ? () => void : (...args: TransportEventMap[K]) => void
   ): void;
 
   /**
@@ -77,7 +82,7 @@ export interface McpTransport {
    */
   off<K extends keyof TransportEventMap>(
     event: K,
-    handler: (...args: TransportEventMap[K]) => void
+    handler: K extends 'connect' | 'disconnect' ? () => void : (...args: TransportEventMap[K]) => void
   ): void;
 
   /**
@@ -124,16 +129,18 @@ export abstract class BaseTransport implements McpTransport {
   protected readonly _events: EventEmitter = new EventEmitter();
   public get events(): BaseEventEmitter {
     return {
-      on: <K extends keyof TransportEventMap>(event: K, handler: (...args: TransportEventMap[K]) => void) => {
-        this._events.on(event, (...args: any[]) => {
-          (handler as any)(...args);
-        });
+      on: <K extends keyof TransportEventMap>(
+        event: K,
+        handler: K extends 'connect' | 'disconnect' ? () => void : (...args: TransportEventMap[K]) => void
+      ) => {
+        this._events.on(event, handler);
       },
-      off: <K extends keyof TransportEventMap>(event: K, handler: (...args: TransportEventMap[K]) => void) => {
-        this._events.off(event, (...args: any[]) => {
-          (handler as any)(...args);
-        });
-      }
+      off: <K extends keyof TransportEventMap>(
+        event: K,
+        handler: K extends 'connect' | 'disconnect' ? () => void : (...args: TransportEventMap[K]) => void
+      ) => {
+        this._events.off(event, handler);
+      },
     };
   }
   protected connected = false;
@@ -170,11 +177,9 @@ export abstract class BaseTransport implements McpTransport {
    */
   on<K extends keyof TransportEventMap>(
     event: K,
-    handler: (...args: TransportEventMap[K]) => void
+    handler: K extends 'connect' | 'disconnect' ? () => void : (...args: TransportEventMap[K]) => void
   ): void {
-    this._events.on(event, (...args: any[]) => {
-      (handler as any)(...args);
-    });
+    this._events.on(event, handler);
   }
 
   /**
@@ -184,11 +189,9 @@ export abstract class BaseTransport implements McpTransport {
    */
   off<K extends keyof TransportEventMap>(
     event: K,
-    handler: (...args: TransportEventMap[K]) => void
+    handler: K extends 'connect' | 'disconnect' ? () => void : (...args: TransportEventMap[K]) => void
   ): void {
-    this._events.off(event, (...args: any[]) => {
-      (handler as any)(...args);
-    });
+    this._events.off(event, handler);
   }
 
   /**
@@ -236,10 +239,19 @@ export abstract class BaseTransport implements McpTransport {
    * Handles an incoming message.
    * @param message Message to handle
    */
-  protected async handleMessage(message: JSONRPCRequest | JSONRPCResponse): Promise<void> {
-    this._events.emit('message', message as JSONRPCRequest | (Omit<JSONRPCResponse, 'id'> & { id: RequestId }));
-    const promises = Array.from(this.messageHandlers).map(handler => 
-      handler(message).catch(error => this.handleError(new VError(error, 'Handler error')))
+  protected async handleMessage(
+    message: JSONRPCRequest | JSONRPCResponse
+  ): Promise<void> {
+    this._events.emit(
+      'message',
+      message as
+        | JSONRPCRequest
+        | (Omit<JSONRPCResponse, 'id'> & { id: RequestId })
+    );
+    const promises = Array.from(this.messageHandlers).map((handler) =>
+      handler(message).catch((error) =>
+        this.handleError(new VError(error, 'Handler error'))
+      )
     );
     await Promise.all(promises);
   }
@@ -255,7 +267,10 @@ export abstract class BaseTransport implements McpTransport {
         handler(error);
       } catch (handlerError) {
         // Log error but don't throw to avoid crashing the transport
-        this._events.emit('error', new VError(handlerError as Error, 'Error in error handler'));
+        this._events.emit(
+          'error',
+          new VError(handlerError as Error, 'Error in error handler')
+        );
       }
     }
   }
@@ -380,7 +395,9 @@ export class ErrorManager {
         handler(error);
       } catch (handlerError) {
         // Log error but don't throw to avoid crashing the transport
-        this.handleError(new VError(handlerError as Error, 'Error in error handler'));
+        this.handleError(
+          new VError(handlerError as Error, 'Error in error handler')
+        );
       }
     }
   }
@@ -439,7 +456,9 @@ export class RpcServer {
       if (this.isJsonRpcRequest(message)) {
         const response = await this.rpcServer.receive(message);
         if (response) {
-          const validResponse = response as Omit<JSONRPCResponse, 'id'> & { id: RequestId };
+          const validResponse = response as Omit<JSONRPCResponse, 'id'> & {
+            id: RequestId;
+          };
           await this.transport.send(validResponse);
         }
       }

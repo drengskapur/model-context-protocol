@@ -7,8 +7,17 @@
 import { EventEmitter } from 'eventemitter3';
 import { JSONRPCClient, JSONRPCServer } from 'json-rpc-2.0';
 import { VError } from 'verror';
-import type { JSONRPCRequest, JSONRPCResponse, JSONRPCMessage } from './schema.js';
-import type { McpTransport, MessageHandler, TransportEventMap, BaseEventEmitter } from './transport.js';
+import type {
+  JSONRPCMessage,
+  JSONRPCRequest,
+  JSONRPCResponse,
+} from './schema.js';
+import type {
+  BaseEventEmitter,
+  McpTransport,
+  MessageHandler,
+  TransportEventMap,
+} from './transport.js';
 
 /**
  * Base class for JSON-RPC transports.
@@ -24,11 +33,17 @@ export abstract class JsonRpcTransport implements McpTransport {
 
   public get events(): BaseEventEmitter {
     return {
-      on: <K extends keyof TransportEventMap>(event: K, handler: (...args: TransportEventMap[K]) => void) => {
-        this._events.on(event, handler as (...args: any[]) => void);
+      on: <K extends keyof TransportEventMap>(
+        event: K,
+        handler: (...args: TransportEventMap[K]) => void
+      ) => {
+        this._events.on(event, handler);
       },
-      off: <K extends keyof TransportEventMap>(event: K, handler: (...args: TransportEventMap[K]) => void) => {
-        this._events.off(event, handler as (...args: any[]) => void);
+      off: <K extends keyof TransportEventMap>(
+        event: K,
+        handler: (...args: TransportEventMap[K]) => void
+      ) => {
+        this._events.off(event, handler);
       }
     };
   }
@@ -66,9 +81,11 @@ export abstract class JsonRpcTransport implements McpTransport {
    */
   on<K extends keyof TransportEventMap>(
     event: K,
-    handler: (...args: TransportEventMap[K]) => void
+    handler: TransportEventMap[K] extends never[] 
+      ? () => void 
+      : (...args: TransportEventMap[K]) => void
   ): void {
-    this._events.on(event, handler as (...args: any[]) => void);
+    this._events.on(event, handler);
   }
 
   /**
@@ -76,9 +93,11 @@ export abstract class JsonRpcTransport implements McpTransport {
    */
   off<K extends keyof TransportEventMap>(
     event: K,
-    handler: (...args: TransportEventMap[K]) => void
+    handler: TransportEventMap[K] extends never[] 
+      ? () => void 
+      : (...args: TransportEventMap[K]) => void
   ): void {
-    this._events.off(event, handler as (...args: any[]) => void);
+    this._events.off(event, handler);
   }
 
   /**
@@ -149,7 +168,11 @@ export abstract class JsonRpcTransport implements McpTransport {
       await this.send(request);
       return new Promise<void>((resolve, reject) => {
         const handler: MessageHandler = (message) => {
-          if (this.isJSONRPCMessage(message) && 'id' in message && message.id === request.id) {
+          if (
+            this.isJSONRPCMessage(message) &&
+            'id' in message &&
+            message.id === request.id
+          ) {
             this.offMessage(handler);
             if ('error' in message) {
               reject(message.error);

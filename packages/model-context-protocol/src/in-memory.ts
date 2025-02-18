@@ -6,14 +6,9 @@
 
 import { EventEmitter } from 'eventemitter3';
 import { VError } from 'verror';
+import type { BaseEventEmitter, McpTransport, MessageHandler, TransportEventMap } from './transport';
 import type { JSONRPCMessage, JSONRPCRequest, JSONRPCResponse } from './schema';
 import { JSONRPC_VERSION } from './schema';
-import type {
-  McpTransport,
-  MessageHandler,
-  TransportEventMap,
-  BaseEventEmitter,
-} from './transport';
 
 /**
  * In-memory transport implementation for testing.
@@ -28,12 +23,18 @@ export class InMemoryTransport implements McpTransport {
 
   public get events(): BaseEventEmitter {
     return {
-      on: <K extends keyof TransportEventMap>(event: K, handler: (...args: TransportEventMap[K]) => void) => {
-        this._events.on(event, handler as (...args: any[]) => void);
+      on: <K extends keyof TransportEventMap>(
+        event: K,
+        handler: (...args: TransportEventMap[K]) => void
+      ) => {
+        this._events.on(event, handler);
       },
-      off: <K extends keyof TransportEventMap>(event: K, handler: (...args: TransportEventMap[K]) => void) => {
-        this._events.off(event, handler as (...args: any[]) => void);
-      }
+      off: <K extends keyof TransportEventMap>(
+        event: K,
+        handler: (...args: TransportEventMap[K]) => void
+      ) => {
+        this._events.off(event, handler);
+      },
     };
   }
 
@@ -86,7 +87,7 @@ export class InMemoryTransport implements McpTransport {
     event: K,
     handler: (...args: TransportEventMap[K]) => void
   ): void {
-    this._events.on(event, handler as (...args: any[]) => void);
+    this._events.on(event, handler);
   }
 
   /**
@@ -96,7 +97,7 @@ export class InMemoryTransport implements McpTransport {
     event: K,
     handler: (...args: TransportEventMap[K]) => void
   ): void {
-    this._events.off(event, handler as (...args: any[]) => void);
+    this._events.off(event, handler);
   }
 
   /**
@@ -143,7 +144,11 @@ export class InMemoryTransport implements McpTransport {
    * @param message Message to simulate
    */
   async simulateIncomingMessage(message: JSONRPCMessage): Promise<void> {
-    if (typeof message !== 'object' || message === null || message.jsonrpc !== JSONRPC_VERSION) {
+    if (
+      typeof message !== 'object' ||
+      message === null ||
+      message.jsonrpc !== JSONRPC_VERSION
+    ) {
       throw new VError('Invalid message format');
     }
 
