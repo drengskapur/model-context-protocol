@@ -53,7 +53,7 @@ export { McpServer } from './server.js';
 export { McpClient } from './client.js';
 
 // Export transport layer interfaces and implementations
-export { type McpTransport, type MessageHandler } from './base.js';
+export type { McpTransport, MessageHandler } from './base.js';
 export { InMemoryTransport } from './in-memory.js';
 export { JsonRpcTransport } from './json-rpc.js';
 export { StdioTransport } from './stdio.js';

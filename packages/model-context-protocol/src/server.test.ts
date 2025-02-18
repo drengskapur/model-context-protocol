@@ -411,13 +411,15 @@ describe('Server', () => {
       };
 
       server.prompt(testPrompt, async (args) => {
-        return [{
-          role: 'assistant',
-          content: {
-            type: 'text',
-            text: `Using arg1: ${args?.arg1}`,
+        return [
+          {
+            role: 'assistant',
+            content: {
+              type: 'text',
+              text: `Using arg1: ${args?.arg1}`,
+            },
           },
-        }];
+        ];
       });
 
       await transport.simulateIncomingMessage({
@@ -437,13 +439,15 @@ describe('Server', () => {
         jsonrpc: JSONRPC_VERSION,
         id: 3,
         result: {
-          messages: [{
-            role: 'assistant',
-            content: {
-              type: 'text',
-              text: 'Using arg1: test value',
+          messages: [
+            {
+              role: 'assistant',
+              content: {
+                type: 'text',
+                text: 'Using arg1: test value',
+              },
             },
-          }],
+          ],
         },
       });
     });
@@ -464,7 +468,9 @@ describe('Server', () => {
 
       await server.tool('greet', schema, (params: unknown) => {
         const typedParams = params as GreetParams;
-        return Promise.resolve(`Hello, ${typedParams.name}! You are ${typedParams.age} years old.`);
+        return Promise.resolve(
+          `Hello, ${typedParams.name}! You are ${typedParams.age} years old.`
+        );
       });
 
       await transport.simulateIncomingMessage({
@@ -499,7 +505,9 @@ describe('Server', () => {
 
       await server.tool('greet', schema, (params: unknown) => {
         const typedParams = params as GreetParams;
-        return Promise.resolve(`Hello, ${typedParams.name}! You are ${typedParams.age} years old.`);
+        return Promise.resolve(
+          `Hello, ${typedParams.name}! You are ${typedParams.age} years old.`
+        );
       });
 
       await transport.simulateIncomingMessage({
@@ -560,7 +568,9 @@ describe('Server', () => {
 
     await server.tool('greet', schema, (params: unknown) => {
       const typedParams = params as GreetParams;
-      return Promise.resolve(`Hello, ${typedParams.name}! You are ${typedParams.age} years old.`);
+      return Promise.resolve(
+        `Hello, ${typedParams.name}! You are ${typedParams.age} years old.`
+      );
     });
 
     await transport.simulateIncomingMessage({

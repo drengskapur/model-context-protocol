@@ -1,112 +1,88 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import { type AuthOptions, Authorization, AuthorizationError } from './auth';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { Auth, AuthError, createAuthMiddleware } from './auth.js';
 
-describe('Authorization', () => {
-  let auth: Authorization;
-  const options: AuthOptions = {
-    secret: 'test-secret',
-    tokenExpiration: 3600,
-  };
-
-  beforeEach(() => {
-    auth = new Authorization(options);
+describe('Auth', () => {
+  const auth = new Auth({
+    secret: 'test-secret-key-must-be-at-least-32-characters',
+    issuer: 'test-issuer',
+    audience: 'test-audience',
   });
 
-  describe('generateToken', () => {
-    it('should generate a valid token', async () => {
-      const subject = 'test-user';
-      const roles = ['user', 'admin'];
-      const token = await auth.generateToken(subject, roles);
-
-      expect(token).toBeDefined();
-      expect(typeof token).toBe('string');
-    });
-
-    it('should include subject and roles in token', async () => {
-      const subject = 'test-user';
-      const roles = ['user', 'admin'];
-      const token = await auth.generateToken(subject, roles);
-
-      const decoded = JSON.parse(Buffer.from(token, 'base64').toString());
-      expect(decoded.sub).toBe(subject);
-      expect(decoded.roles).toEqual(roles);
-    });
-
-    it('should set expiration based on tokenExpiration', async () => {
-      const subject = 'test-user';
-      const roles = ['user'];
-      const now = Math.floor(Date.now() / 1000);
-      const token = await auth.generateToken(subject, roles);
-
-      const decoded = JSON.parse(Buffer.from(token, 'base64').toString());
-      expect(decoded.exp).toBeGreaterThan(now);
-      expect(decoded.exp).toBeLessThanOrEqual(
-        now + (options.tokenExpiration ?? 3600)
-      );
-    });
+  beforeAll(async () => {
+    await auth.initialize();
   });
 
-  describe('verifyToken', () => {
-    it('should verify a valid token', async () => {
-      const subject = 'test-user';
-      const roles = ['user'];
-      const token = await auth.generateToken(subject, roles);
+  it('should generate and validate tokens', async () => {
+    const subject = 'user123';
+    const roles = ['user', 'admin'];
 
-      const verified = await auth.verifyToken(token);
-      expect(verified.sub).toBe(subject);
-      expect(verified.roles).toEqual(roles);
+    const token = await auth.generateToken(subject, roles);
+    expect(token).toBeDefined();
+    expect(typeof token).toBe('string');
+
+    const payload = await auth.validateToken(token);
+    expect(payload.sub).toBe(subject);
+    expect(payload.roles).toEqual(roles);
+    expect(payload.iss).toBe('test-issuer');
+    expect(payload.aud).toBe('test-audience');
+    expect(payload.iat).toBeDefined();
+    expect(payload.exp).toBeDefined();
+  });
+
+  it('should reject invalid tokens', async () => {
+    await expect(auth.validateToken('invalid-token')).rejects.toThrow();
+  });
+
+  it('should reject expired tokens', async () => {
+    const auth = new Auth({
+      secret: 'test-secret-key-must-be-at-least-32-characters',
+      tokenExpiration: 0, // Expire immediately
     });
+    await auth.initialize();
 
-    it('should reject an invalid token', () => {
-      const invalidToken = 'invalid-token';
-      expect(() => auth.verifyToken(invalidToken)).toThrow(AuthorizationError);
-    });
+    const token = await auth.generateToken('user123', ['user']);
+    await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait for token to expire
+    await expect(auth.validateToken(token)).rejects.toThrow();
+  });
 
-    it('should reject an expired token', () => {
-      const now = Math.floor(Date.now() / 1000);
-      const expiredToken = {
-        sub: 'test-user',
-        iat: now - 7200,
-        exp: now - 3600,
-        roles: ['user'],
-      };
-      const token = Buffer.from(JSON.stringify(expiredToken)).toString(
-        'base64'
+  it('should enforce role-based access control', async () => {
+    const token = await auth.generateToken('user123', ['user']);
+    const payload = await auth.validateToken(token);
+    expect(payload.roles).toContain('user');
+    expect(payload.roles).not.toContain('admin');
+  });
+
+  describe('AuthMiddleware', () => {
+    it('should allow access with valid token and roles', async () => {
+      const middleware = createAuthMiddleware(
+        { auth, requiredRoles: ['user'] },
+        async (params: Record<string, unknown>) => params
       );
 
-      expect(() => auth.verifyToken(token)).toThrow('Token expired');
-    });
-  });
-
-  describe('verifyPermission', () => {
-    it('should allow access with required role', async () => {
-      const subject = 'test-user';
-      const roles = ['user', 'admin'];
-      const token = await auth.generateToken(subject, roles);
-
-      const hasPermission = await auth.verifyPermission(token, ['admin']);
-      expect(hasPermission).toBe(true);
+      const token = await auth.generateToken('user123', ['user']);
+      const result = await middleware({ token, data: 'test' });
+      expect(result).toEqual({ data: 'test' });
     });
 
-    it('should deny access without required role', async () => {
-      const subject = 'test-user';
-      const roles = ['user'];
-      const token = await auth.generateToken(subject, roles);
+    it('should deny access with missing token', async () => {
+      const middleware = createAuthMiddleware(
+        { auth, requiredRoles: ['user'] },
+        async (params: Record<string, unknown>) => params
+      );
 
-      const hasPermission = await auth.verifyPermission(token, ['admin']);
-      expect(hasPermission).toBe(false);
+      await expect(middleware({ data: 'test' })).rejects.toThrow(AuthError);
     });
 
-    it('should allow access with any matching role', async () => {
-      const subject = 'test-user';
-      const roles = ['user'];
-      const token = await auth.generateToken(subject, roles);
+    it('should deny access with insufficient roles', async () => {
+      const middleware = createAuthMiddleware(
+        { auth, requiredRoles: ['admin'] },
+        async (params: Record<string, unknown>) => params
+      );
 
-      const hasPermission = await auth.verifyPermission(token, [
-        'admin',
-        'user',
-      ]);
-      expect(hasPermission).toBe(true);
+      const token = await auth.generateToken('user123', ['user']);
+      await expect(middleware({ token, data: 'test' })).rejects.toThrow(
+        AuthError
+      );
     });
   });
 });

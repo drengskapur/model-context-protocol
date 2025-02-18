@@ -1,269 +1,158 @@
-import { describe, expect, it } from 'vitest';
-import type { JSONRPCMessage } from './schema.js';
-import type { McpTransport, MessageHandler } from './transport.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { BaseTransport } from './base';
+import type { JSONRPCRequest, JSONRPCResponse } from './schema';
 
-class TestTransport implements McpTransport {
-  private connected = false;
-  private messageHandlers = new Set<MessageHandler>();
-  private errorHandlers = new Set<(error: Error) => void>();
+class TestTransport extends BaseTransport {
+  public messages: (JSONRPCRequest | JSONRPCResponse)[] = [];
+  public shouldFail = false;
 
-  connect(): Promise<void> {
-    this.connected = true;
-    return Promise.resolve();
-  }
-
-  disconnect(): Promise<void> {
-    this.connected = false;
-    this.messageHandlers.clear();
-    this.errorHandlers.clear();
-    return Promise.resolve();
-  }
-
-  isConnected(): boolean {
-    return this.connected;
-  }
-
-  async send(_message: JSONRPCMessage): Promise<void> {
-    if (!this.connected) {
-      throw new Error('Transport not connected');
+  async send(message: JSONRPCRequest | JSONRPCResponse): Promise<void> {
+    if (this.shouldFail) {
+      throw new Error('Send failed');
     }
-    // Simulate sending
-    await Promise.resolve();
+    this.messages.push(message);
   }
 
-  onMessage(handler: MessageHandler): void {
-    this.messageHandlers.add(handler);
-  }
-
-  offMessage(handler: MessageHandler): void {
-    this.messageHandlers.delete(handler);
-  }
-
-  onError(handler: (error: Error) => void): void {
-    this.errorHandlers.add(handler);
-  }
-
-  offError(handler: (error: Error) => void): void {
-    this.errorHandlers.delete(handler);
-  }
-
-  async close(): Promise<void> {
-    await this.disconnect();
-  }
-
-  // Test helper methods
-  getMessageHandlers(): Set<MessageHandler> {
-    return this.messageHandlers;
-  }
-
-  getErrorHandlers(): Set<(error: Error) => void> {
-    return this.errorHandlers;
-  }
-
-  simulateError(error: Error): void {
-    for (const handler of this.errorHandlers) {
-      handler(error);
+  async connect(): Promise<void> {
+    if (this.shouldFail) {
+      throw new Error('Connect failed');
     }
+    this.setConnected(true);
   }
 
-  async simulateMessage(message: JSONRPCMessage): Promise<void> {
-    if (!this.connected) {
-      throw new Error('Transport not connected');
+  async disconnect(): Promise<void> {
+    if (this.shouldFail) {
+      throw new Error('Disconnect failed');
     }
-    for (const handler of this.messageHandlers) {
-      try {
-        await handler(message);
-      } catch (error) {
-        if (error instanceof Error) {
-          for (const errorHandler of this.errorHandlers) {
-            errorHandler(error);
-          }
-        }
-      }
-    }
+    this.setConnected(false);
+  }
+
+  public simulateMessage(message: JSONRPCRequest): void {
+    this.handleMessage(message);
+  }
+
+  public simulateError(error: Error): void {
+    this.handleError(error);
   }
 }
 
-describe('McpTransport', () => {
-  describe('Connection Management', () => {
-    it('should handle basic connection lifecycle', async () => {
-      const transport = new TestTransport();
-      expect(transport.isConnected()).toBe(false);
+describe('BaseTransport', () => {
+  let transport: TestTransport;
 
+  beforeEach(() => {
+    transport = new TestTransport();
+  });
+
+  afterEach(() => {
+    transport.events.removeAllListeners();
+  });
+
+  describe('connection management', () => {
+    it('should start disconnected', () => {
+      expect(transport.isConnected()).toBe(false);
+    });
+
+    it('should connect successfully', async () => {
+      const onConnect = vi.fn();
+      transport.on('connect', onConnect);
       await transport.connect();
       expect(transport.isConnected()).toBe(true);
+      expect(onConnect).toHaveBeenCalled();
+    });
 
+    it('should handle connection failure', async () => {
+      transport.shouldFail = true;
+      await expect(transport.connect()).rejects.toThrow('Connect failed');
+      expect(transport.isConnected()).toBe(false);
+    });
+
+    it('should disconnect successfully', async () => {
+      await transport.connect();
+      const onDisconnect = vi.fn();
+      transport.on('disconnect', onDisconnect);
       await transport.disconnect();
       expect(transport.isConnected()).toBe(false);
+      expect(onDisconnect).toHaveBeenCalled();
     });
 
-    it('should handle close operation', async () => {
-      const transport = new TestTransport();
+    it('should handle disconnection failure', async () => {
       await transport.connect();
+      transport.shouldFail = true;
+      await expect(transport.disconnect()).rejects.toThrow('Disconnect failed');
       expect(transport.isConnected()).toBe(true);
-
-      await transport.close();
-      expect(transport.isConnected()).toBe(false);
-    });
-
-    it('should reject operations when not connected', async () => {
-      const transport = new TestTransport();
-      const message: JSONRPCMessage = {
-        jsonrpc: '2.0',
-        method: 'test',
-        params: {},
-      };
-      await expect(transport.send(message)).rejects.toThrow(
-        'Transport not connected'
-      );
-      await expect(transport.simulateMessage(message)).rejects.toThrow(
-        'Transport not connected'
-      );
     });
   });
 
-  describe('Message Handling', () => {
-    it('should manage message handlers', async () => {
-      const transport = new TestTransport();
-      const handler: MessageHandler = () => {
-        /* noop */
-      };
-
-      transport.onMessage(handler);
-      expect(transport.getMessageHandlers().has(handler)).toBe(true);
-
-      transport.offMessage(handler);
-      expect(transport.getMessageHandlers().has(handler)).toBe(false);
+  describe('message handling', () => {
+    it('should send messages successfully', async () => {
+      const message = { jsonrpc: '2.0', method: 'test', id: 1 };
+      await transport.send(message);
+      expect(transport.messages).toContain(message);
     });
 
-    it('should manage error handlers', async () => {
-      const transport = new TestTransport();
-      const handler = () => {
-        /* noop */
-      };
-
-      transport.onError(handler);
-      expect(transport.getErrorHandlers().has(handler)).toBe(true);
-
-      transport.offError(handler);
-      expect(transport.getErrorHandlers().has(handler)).toBe(false);
+    it('should handle send failure', async () => {
+      transport.shouldFail = true;
+      const message = { jsonrpc: '2.0', method: 'test', id: 1 };
+      await expect(transport.send(message)).rejects.toThrow('Send failed');
     });
 
-    it('should deliver messages to all handlers', async () => {
-      const transport = new TestTransport();
-      await transport.connect();
-
-      let count1 = 0;
-      let count2 = 0;
-      const handler1: MessageHandler = () => {
-        count1++;
-      };
-      const handler2: MessageHandler = () => {
-        count2++;
-      };
-
-      transport.onMessage(handler1);
-      transport.onMessage(handler2);
-
-      const message: JSONRPCMessage = {
-        jsonrpc: '2.0',
-        method: 'test',
-        params: {},
-      };
-      await transport.simulateMessage(message);
-      expect(count1).toBe(1);
-      expect(count2).toBe(1);
-
-      transport.offMessage(handler1);
-      await transport.simulateMessage(message);
-      expect(count1).toBe(1);
-      expect(count2).toBe(2);
+    it('should emit message events', () => {
+      const onMessage = vi.fn();
+      transport.on('message', onMessage);
+      const message = { jsonrpc: '2.0', method: 'test', id: 1 };
+      transport.simulateMessage(message);
+      expect(onMessage).toHaveBeenCalledWith(message);
     });
 
-    it('should deliver errors to all handlers', async () => {
-      const transport = new TestTransport();
-      let count1 = 0;
-      let count2 = 0;
-      const handler1 = () => {
-        count1++;
-      };
-      const handler2 = () => {
-        count2++;
-      };
-
-      transport.onError(handler1);
-      transport.onError(handler2);
-
-      await transport.simulateError(new Error('test'));
-      expect(count1).toBe(1);
-      expect(count2).toBe(1);
-
-      transport.offError(handler1);
-      await transport.simulateError(new Error('test'));
-      expect(count1).toBe(1);
-      expect(count2).toBe(2);
-    });
-
-    it('should handle message handler errors gracefully', async () => {
-      const transport = new TestTransport();
-      await transport.connect();
-
-      const error = new Error('Handler error');
-      const handler: MessageHandler = () => {
-        throw error;
-      };
-      let caughtError: Error | null = null;
-
-      transport.onMessage(handler);
-      transport.onError((e) => {
-        caughtError = e;
-      });
-
-      const message: JSONRPCMessage = {
-        jsonrpc: '2.0',
-        method: 'test',
-        params: {},
-      };
-      await transport.simulateMessage(message);
-      expect(caughtError).toBe(error);
+    it('should stop emitting messages after unsubscribe', () => {
+      const onMessage = vi.fn();
+      transport.on('message', onMessage);
+      transport.off('message', onMessage);
+      transport.simulateMessage({ jsonrpc: '2.0', method: 'test', id: 1 });
+      expect(onMessage).not.toHaveBeenCalled();
     });
   });
 
-  describe('Cleanup', () => {
-    it('should clean up handlers on disconnect', async () => {
-      const transport = new TestTransport();
-      const messageHandler: MessageHandler = () => {
-        /* noop */
-      };
-      const errorHandler = () => {
-        /* noop */
-      };
-
-      transport.onMessage(messageHandler);
-      transport.onError(errorHandler);
-
-      await transport.disconnect();
-
-      expect(transport.getMessageHandlers().size).toBe(0);
-      expect(transport.getErrorHandlers().size).toBe(0);
+  describe('error handling', () => {
+    it('should emit error events', () => {
+      const onError = vi.fn();
+      transport.on('error', onError);
+      const error = new Error('Test error');
+      transport.simulateError(error);
+      expect(onError).toHaveBeenCalledWith(error);
     });
 
-    it('should clean up handlers on close', async () => {
-      const transport = new TestTransport();
-      const messageHandler: MessageHandler = () => {
-        /* noop */
-      };
-      const errorHandler = () => {
-        /* noop */
-      };
+    it('should stop emitting errors after unsubscribe', () => {
+      const onError = vi.fn();
+      transport.on('error', onError);
+      transport.off('error', onError);
+      transport.simulateError(new Error('Test error'));
+      expect(onError).not.toHaveBeenCalled();
+    });
+  });
 
-      transport.onMessage(messageHandler);
-      transport.onError(errorHandler);
+  describe('event handling', () => {
+    it('should support multiple event listeners', () => {
+      const onMessage1 = vi.fn();
+      const onMessage2 = vi.fn();
+      transport.on('message', onMessage1);
+      transport.on('message', onMessage2);
+      const message = { jsonrpc: '2.0', method: 'test', id: 1 };
+      transport.simulateMessage(message);
+      expect(onMessage1).toHaveBeenCalledWith(message);
+      expect(onMessage2).toHaveBeenCalledWith(message);
+    });
 
-      await transport.close();
-
-      expect(transport.getMessageHandlers().size).toBe(0);
-      expect(transport.getErrorHandlers().size).toBe(0);
+    it('should only remove specified listener', () => {
+      const onMessage1 = vi.fn();
+      const onMessage2 = vi.fn();
+      transport.on('message', onMessage1);
+      transport.on('message', onMessage2);
+      transport.off('message', onMessage1);
+      const message = { jsonrpc: '2.0', method: 'test', id: 1 };
+      transport.simulateMessage(message);
+      expect(onMessage1).not.toHaveBeenCalled();
+      expect(onMessage2).toHaveBeenCalledWith(message);
     });
   });
 });

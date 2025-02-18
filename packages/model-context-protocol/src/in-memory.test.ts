@@ -1,218 +1,205 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { InMemoryTransport } from './in-memory.js';
-import type { JSONRPCMessage } from './schema.js';
+import type { MessageHandler } from './transport.js';
 
 describe('InMemoryTransport', () => {
-  let transport: InMemoryTransport;
+  let transport1: InMemoryTransport;
+  let transport2: InMemoryTransport;
 
   beforeEach(() => {
-    transport = new InMemoryTransport();
+    [transport1, transport2] = InMemoryTransport.createPair();
   });
 
-  describe('Connection Management', () => {
-    it('should handle connect and disconnect', async () => {
-      expect(transport.isConnected()).toBe(false);
-
-      await transport.connect();
-      expect(transport.isConnected()).toBe(true);
-
-      await transport.disconnect();
-      expect(transport.isConnected()).toBe(false);
+  describe('pairing', () => {
+    it('should create paired transports', () => {
+      expect(transport1.otherTransport).toBe(transport2);
+      expect(transport2.otherTransport).toBe(transport1);
     });
 
-    it('should handle close', async () => {
-      await transport.connect();
-      expect(transport.isConnected()).toBe(true);
-
-      await transport.close();
-      expect(transport.isConnected()).toBe(false);
-    });
-
-    it('should reject send when not connected', async () => {
-      const message: JSONRPCMessage = {
-        jsonrpc: '2.0',
-        method: 'test',
-        params: {},
-      };
-
-      await expect(transport.send(message)).rejects.toThrow(
-        'Transport not connected'
-      );
-    });
-
-    it('should reject simulate message when not connected', async () => {
-      const message: JSONRPCMessage = {
-        jsonrpc: '2.0',
-        method: 'test',
-        params: {},
-      };
-
-      await expect(transport.simulateIncomingMessage(message)).rejects.toThrow(
-        'Transport not connected'
-      );
+    it('should reject operations when not paired', async () => {
+      const unpaired = new InMemoryTransport();
+      await expect(unpaired.connect()).rejects.toThrow('Transport not paired');
     });
   });
 
-  describe('Message Handling', () => {
-    it('should store sent messages', async () => {
-      await transport.connect();
-
-      const message: JSONRPCMessage = {
-        jsonrpc: '2.0',
-        method: 'test',
-        params: {},
-      };
-
-      await transport.send(message);
-      expect(transport.getMessages()).toEqual([message]);
-    });
-
-    it('should clear messages', async () => {
-      await transport.connect();
-
-      const message: JSONRPCMessage = {
-        jsonrpc: '2.0',
-        method: 'test',
-        params: {},
-      };
-
-      await transport.send(message);
-      expect(transport.getMessages()).toHaveLength(1);
-
-      transport.clearMessages();
-      expect(transport.getMessages()).toHaveLength(0);
-    });
-
-    it('should handle message handlers', async () => {
-      const handler1 = vi.fn();
-      const handler2 = vi.fn();
-
-      await transport.connect();
-      transport.onMessage(handler1);
-      transport.onMessage(handler2);
-
-      const message: JSONRPCMessage = {
-        jsonrpc: '2.0',
-        method: 'test',
-        params: {},
-      };
-
-      await transport.simulateIncomingMessage(message);
-
-      expect(handler1).toHaveBeenCalledWith(message);
-      expect(handler2).toHaveBeenCalledWith(message);
-
-      transport.offMessage(handler1);
-      await transport.simulateIncomingMessage(message);
-
-      expect(handler1).toHaveBeenCalledTimes(1);
-      expect(handler2).toHaveBeenCalledTimes(2);
-    });
-
-    it('should handle error handlers', () => {
-      const handler1 = vi.fn();
-      const handler2 = vi.fn();
-
-      transport.onError(handler1);
-      transport.onError(handler2);
-
-      const error = new Error('Test error');
-      for (const handler of transport.errorHandlers) {
-        handler.call(transport, error);
-      }
-
-      expect(handler1).toHaveBeenCalledWith(error);
-      expect(handler2).toHaveBeenCalledWith(error);
-
-      transport.offError(handler1);
-      for (const handler of transport.errorHandlers) {
-        handler.call(transport, error);
-      }
-
-      expect(handler1).toHaveBeenCalledTimes(1);
-      expect(handler2).toHaveBeenCalledTimes(2);
-    });
-  });
-
-  describe('Linked Pair', () => {
-    it('should create linked pair', () => {
-      const [transport1, transport2] = InMemoryTransport.createLinkedPair();
-
-      expect(transport1._otherTransport).toBe(transport2);
-      expect(transport2._otherTransport).toBe(transport1);
-    });
-
-    it('should forward messages between linked transports', async () => {
-      const [transport1, transport2] = InMemoryTransport.createLinkedPair();
+  describe('connection management', () => {
+    it('should connect successfully', async () => {
       await transport1.connect();
       await transport2.connect();
-
-      const handler = vi.fn();
-      transport2.onMessage(handler);
-
-      const message: JSONRPCMessage = {
-        jsonrpc: '2.0',
-        method: 'test',
-        params: {},
-      };
-
-      await transport1.send(message);
-      expect(handler).toHaveBeenCalledWith(message);
     });
 
-    it('should not forward messages if other transport is not connected', async () => {
-      const [transport1, transport2] = InMemoryTransport.createLinkedPair();
+    it('should disconnect successfully', async () => {
       await transport1.connect();
-      // transport2 is not connected
+      await transport2.connect();
+      await transport1.disconnect();
+      await transport2.disconnect();
+    });
 
-      const handler = vi.fn();
-      transport2.onMessage(handler);
-
-      const message: JSONRPCMessage = {
-        jsonrpc: '2.0',
+    it('should reject operations when not connected', async () => {
+      const message = {
+        jsonrpc: '2.0' as const,
         method: 'test',
-        params: {},
+        id: '1',
       };
-
-      await transport1.send(message);
-      expect(handler).not.toHaveBeenCalled();
+      await expect(transport1.send(message)).rejects.toThrow(
+        'Transport not connected'
+      );
     });
   });
 
-  describe('Progress and Cancellation', () => {
-    it('should send progress notifications', async () => {
-      await transport.connect();
-
-      await transport.sendProgress('token1', 50, 100);
-
-      const messages = transport.getMessages();
-      expect(messages).toHaveLength(1);
-      expect(messages[0]).toEqual({
-        jsonrpc: '2.0',
-        method: 'notifications/progress',
-        params: {
-          progressToken: 'token1',
-          progress: 50,
-          total: 100,
-        },
-      });
+  describe('message handling', () => {
+    beforeEach(async () => {
+      await transport1.connect();
+      await transport2.connect();
     });
 
-    it('should send cancellation notifications', async () => {
-      await transport.connect();
+    it('should deliver messages between transports', async () => {
+      const message = {
+        jsonrpc: '2.0' as const,
+        method: 'test',
+        id: '1',
+        params: { data: 'test' },
+      };
 
-      await transport.cancelRequest('req1', 'Test reason');
+      let received: unknown;
+      const handler: MessageHandler = (msg: unknown) => {
+        received = msg;
+      };
+      transport2.onMessage(handler);
 
-      const messages = transport.getMessages();
-      expect(messages).toHaveLength(1);
-      expect(messages[0]).toEqual({
-        jsonrpc: '2.0',
-        method: 'notifications/cancelled',
-        params: {
-          requestId: 'req1',
-          reason: 'Test reason',
+      await transport1.send(message);
+      expect(received).toEqual(message);
+    });
+
+    it('should handle multiple messages', async () => {
+      const messages = [
+        {
+          jsonrpc: '2.0' as const,
+          method: 'test1',
+          id: '1',
+          params: { data: 'first' },
         },
-      });
+        {
+          jsonrpc: '2.0' as const,
+          method: 'test2',
+          id: '2',
+          params: { data: 'second' },
+        },
+      ];
+
+      const received: unknown[] = [];
+      const handler: MessageHandler = (msg: unknown) => {
+        received.push(msg);
+      };
+      transport2.onMessage(handler);
+
+      for (const message of messages) {
+        await transport1.send(message);
+      }
+
+      expect(received).toEqual(messages);
+    });
+
+    it('should handle handler errors', async () => {
+      const error = new Error('Handler error');
+      const handler: MessageHandler = (msg: unknown) => {
+        throw error;
+      };
+      transport2.onMessage(handler);
+
+      const message = {
+        jsonrpc: '2.0' as const,
+        method: 'test',
+        id: '1',
+      };
+
+      await expect(transport1.send(message)).rejects.toThrow('Handler error');
+    });
+
+    it('should remove message handlers', async () => {
+      const message = {
+        jsonrpc: '2.0' as const,
+        method: 'test',
+        id: '1',
+      };
+
+      const received: unknown[] = [];
+      const handler: MessageHandler = (msg: unknown) => {
+        received.push(msg);
+      };
+
+      transport2.onMessage(handler);
+      await transport1.send(message);
+      expect(received).toHaveLength(1);
+
+      transport2.offMessage(handler);
+      await transport1.send(message);
+      expect(received).toHaveLength(1); // Should not increase
+    });
+  });
+
+  describe('error handling', () => {
+    beforeEach(async () => {
+      await transport1.connect();
+      await transport2.connect();
+    });
+
+    it('should emit error events', () => {
+      const onError = vi.fn();
+      transport1.on('error', onError);
+
+      const error = new Error('Test error');
+      transport1['handleError'](error);
+      expect(onError).toHaveBeenCalledWith(error);
+    });
+
+    it('should handle disconnect errors', async () => {
+      transport1.shouldFail = true;
+      await expect(transport1.disconnect()).rejects.toThrow(
+        /Failed to disconnect transport/
+      );
+    });
+  });
+
+  describe('event handling', () => {
+    beforeEach(async () => {
+      await transport1.connect();
+    });
+
+    it('should emit connect events', () => {
+      const onConnect = vi.fn();
+      transport2.on('connect', onConnect);
+      transport2.connect();
+      expect(onConnect).toHaveBeenCalled();
+    });
+
+    it('should emit disconnect events', () => {
+      const onDisconnect = vi.fn();
+      transport2.on('disconnect', onDisconnect);
+      transport2.disconnect();
+      expect(onDisconnect).toHaveBeenCalled();
+    });
+
+    it('should support multiple event listeners', () => {
+      const onMessage1 = vi.fn();
+      const onMessage2 = vi.fn();
+      transport2.on('message', onMessage1);
+      transport2.on('message', onMessage2);
+
+      const message = { jsonrpc: '2.0', method: 'test', id: '1' };
+      transport1.send(message);
+
+      expect(onMessage1).toHaveBeenCalledWith(message);
+      expect(onMessage2).toHaveBeenCalledWith(message);
+    });
+
+    it('should remove event listeners', () => {
+      const onMessage = vi.fn();
+      transport2.on('message', onMessage);
+      transport2.off('message', onMessage);
+
+      transport1.send({ jsonrpc: '2.0', method: 'test', id: '1' });
+      expect(onMessage).not.toHaveBeenCalled();
     });
   });
 });

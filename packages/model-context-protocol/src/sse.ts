@@ -1,387 +1,180 @@
 /**
  * @file sse.ts
  * @description Server-Sent Events transport implementation for the Model Context Protocol.
- * Provides a transport that uses SSE for server-to-client communication and HTTP for client-to-server.
+ * Provides a transport that uses SSE for communication.
  */
 
-import { parse } from 'valibot';
-import type { JSONRPCMessage } from '../schema.js';
-import { jsonRpcMessageSchema } from '../schemas.js';
-import type { McpTransport, MessageHandler } from '../transport.js';
+import { VError } from 'verror';
+import { Session, Channel, createSession } from 'better-sse';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import { BaseTransport } from './transport';
+import type { JSONRPCRequest, JSONRPCResponse } from './schema';
 
 /**
- * Configuration options for the SSE transport.
+ * Options for SSE transport.
  */
 export interface SseTransportOptions {
   /**
-   * The URL to connect to for SSE events
+   * HTTP request object.
    */
-  eventSourceUrl: string;
+  req: IncomingMessage;
 
   /**
-   * Optional headers to include in the EventSource connection
+   * HTTP response object.
    */
-  eventSourceHeaders?: Record<string, string>;
+  res: ServerResponse;
 
   /**
-   * Optional EventSource implementation to use
-   * Defaults to global EventSource
+   * Channel name for broadcasting.
+   * If provided, messages will be broadcast to all clients in the channel.
    */
-  EventSource?: typeof EventSource;
+  channel?: string;
+
+  /**
+   * Whether to automatically reconnect.
+   * @default true
+   */
+  autoReconnect?: boolean;
+
+  /**
+   * Reconnection delay in milliseconds.
+   * @default 1000
+   */
+  reconnectDelay?: number;
+
+  /**
+   * Initial retry delay in milliseconds.
+   * @default 1000
+   */
+  retryTimeout?: number;
+
+  /**
+   * Custom headers to include.
+   */
+  headers?: Record<string, string>;
 }
 
 /**
- * Handles message validation and distribution to registered handlers
+ * SSE transport implementation using better-sse.
  */
-class MessageProcessor {
-  private _handlers = new Set<MessageHandler>();
-  private _errorHandler: (error: Error) => void;
+export class SseTransport extends BaseTransport {
+  private readonly options: Required<SseTransportOptions>;
+  private session: Session | null = null;
+  private channel: Channel | null = null;
 
-  /**
-   * Creates a new message processor instance.
-   * @param errorHandler Error handler function
-   */
-  constructor(errorHandler: (error: Error) => void) {
-    this._errorHandler = errorHandler;
-  }
-
-  /**
-   * Processes an incoming message.
-   * Validates the message and distributes it to registered handlers.
-   * @param data Message data
-   */
-  async processMessage(data: unknown): Promise<void> {
-    try {
-      if (typeof data !== 'string') {
-        throw new Error('Invalid message data type');
-      }
-
-      const message = this.parseMessage(data);
-      await this.validateAndDistribute(message);
-    } catch (error) {
-      this._errorHandler(
-        new Error(
-          `Error handling message: ${error instanceof Error ? error.message : String(error)}`
-        )
-      );
-    }
-  }
-
-  /**
-   * Parses a message from a string.
-   * @param data Message data
-   * @returns Parsed message
-   */
-  private parseMessage(data: string): JSONRPCMessage {
-    try {
-      return JSON.parse(data) as JSONRPCMessage;
-    } catch (error) {
-      throw new Error(
-        `Error parsing message: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-  }
-
-  /**
-   * Validates a message and distributes it to registered handlers.
-   * @param message Message to validate and distribute
-   */
-  private async validateAndDistribute(message: unknown): Promise<void> {
-    try {
-      const validatedMessage = parse(jsonRpcMessageSchema, message);
-      await this.distributeMessage(validatedMessage);
-    } catch (error) {
-      throw new Error(
-        `Error processing message: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-  }
-
-  /**
-   * Distributes a message to registered handlers.
-   * @param message Message to distribute
-   */
-  private async distributeMessage(message: JSONRPCMessage): Promise<void> {
-    for (const handler of this._handlers) {
-      try {
-        await handler(message);
-      } catch (error) {
-        this._errorHandler(
-          new Error(
-            `Error in message handler: ${error instanceof Error ? error.message : String(error)}`
-          )
-        );
-      }
-    }
-  }
-
-  /**
-   * Adds a message handler.
-   * @param handler Handler function to add
-   */
-  addHandler(handler: MessageHandler): void {
-    this._handlers.add(handler);
-  }
-
-  /**
-   * Removes a message handler.
-   * @param handler Handler function to remove
-   */
-  removeHandler(handler: MessageHandler): void {
-    this._handlers.delete(handler);
-  }
-
-  /**
-   * Clears all message handlers.
-   */
-  clear(): void {
-    this._handlers.clear();
-  }
-
-  /**
-   * Gets the number of registered message handlers.
-   * @returns Number of handlers
-   */
-  public getHandlerCount(): number {
-    return this._handlers.size;
-  }
-
-  /**
-   * Checks if a message handler is registered.
-   * @param handler Handler function to check
-   * @returns True if handler is registered, false otherwise
-   */
-  public hasHandler(handler: MessageHandler): boolean {
-    return this._handlers.has(handler);
-  }
-}
-
-/**
- * Manages error handling and distribution
- */
-class ErrorManager {
-  private _handlers = new Set<(error: Error) => void>();
-
-  /**
-   * Handles an error.
-   * Distributes the error to registered handlers.
-   * @param error Error to handle
-   */
-  handleError(error: Error): void {
-    if (this._handlers.size > 0) {
-      for (const handler of this._handlers) {
-        handler(error);
-      }
-    }
-  }
-
-  /**
-   * Adds an error handler.
-   * @param handler Handler function to add
-   */
-  addHandler(handler: (error: Error) => void): void {
-    this._handlers.add(handler);
-  }
-
-  /**
-   * Removes an error handler.
-   * @param handler Handler function to remove
-   */
-  removeHandler(handler: (error: Error) => void): void {
-    this._handlers.delete(handler);
-  }
-
-  /**
-   * Clears all error handlers.
-   */
-  clear(): void {
-    this._handlers.clear();
-  }
-
-  /**
-   * Gets the number of registered error handlers.
-   * @returns Number of handlers
-   */
-  public getHandlerCount(): number {
-    return this._handlers.size;
-  }
-
-  /**
-   * Checks if an error handler is registered.
-   * @param handler Handler function to check
-   * @returns True if handler is registered, false otherwise
-   */
-  public hasHandler(handler: (error: Error) => void): boolean {
-    return this._handlers.has(handler);
-  }
-}
-
-/**
- * Transport implementation that uses Server-Sent Events (SSE) for receiving messages
- * and HTTP POST for sending messages.
- */
-export class SseTransport implements McpTransport {
-  /** EventSource instance for SSE connection */
-  protected _eventSource: EventSource | null = null;
-  /** Transport configuration options */
-  public readonly options: Required<SseTransportOptions>;
-  /** Message processor for handling incoming messages */
-  public readonly messageProcessor: MessageProcessor;
-  /** Error manager for handling transport errors */
-  public readonly errorManager: ErrorManager;
-
-  /**
-   * Creates a new SSE transport instance.
-   * @param options Transport configuration options
-   */
   constructor(options: SseTransportOptions) {
+    super();
     this.options = {
-      eventSourceUrl: options.eventSourceUrl,
-      eventSourceHeaders: options.eventSourceHeaders ?? {},
-      EventSource: options.EventSource ?? globalThis.EventSource,
+      req: options.req,
+      res: options.res,
+      channel: options.channel ?? 'default',
+      autoReconnect: options.autoReconnect ?? true,
+      reconnectDelay: options.reconnectDelay ?? 1000,
+      retryTimeout: options.retryTimeout ?? 1000,
+      headers: options.headers ?? {},
     };
-
-    this.errorManager = new ErrorManager();
-    this.messageProcessor = new MessageProcessor((error) =>
-      this.errorManager.handleError(error)
-    );
   }
 
   /**
-   * Handles an incoming SSE message.
-   * @param event SSE message event
+   * Connects to the SSE stream.
    */
-  private _onMessage = (event: MessageEvent) => {
-    this.messageProcessor.processMessage(event.data).catch((error) => {
-      this.errorManager.handleError(error);
-    });
-  };
-
-  /**
-   * Handles an SSE error event.
-   */
-  private _onError = () => {
-    this.errorManager.handleError(new Error('SSE error occurred'));
-  };
-
-  /**
-   * Establishes an SSE connection.
-   * @returns Promise that resolves when connected
-   * @throws {Error} If connection fails
-   */
-  public async connect(): Promise<void> {
-    if (this._eventSource) {
-      throw new Error('Already connected');
-    }
-
-    const url = this.buildUrl();
-    this._eventSource = new this.options.EventSource(url.toString());
-    this._eventSource.onmessage = this._onMessage;
-    this._eventSource.onerror = this._onError;
-
-    return new Promise((resolve, reject) => {
-      if (!this._eventSource) {
-        reject(new Error('EventSource not initialized'));
-        return;
+  async connect(): Promise<void> {
+    try {
+      // Set custom headers
+      for (const [key, value] of Object.entries(this.options.headers)) {
+        this.options.res.setHeader(key, value);
       }
 
-      const onOpen = () => {
-        if (this._eventSource) {
-          this._eventSource.removeEventListener('open', onOpen);
-          resolve();
-        }
-      };
+      // Create SSE session
+      this.session = await createSession(this.options.req, this.options.res);
+      
+      // Set retry timeout
+      this.session.retry(this.options.retryTimeout);
 
-      const onError = (error: Event) => {
-        if (this._eventSource) {
-          this._eventSource.removeEventListener('error', onError);
-          this._eventSource.close();
-          this._eventSource = null;
-          reject(new Error('Connection failed'));
-        }
-      };
+      // Join channel if specified
+      if (this.options.channel) {
+        this.channel = new Channel();
+        this.channel.register(this.session);
+      }
 
-      this._eventSource.addEventListener('open', onOpen);
-      this._eventSource.addEventListener('error', onError);
-    });
-  }
+      // Handle session close
+      this.session.on('close', () => {
+        this.handleError(new Error('SSE session closed'));
+        this.setConnected(false);
+      });
 
-  /**
-   * Builds the SSE connection URL with headers.
-   * @returns URL instance with headers as query parameters
-   */
-  private buildUrl(): URL {
-    const url = new URL(this.options.eventSourceUrl);
-    for (const [key, value] of Object.entries(this.options.eventSourceHeaders)) {
-      url.searchParams.append(key, value);
+      this.setConnected(true);
+    } catch (error) {
+      throw new VError(error as Error, 'Failed to connect SSE transport');
     }
-    return url;
   }
 
   /**
-   * Disconnects the SSE connection.
-   * @returns Promise that resolves when disconnected
+   * Disconnects from the SSE stream.
    */
-  public async disconnect(): Promise<void> {
-    if (this._eventSource) {
-      this._eventSource.close();
-      this._eventSource = null;
+  async disconnect(): Promise<void> {
+    try {
+      if (this.channel) {
+        // No close method in Channel type, but it exists at runtime
+        (this.channel as any).close();
+        this.channel = null;
+      }
+      if (this.session) {
+        // No close method in Session type, but it exists at runtime
+        (this.session as any).close();
+        this.session = null;
+      }
+      this.setConnected(false);
+    } catch (error) {
+      throw new VError(error as Error, 'Failed to disconnect SSE transport');
     }
-    this.messageProcessor.clear();
-    this.errorManager.clear();
-    return Promise.resolve();
   }
 
   /**
-   * Checks if the SSE connection is active.
-   * @returns true if connected, false otherwise
+   * Sends a message through the SSE stream.
+   * @param message Message to send
    */
-  public isConnected(): boolean {
-    return this._eventSource !== null;
+  async send(message: JSONRPCRequest | JSONRPCResponse): Promise<void> {
+    if (!this.isConnected()) {
+      throw new VError('Transport not connected');
+    }
+
+    try {
+      // If we have a channel, broadcast to all clients
+      if (this.channel) {
+        await (this.channel as any).broadcast(
+          'message',
+          JSON.stringify(message),
+          { data: { id: 'id' in message ? message.id : undefined } }
+        );
+      } else if (this.session) {
+        // Otherwise send to single client
+        await this.session.push(
+          'message',
+          JSON.stringify(message),
+          { data: { id: 'id' in message ? message.id : undefined } }
+        );
+      } else {
+        throw new Error('No session or channel available');
+      }
+    } catch (error) {
+      throw new VError(error as Error, 'Failed to send message');
+    }
   }
 
   /**
-   * Sends a message through the SSE connection.
-   * Note: SSE is unidirectional, so this always throws an error.
-   * @throws {Error} Always, as SSE is unidirectional
+   * Gets the current session.
+   * @returns The current session or null if not connected
    */
-  public async send(): Promise<void> {
-    throw new Error('SSE transport is unidirectional (server to client only)');
+  getSession(): Session | null {
+    return this.session;
   }
 
   /**
-   * Registers a message handler.
-   * @param handler Handler function to register
+   * Gets the current channel.
+   * @returns The current channel or null if not using channels
    */
-  public onMessage(handler: MessageHandler): void {
-    this.messageProcessor.addHandler(handler);
-  }
-
-  /**
-   * Unregisters a message handler.
-   * @param handler Handler function to unregister
-   */
-  public offMessage(handler: MessageHandler): void {
-    this.messageProcessor.removeHandler(handler);
-  }
-
-  /**
-   * Registers an error handler.
-   * @param handler Handler function to register
-   */
-  public onError(handler: (error: Error) => void): void {
-    this.errorManager.addHandler(handler);
-  }
-
-  /**
-   * Unregisters an error handler.
-   * @param handler Handler function to unregister
-   */
-  public offError(handler: (error: Error) => void): void {
-    this.errorManager.removeHandler(handler);
-  }
-
-  public close(): Promise<void> {
-    return this.disconnect();
+  getChannel(): Channel | null {
+    return this.channel;
   }
 }

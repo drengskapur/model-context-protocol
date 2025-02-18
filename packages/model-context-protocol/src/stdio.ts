@@ -4,16 +4,36 @@
  * Provides a transport that uses process stdin/stdout for communication.
  */
 
+import { getStdin, setRawMode } from 'stdio';
 import type { Readable, Writable } from 'node:stream';
 import { parse } from 'valibot';
 import type { JSONRPCMessage, ProgressToken } from './schema.js';
 import { jsonRpcMessageSchema } from './schemas.js';
 import type { McpTransport, MessageHandler } from '../transport.js';
+import { VError } from 'verror';
 
 /**
  * Configuration options for the Standard I/O transport.
  */
 export interface StdioTransportOptions {
+  /**
+   * Whether to use raw mode for stdin
+   * @default false
+   */
+  rawMode?: boolean;
+
+  /**
+   * Buffer size for reading
+   * @default 4096
+   */
+  bufferSize?: number;
+
+  /**
+   * Line separator
+   * @default '\n'
+   */
+  separator?: string;
+
   /**
    * Input stream to read from.
    * @default process.stdin
@@ -27,12 +47,6 @@ export interface StdioTransportOptions {
   output?: Writable;
 
   /**
-   * Buffer size for reading input.
-   * @default 4096
-   */
-  bufferSize?: number;
-
-  /**
    * Whether to end the streams on disconnect.
    * @default false
    */
@@ -44,34 +58,28 @@ export interface StdioTransportOptions {
  * Useful for command-line tools and child process communication.
  */
 export class StdioTransport implements McpTransport {
-  private _buffer = '';
+  private readonly options: Required<StdioTransportOptions>;
+  private buffer = '';
+  private stdin: ReturnType<typeof getStdin>;
   private _started = false;
   private _messageHandlers = new Set<MessageHandler>();
   private _errorHandlers = new Set<(error: Error) => void>();
-  private _stdin: Readable;
   private _stdout: Writable;
-  private _options: Required<StdioTransportOptions> = {
-    input: process.stdin,
-    output: process.stdout,
-    bufferSize: 4096,
-    endStreamsOnDisconnect: false,
-  };
 
-  /**
-   * Creates a new Standard I/O transport.
-   * @param options Configuration options
-   */
   constructor(options: StdioTransportOptions = {}) {
-    this._options = {
-      ...this._options,
-      ...options,
+    this.options = {
+      rawMode: options.rawMode ?? false,
+      bufferSize: options.bufferSize ?? 4096,
+      separator: options.separator ?? '\n',
+      input: options.input ?? process.stdin,
+      output: options.output ?? process.stdout,
+      endStreamsOnDisconnect: options.endStreamsOnDisconnect ?? false,
     };
-    this._stdin = this._options.input;
-    this._stdout = this._options.output;
+    this._stdout = this.options.output;
 
     // Set encoding for stdin if it's a raw stream
-    if (this._stdin === process.stdin) {
-      this._stdin.setEncoding('utf8');
+    if (this.options.input === process.stdin) {
+      this.options.input.setEncoding('utf8');
     }
   }
 
@@ -127,19 +135,26 @@ export class StdioTransport implements McpTransport {
    * Sets up stream handling and marks as connected.
    */
   async connect(): Promise<void> {
-    if (this._started) {
-      throw new Error(
-        'StdioTransport already connected! Call close() before connecting again.'
-      );
-    }
+    try {
+      this.stdin = getStdin();
 
-    this._started = true;
-    this._stdin.on('data', this._onData);
-    this._stdin.on('error', this._onStreamError);
+      if (this.options.rawMode) {
+        setRawMode(true);
+      }
 
-    // Ensure streams are in the correct mode
-    if (this._stdin === process.stdin) {
-      this._stdin.resume();
+      // Setup input handling
+      this.stdin.on('data', (data: Buffer) => {
+        this.buffer += data.toString();
+        this.processBuffer();
+      });
+
+      this.stdin.on('error', (error: Error) => {
+        this.handleError(new VError(error, 'stdin error'));
+      });
+
+      this._started = true;
+    } catch (error) {
+      throw new VError(error as Error, 'Failed to connect stdio transport');
     }
   }
 
@@ -148,7 +163,25 @@ export class StdioTransport implements McpTransport {
    * Cleans up handlers and optionally ends streams.
    */
   async disconnect(): Promise<void> {
-    await this.close();
+    try {
+      if (this.options.rawMode) {
+        setRawMode(false);
+      }
+
+      this.stdin.removeAllListeners();
+      this.buffer = '';
+      this._started = false;
+
+      // Destroy non-process streams
+      if (this.options.input !== process.stdin) {
+        this.options.input.destroy();
+      }
+      if (this._stdout !== process.stdout) {
+        this._stdout.destroy();
+      }
+    } catch (error) {
+      throw new VError(error as Error, 'Failed to disconnect stdio transport');
+    }
   }
 
   /**
@@ -156,27 +189,7 @@ export class StdioTransport implements McpTransport {
    * Cleans up handlers and ends streams.
    */
   async close(): Promise<void> {
-    if (!this._started) {
-      return Promise.resolve();
-    }
-
-    this._started = false;
-    this._errorHandlers.clear();
-    this._messageHandlers.clear();
-
-    // Remove event listeners
-    this._stdin.removeListener('data', this._onData);
-    this._stdin.removeListener('error', this._onStreamError);
-
-    // Destroy non-process streams
-    if (this._stdin !== process.stdin) {
-      this._stdin.destroy();
-    }
-    if (this._stdout !== process.stdout) {
-      this._stdout.destroy();
-    }
-
-    return Promise.resolve();
+    await this.disconnect();
   }
 
   private _handleError(error: Error): void {
@@ -187,56 +200,30 @@ export class StdioTransport implements McpTransport {
     }
   }
 
-  // Arrow functions to bind 'this' properly while maintaining function identity
-  private _onData = (chunk: Buffer | string) => {
-    try {
-      this._buffer += chunk.toString();
-      this.processBuffer().catch((error) => {
-        this._handleError(
-          new Error(`Error processing buffer: ${error.message}`)
-        );
-      });
-    } catch (error) {
-      this._handleError(
-        new Error(
-          `Error handling data: ${error instanceof Error ? error.message : String(error)}`
-        )
-      );
-    }
-  };
+  private processBuffer(): void {
+    const lines = this.buffer.split(this.options.separator);
 
-  private _onStreamError = (error: Error) => {
-    this._handleError(new Error(`Stream error: ${error.message}`));
-  };
+    // Keep the last line if it's incomplete
+    this.buffer = lines.pop() || '';
 
-  private processBuffer(): Promise<void> {
-    return new Promise<void>((resolve) => {
-      while (true) {
-        const newlineIndex = this._buffer.indexOf('\n');
-        if (newlineIndex === -1) {
-          break;
-        }
+    for (const line of lines) {
+      if (!line) continue;
 
-        const messageStr = this._buffer.slice(0, newlineIndex);
-        this._buffer = this._buffer.slice(newlineIndex + 1);
-
-        try {
-          const message = JSON.parse(messageStr);
-          this._handleMessage(message).catch((error) => {
-            this._handleError(
-              new Error(`Error processing message: ${error.message}`)
-            );
-          });
-        } catch (error) {
+      try {
+        const message = JSON.parse(line);
+        this._handleMessage(message).catch((error) => {
           this._handleError(
-            new Error(
-              `Error parsing message: ${error instanceof Error ? error.message : String(error)}`
-            )
+            new Error(`Error processing message: ${error.message}`)
           );
-        }
+        });
+      } catch (error) {
+        this._handleError(
+          new Error(
+            `Error parsing message: ${error instanceof Error ? error.message : String(error)}`
+          )
+        );
       }
-      resolve();
-    });
+    }
   }
 
   private async _handleMessage(message: unknown): Promise<void> {

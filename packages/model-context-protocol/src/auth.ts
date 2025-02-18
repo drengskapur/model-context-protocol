@@ -1,20 +1,81 @@
-/**
- * @file auth.ts
- * @description Authentication and authorization functionality for the Model Context Protocol.
- * Provides types and utilities for securing MCP communications.
- */
-
-import { z } from 'zod';
-import { McpError } from './errors.js';
+import { SignJWT, jwtVerify } from 'jose';
+import { VError } from 'verror';
 
 /**
  * Authentication error.
  */
-export class AuthorizationError extends McpError {
-  constructor(message: string) {
-    super(-32401, message); // Use custom error code for authorization errors
-    this.name = 'AuthorizationError';
+export class AuthenticationError extends Error {
+  readonly cause?: Error;
+
+  constructor(message: string, cause?: Error) {
+    super(message);
+    this.name = 'AuthenticationError';
+    this.cause = cause;
   }
+}
+
+/**
+ * Authentication options for Model Context Protocol.
+ */
+export interface AuthOptions {
+  /**
+   * Secret key for signing tokens.
+   * Can be a string, Uint8Array, or KeyLike.
+   */
+  secret: string | Uint8Array;
+
+  /**
+   * Token expiration time in seconds.
+   * @default 3600
+   */
+  tokenExpiration?: number;
+
+  /**
+   * Token issuer.
+   * @default 'model-context-protocol'
+   */
+  issuer?: string;
+
+  /**
+   * Token audience.
+   * @default 'model-context-protocol'
+   */
+  audience?: string;
+}
+
+/**
+ * Token payload structure.
+ */
+export interface TokenPayload {
+  /**
+   * Subject (user ID)
+   */
+  sub: string;
+
+  /**
+   * User roles
+   */
+  roles: string[];
+
+  /**
+   * Issued at timestamp
+   */
+  iat?: number;
+
+  /**
+   * Expiration timestamp
+   */
+  exp?: number;
+
+  /**
+   * Token issuer
+   */
+  iss?: string;
+
+  /**
+   * Token audience
+   */
+  aud?: string;
 }
 
 /**
@@ -34,37 +95,31 @@ export interface AuthProvider {
    * @param token Token to validate
    * @returns Promise that resolves with token payload
    */
-  validateToken(token: string): Promise<{ subject: string; roles: string[] }>;
-}
-
-/**
- * Authentication options for Model Context Protocol.
- */
-export interface AuthOptions {
-  /**
-   * Secret key for signing tokens.
-   */
-  secret?: string;
-
-  /**
-   * Token expiration time in seconds.
-   * @default 3600
-   */
-  tokenExpiration?: number;
+  validateToken(token: string): Promise<TokenPayload>;
 }
 
 /**
  * Authentication class for Model Context Protocol.
- * Handles token generation and validation.
+ * Handles token generation and validation using JOSE.
  */
 export class Auth implements AuthProvider {
   private readonly options: Required<AuthOptions>;
+  private secretKey: Uint8Array;
 
-  constructor(options: AuthOptions = {}) {
+  constructor(options: AuthOptions) {
     this.options = {
-      secret: options.secret ?? 'default-secret',
+      secret: options.secret,
       tokenExpiration: options.tokenExpiration ?? 3600,
+      issuer: options.issuer ?? 'model-context-protocol',
+      audience: options.audience ?? 'model-context-protocol',
     };
+
+    if (typeof this.options.secret === 'string') {
+      const encoder = new TextEncoder();
+      this.secretKey = encoder.encode(this.options.secret);
+    } else {
+      this.secretKey = this.options.secret;
+    }
   }
 
   /**
@@ -73,20 +128,24 @@ export class Auth implements AuthProvider {
    * @param roles User roles
    * @returns Promise that resolves with the token
    */
-  async generateToken(
-    subject: string,
-    roles: string[] = []
-  ): Promise<string> {
-    const now = Math.floor(Date.now() / 1000);
-    const token: { sub: string; iat: number; exp: number; roles: string[] } = {
-      sub: subject,
-      iat: now,
-      exp: now + this.options.tokenExpiration,
-      roles,
-    };
+  async generateToken(subject: string, roles: string[] = []): Promise<string> {
+    try {
+      const now = Math.floor(Date.now() / 1000);
+      const jwt = await new SignJWT({
+        roles,
+      })
+        .setProtectedHeader({ alg: 'HS256' })
+        .setSubject(subject)
+        .setIssuedAt(now)
+        .setIssuer(this.options.issuer)
+        .setAudience(this.options.audience)
+        .setExpirationTime(now + this.options.tokenExpiration)
+        .sign(this.secretKey);
 
-    // Base64 encode token for now - in production this should use proper JWT
-    return Buffer.from(JSON.stringify(token)).toString('base64');
+      return jwt;
+    } catch (error) {
+      throw new VError(error as Error, 'Failed to generate token');
+    }
   }
 
   /**
@@ -94,93 +153,61 @@ export class Auth implements AuthProvider {
    * @param token Token to validate
    * @returns Promise that resolves with token payload
    */
-  async validateToken(token: string): Promise<{ subject: string; roles: string[] }> {
+  async validateToken(token: string): Promise<TokenPayload> {
     try {
-      const decoded = this.verifyToken(token);
-      return { subject: decoded.sub, roles: decoded.roles };
-    } catch (error) {
-      throw new AuthorizationError('Invalid token');
-    }
-  }
+      const { payload } = await jwtVerify(token, this.secretKey, {
+        issuer: this.options.issuer,
+        audience: this.options.audience,
+      });
 
-  /**
-   * Verifies an authentication token.
-   * @param token Token to verify
-   * @returns Token payload if valid
-   * @throws {AuthorizationError} If token is invalid or expired
-   */
-  verifyToken(token: string): { sub: string; iat: number; exp: number; roles: string[] } {
-    let decoded: unknown;
-    try {
-      decoded = JSON.parse(Buffer.from(token, 'base64').toString());
-    } catch (_error) {
-      throw new AuthorizationError('Invalid token format');
-    }
-
-    try {
-      const validated = z.object({
-        sub: z.string(),
-        iat: z.number(),
-        exp: z.number(),
-        roles: z.array(z.string()),
-      }).parse(decoded);
-
-      const now = Math.floor(Date.now() / 1000);
-      if (validated.exp < now) {
-        throw new AuthorizationError('Token expired');
+      if (!payload.sub) {
+        throw new Error('Token missing subject');
       }
 
-      return validated;
+      return {
+        sub: payload.sub,
+        roles: (payload.roles as string[]) || [],
+        iat: payload.iat,
+        exp: payload.exp,
+        iss: payload.iss,
+        aud: payload.aud as string,
+      };
     } catch (error) {
-      if (error instanceof AuthorizationError) {
+      throw new VError(error as Error, 'Failed to validate token');
+    }
+  }
+}
+
+/**
+ * Creates a middleware function that checks for authentication.
+ * @param auth Authentication provider
+ * @param requiredRoles Required roles for the route
+ * @param method Route handler function
+ * @returns Middleware function
+ */
+export function withAuth(
+  auth: Auth,
+  requiredRoles: string[],
+  method: (params: Record<string, unknown>) => Promise<unknown>
+): (params: Record<string, unknown>) => Promise<unknown> {
+  return async (params: Record<string, unknown>) => {
+    const token = params?.token as string | undefined;
+    if (!token) {
+      throw new AuthenticationError('No token provided');
+    }
+
+    try {
+      const payload = await auth.validateToken(token);
+      if (!requiredRoles.every((role) => payload.roles.includes(role))) {
+        throw new AuthenticationError('Insufficient permissions');
+      }
+
+      return method(params);
+    } catch (error) {
+      if (error instanceof AuthenticationError) {
         throw error;
       }
-      throw new AuthorizationError('Invalid token structure');
+      throw new AuthenticationError('Invalid token', error as Error);
     }
-  }
-}
-
-/**
- * Authentication middleware options.
- */
-export interface AuthMiddlewareOptions {
-  /** Authorization instance */
-  auth: Auth;
-  /** Required roles for the middleware */
-  requiredRoles?: string[];
-}
-
-/**
- * Creates an authentication middleware.
- * @param options Middleware options
- * @param handler Handler function to wrap
- * @returns Wrapped handler function
- */
-export function createAuthMiddleware<T extends Record<string, unknown>>(
-  options: AuthMiddlewareOptions,
-  handler: (params: T) => Promise<unknown>
-): (params: unknown) => Promise<unknown> {
-  return async (params: unknown) => {
-    const { auth, requiredRoles = [] } = options;
-
-    if (!params || typeof params !== 'object') {
-      throw new AuthorizationError('Invalid request parameters');
-    }
-
-    const { token, ...rest } = params as {
-      token?: string;
-      [key: string]: unknown;
-    };
-
-    if (!token) {
-      throw new AuthorizationError('No authorization token provided');
-    }
-
-    const { subject, roles } = await auth.validateToken(token);
-    if (!requiredRoles.every((role) => roles.includes(role))) {
-      throw new AuthorizationError('Insufficient permissions');
-    }
-
-    return handler(rest as T);
   };
 }

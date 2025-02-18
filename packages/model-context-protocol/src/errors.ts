@@ -1,3 +1,5 @@
+import { VError } from 'verror';
+
 /**
  * @file errors.ts
  * @description Custom error classes for the Model Context Protocol.
@@ -5,159 +7,93 @@
  */
 
 /**
- * Base error class for Model Context Protocol errors.
- * All MCP errors extend from this class.
+ * Base error class for MCP errors.
  */
-export class McpError extends Error {
-  /** Error code */
-  readonly code: number;
-  /** Optional error data */
-  readonly data?: unknown;
+export class McpError extends VError {
+  public readonly code: number;
+  public readonly data?: unknown;
 
-  /**
-   * Creates a new McpError instance.
-   * @param messageOrCode Error message or code
-   * @param messageOrData Error message or data
-   * @param data Additional error data
-   */
   constructor(
-    messageOrCode: string | number,
-    messageOrData?: string | unknown,
-    data?: unknown
+    code: number,
+    message: string,
+    data?: unknown,
+    options?: { cause?: Error }
   ) {
-    let message: string;
-    let code: number;
-    let errorData: unknown;
-
-    if (typeof messageOrCode === 'string') {
-      message = messageOrCode;
-      code = INTERNAL_ERROR;
-      errorData = messageOrData;
-    } else {
-      code = messageOrCode;
-      message =
-        typeof messageOrData === 'string' ? messageOrData : 'Unknown error';
-      errorData = data;
-    }
-
-    super(message);
+    super({ name: 'McpError', cause: options?.cause }, message);
     this.code = code;
-    this.data = errorData;
-    this.name = 'McpError';
-    Error.captureStackTrace(this, this.constructor);
+    this.data = data;
   }
 
-  /**
-   * Converts the error to a JSON-RPC error object.
-   * @returns JSON-RPC error object
-   */
-  toJSON() {
-    const result: { code: number; message: string; data?: unknown } = {
+  toJSON(): { code: number; message: string; data?: unknown } {
+    return {
       code: this.code,
       message: this.message,
+      ...(this.data !== undefined && { data: this.data }),
     };
-    if (this.data !== undefined) {
-      result.data = this.data;
-    }
-    return result;
-  }
-
-  /**
-   * Creates an McpError instance from a JSON-RPC error object.
-   * @param error JSON-RPC error object
-   * @returns McpError instance
-   */
-  static fromJSON(error: { code: number; message: string; data?: unknown }) {
-    return new McpError(error.code, error.message, error.data);
   }
 }
 
-/**
- * Error codes as defined in the JSON-RPC 2.0 specification.
- */
+// JSON-RPC 2.0 error codes
 export const PARSE_ERROR = -32700;
 export const INVALID_REQUEST = -32600;
 export const METHOD_NOT_FOUND = -32601;
 export const INVALID_PARAMS = -32602;
 export const INTERNAL_ERROR = -32603;
-
-// Custom error codes
+export const AUTH_ERROR = -32401;
 export const SERVER_NOT_INITIALIZED = -32002;
-export const REQUEST_FAILED = -32003;
+export const REQUEST_FAILED = -32001;
 
 /**
- * Error thrown when a JSON-RPC parse error occurs.
+ * Error thrown when parsing JSON fails.
  */
 export class ParseError extends McpError {
-  /**
-   * Creates a new ParseError instance.
-   * @param message Error message
-   */
-  constructor(message = 'Parse error') {
-    super(PARSE_ERROR, message);
-    this.name = 'ParseError';
-    Error.captureStackTrace(this, this.constructor);
+  constructor(message: string, cause?: Error) {
+    super(PARSE_ERROR, message, undefined, { cause });
   }
 }
 
 /**
- * Error thrown when an invalid JSON-RPC request is received.
+ * Error thrown when the request is invalid.
  */
 export class InvalidRequestError extends McpError {
-  /**
-   * Creates a new InvalidRequestError instance.
-   * @param message Error message
-   */
-  constructor(message = 'Invalid request') {
-    super(INVALID_REQUEST, message);
-    this.name = 'InvalidRequestError';
-    Error.captureStackTrace(this, this.constructor);
+  constructor(message: string, cause?: Error) {
+    super(INVALID_REQUEST, message, undefined, { cause });
   }
 }
 
 /**
- * Error thrown when a requested method is not found.
+ * Error thrown when the requested method is not found.
  */
 export class MethodNotFoundError extends McpError {
-  /**
-   * Creates a new MethodNotFoundError instance.
-   * @param message Error message
-   */
-  constructor(message = 'Method not found') {
-    super(METHOD_NOT_FOUND, message);
-    this.name = 'MethodNotFoundError';
-    Error.captureStackTrace(this, this.constructor);
+  constructor(message: string, cause?: Error) {
+    super(METHOD_NOT_FOUND, message, undefined, { cause });
   }
 }
 
 /**
- * Error thrown when invalid parameters are provided.
+ * Error thrown when the parameters are invalid.
  */
 export class InvalidParamsError extends McpError {
-  /**
-   * Creates a new InvalidParamsError instance.
-   * @param message Error message
-   */
-  constructor(message = 'Invalid params') {
-    super(INVALID_PARAMS, message);
-    this.name = 'InvalidParamsError';
-    Error.captureStackTrace(this, this.constructor);
+  constructor(message: string, cause?: Error) {
+    super(INVALID_PARAMS, message, undefined, { cause });
   }
 }
 
 /**
- * Error thrown when an internal JSON-RPC error occurs.
+ * Error thrown when an internal error occurs.
  */
 export class InternalError extends McpError {
-  /**
-   * Creates a new InternalError instance.
-   * @param message Error message
-   * @param data Additional error data
-   */
-  constructor(message = 'Internal error', data?: unknown) {
-    super(INTERNAL_ERROR, message, data);
-    this.name = 'InternalError';
-    Error.captureStackTrace(this, this.constructor);
+  constructor(message: string, data?: unknown, cause?: Error) {
+    super(INTERNAL_ERROR, message, data, { cause });
+  }
+}
+
+/**
+ * Error thrown when authentication fails.
+ */
+export class AuthError extends McpError {
+  constructor(message: string, cause?: Error) {
+    super(AUTH_ERROR, message, undefined, { cause });
   }
 }
 
@@ -165,14 +101,8 @@ export class InternalError extends McpError {
  * Error thrown when the server is not initialized.
  */
 export class ServerNotInitializedError extends McpError {
-  /**
-   * Creates a new ServerNotInitializedError instance.
-   * @param message Error message
-   */
-  constructor(message = 'Server not initialized') {
-    super(SERVER_NOT_INITIALIZED, message);
-    this.name = 'ServerNotInitializedError';
-    Error.captureStackTrace(this, this.constructor);
+  constructor(message: string, cause?: Error) {
+    super(SERVER_NOT_INITIALIZED, message, undefined, { cause });
   }
 }
 
@@ -180,30 +110,7 @@ export class ServerNotInitializedError extends McpError {
  * Error thrown when a request fails.
  */
 export class RequestFailedError extends McpError {
-  /**
-   * Creates a new RequestFailedError instance.
-   * @param message Error message
-   */
-  constructor(message = 'Request failed') {
-    super(REQUEST_FAILED, message);
-    this.name = 'RequestFailedError';
-    Error.captureStackTrace(this, this.constructor);
-  }
-}
-
-/**
- * Error thrown when there are transport-level issues.
- * Indicates problems with the underlying communication channel.
- */
-export class TransportError extends McpError {
-  /**
-   * Creates a new transport error.
-   * @param message Error description
-   * @param cause Original error that caused the transport failure
-   */
-  constructor(message: string, public readonly cause?: unknown) {
-    super(INTERNAL_ERROR, message, cause);
-    this.name = 'TransportError';
-    Error.captureStackTrace(this, this.constructor);
+  constructor(message: string, cause?: Error) {
+    super(REQUEST_FAILED, message, undefined, { cause });
   }
 }

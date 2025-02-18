@@ -1,4 +1,5 @@
 import { JSONRPCClient, JSONRPCServer } from 'json-rpc-2.0';
+import { VError } from 'verror';
 import type { JSONRPCRequest, JSONRPCResponse } from '../schema.js';
 import type { McpTransport, MessageHandler } from '../transport.js';
 
@@ -68,7 +69,7 @@ export abstract class JsonRpcTransport implements McpTransport {
         await this.send(response);
       }
     } catch (error) {
-      this.notifyError(error as Error);
+      this.handleError(new VError(error as Error, 'Failed to handle message'));
     }
   }
 
@@ -78,26 +79,32 @@ export abstract class JsonRpcTransport implements McpTransport {
    * @returns Promise that resolves with the response
    */
   protected async sendRequest(request: JSONRPCRequest): Promise<unknown> {
-    await this.send(request);
-    return new Promise((resolve, reject) => {
-      this.onMessage(async (message) => {
-        if ('id' in message && message.id === request.id) {
-          if ('error' in message) {
-            reject(message.error);
-          } else {
-            resolve(message.result);
+    try {
+      await this.send(request);
+      return new Promise((resolve, reject) => {
+        this.onMessage((message) => {
+          if ('id' in message && message.id === request.id) {
+            if ('error' in message) {
+              reject(message.error);
+            } else if ('result' in message) {
+              resolve(message.result);
+            }
           }
-        }
+        });
       });
-    });
+    } catch (error) {
+      throw new VError(error as Error, 'Failed to send request');
+    }
   }
 
   /**
-   * Notifies error handlers of an error.
-   * @param error Error to notify about
+   * Handles an error by notifying all error handlers
+   * @param error Error to handle
    */
-  protected notifyError(error: Error): void {
-    this.errorHandlers.forEach((handler) => handler(error));
+  protected handleError(error: Error): void {
+    for (const handler of this.errorHandlers) {
+      handler(error);
+    }
   }
 
   /**

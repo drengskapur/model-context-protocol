@@ -87,7 +87,10 @@ export const imageContentSchema = z.object({
 /**
  * Zod schema for message content.
  */
-export const messageContentSchema = z.union([textContentSchema, imageContentSchema]);
+export const messageContentSchema = z.union([
+  textContentSchema,
+  imageContentSchema,
+]);
 
 /**
  * Zod schema for sampling messages.
@@ -120,7 +123,7 @@ export class Sampling {
    * @param options Options for the sampling process.
    * @returns A promise that resolves to the created message.
    */
-  async createMessage(
+  createMessage(
     messages: SamplingMessage[],
     options: SamplingOptions
   ): Promise<CreateMessageResult> {
@@ -169,22 +172,70 @@ export class Sampling {
    * @param content Content of the response message.
    * @returns A promise that resolves to the response message.
    */
-  async respondToSampling(
-    role: Role,
-    content: TextContent | ImageContent
-  ): Promise<SamplingMessage> {
-    try {
-      messageContentSchema.parse(content);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        throw new SamplingError(`Invalid content: ${error.message}`);
-      }
-      throw error;
-    }
+  respondToSampling(
+    role: string,
+    content: string,
+    name?: string,
+    functionCall?: FunctionCall,
+    toolCalls?: ToolCall[],
+    metadata?: Record<string, unknown>
+  ): Promise<RespondToSamplingResponse> {
+    return Promise.resolve({
+      method: 'sampling/respondToSampling',
+      params: {
+        role,
+        content,
+        name,
+        functionCall,
+        toolCalls,
+        metadata,
+      },
+    });
+  }
+}
 
-    return {
-      role,
-      content,
-    };
+export interface FunctionCall {
+  name: string;
+  arguments: string;
+}
+
+export interface ToolCall {
+  id: string;
+  type: string;
+  function: FunctionCall;
+}
+
+export interface RespondToSamplingResponse {
+  method: 'sampling/respondToSampling';
+  params: {
+    role: string;
+    content: string;
+    name?: string;
+    functionCall?: FunctionCall;
+    toolCalls?: ToolCall[];
+    metadata?: Record<string, unknown>;
+  };
+}
+
+export class SamplingClient {
+  respondToSampling(
+    role: string,
+    content: string,
+    name?: string,
+    functionCall?: FunctionCall,
+    toolCalls?: ToolCall[],
+    metadata?: Record<string, unknown>
+  ): Promise<RespondToSamplingResponse> {
+    return Promise.resolve({
+      method: 'sampling/respondToSampling',
+      params: {
+        role,
+        content,
+        name,
+        functionCall,
+        toolCalls,
+        metadata,
+      },
+    });
   }
 }

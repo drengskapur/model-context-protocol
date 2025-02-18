@@ -59,19 +59,15 @@ export class MessageBuffer {
    * @returns True if buffer was flushed
    */
   add(message: Uint8Array): boolean {
-    if (this.size + message.length > this.options.maxSize ||
-        this.buffer.length >= this.options.maxMessages) {
+    if (
+      this.size + message.length > this.options.maxSize ||
+      this.buffer.length >= this.options.maxMessages
+    ) {
       this.flush();
       return true;
     }
-
     this.buffer.push(message);
     this.size += message.length;
-
-    if (!this.timer) {
-      this.timer = setTimeout(() => this.flush(), this.options.flushInterval);
-    }
-
     return false;
   }
 

@@ -10,12 +10,17 @@ import type {
   SamplingMessage,
 } from './schema.js';
 import { JSONRPC_VERSION, LATEST_PROTOCOL_VERSION } from './schema.js';
+import { Auth } from './auth.js';
+import { McpServer } from './server.js';
 
 const PROTOCOL_VERSION_MISMATCH_REGEX = /Protocol version mismatch/;
 
 describe('McpClient', () => {
   let client: McpClient;
   let transport: InMemoryTransport;
+  let clientTransport: InMemoryTransport;
+  let serverTransport: InMemoryTransport;
+  let server: McpServer;
 
   beforeEach(() => {
     client = new McpClient({
@@ -24,6 +29,12 @@ describe('McpClient', () => {
       requestTimeout: 1000, // Increased timeout for tests
     });
     transport = new InMemoryTransport();
+    [clientTransport, serverTransport] = InMemoryTransport.createPair();
+
+    server = new McpServer(serverTransport, {
+      name: 'test-server',
+      version: '1.0.0',
+    });
   });
 
   it('should initialize successfully', async () => {
@@ -1806,6 +1817,100 @@ describe('McpClient', () => {
         /* Intentionally empty - test handler */
       })
     ).rejects.toThrow('Server does not support resources');
+  });
+});
+
+describe('Client-Server Integration', () => {
+  it('should handle initialization', async () => {
+    const { client } = await createConnectedPair();
+    expect(client.isInitialized()).toBe(true);
+  });
+
+  it('should handle prompts', async () => {
+    const { server, client } = await createConnectedPair();
+
+    server.registerPrompt('test', {
+      description: 'Test prompt',
+      execute: async () => ({
+        messages: [
+          {
+            role: 'assistant',
+            content: { type: 'text', text: 'Test response' },
+          },
+        ],
+      }),
+    });
+
+    const prompts = await client.listPrompts();
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0].name).toBe('test');
+
+    const result = await client.executePrompt('test', {});
+    expect(result.messages[0].content.text).toBe('Test response');
+  });
+
+  it('should handle resources', async () => {
+    const { server, client } = await createConnectedPair();
+
+    server.registerResource('test', {
+      read: async () => 'Test content',
+    });
+
+    const resources = await client.listResources();
+    expect(resources).toContain('test');
+
+    const content = await client.readResource('test');
+    expect(content).toBe('Test content');
+  });
+
+  it('should handle tools', async () => {
+    const { server, client } = await createConnectedPair();
+
+    server.registerTool({
+      name: 'test',
+      description: 'Test tool',
+      execute: async () => ({ result: 'Test result' }),
+    });
+
+    const tools = await client.listTools();
+    expect(tools).toHaveLength(1);
+    expect(tools[0].name).toBe('test');
+
+    const result = await client.callTool('test', {});
+    expect(result).toEqual({ result: 'Test result' });
+  });
+
+  it('should handle errors', async () => {
+    const { server, client } = await createConnectedPair();
+
+    server.registerTool({
+      name: 'error',
+      description: 'Error tool',
+      execute: async () => {
+        throw new Error('Test error');
+      },
+    });
+
+    await expect(client.callTool('error', {})).rejects.toThrow('Test error');
+  });
+
+  it('should handle progress updates', async () => {
+    const { server, client } = await createConnectedPair();
+    const progress = vi.fn();
+
+    server.registerTool({
+      name: 'progress',
+      description: 'Progress tool',
+      execute: async (_, { progress }) => {
+        await progress(50);
+        await progress(100);
+        return { result: 'Done' };
+      },
+    });
+
+    await client.callTool('progress', {}, { progress });
+    expect(progress).toHaveBeenCalledWith(50);
+    expect(progress).toHaveBeenCalledWith(100);
   });
 });
 

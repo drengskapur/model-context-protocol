@@ -48,17 +48,22 @@
       "types": "./dist/in-memory.d.ts",
       "import": "./dist/in-memory.js",
       "require": "./dist/in-memory.cjs"
+    },
+    "./stdio": {
+      "types": "./dist/stdio.d.ts",
+      "import": "./dist/stdio.js",
+      "require": "./dist/stdio.cjs"
+    },
+    "./sse": {
+      "types": "./dist/sse.d.ts",
+      "import": "./dist/sse.js",
+      "require": "./dist/sse.cjs"
     }
   },
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": [
-    "dist",
-    "src",
-    "README.md",
-    "LICENSE"
-  ],
+  "files": ["dist", "src", "README.md", "LICENSE"],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
@@ -66,16 +71,24 @@
     "format": "biome format --write .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
+    "better-sse": "^0.14.1",
+    "eventemitter3": "^5.0.1",
+    "eventsource": "^3.0.5",
+    "jose": "^5.10.0",
     "json-rpc-2.0": "^1.7.0",
+    "stdio": "^2.1.3",
     "valibot": "^0.28.1",
-    "zod": "^3.24.2"
+    "verror": "^1.10.1"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
+    "@types/eventsource": "^3.0.0",
     "@types/node": "^20.11.19",
+    "@types/verror": "^1.10.10",
     "@vitest/coverage-v8": "^1.3.1",
     "tsup": "^8.0.2",
     "typescript": "^5.3.3",

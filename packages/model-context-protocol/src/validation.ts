@@ -151,16 +151,18 @@ export const promptSchema = z.object({
   /** Optional description */
   description: z.string().optional(),
   /** Optional arguments */
-  arguments: z.array(
-    z.object({
-      /** Argument name */
-      name: z.string().min(1),
-      /** Optional argument description */
-      description: z.string().optional(),
-      /** Optional argument required flag */
-      required: z.boolean().optional(),
-    })
-  ).optional(),
+  arguments: z
+    .array(
+      z.object({
+        /** Argument name */
+        name: z.string().min(1),
+        /** Optional argument description */
+        description: z.string().optional(),
+        /** Optional argument required flag */
+        required: z.boolean().optional(),
+      })
+    )
+    .optional(),
 });
 
 /**
@@ -365,39 +367,47 @@ export async function validateTool(tool: unknown): Promise<void> {
  * @param ref The reference to validate
  * @throws {ValidationError} If the reference is invalid
  */
-export async function validateReference(
-  ref: { type: string; name?: string; uriTemplate?: string }
-): Promise<void> {
+export async function validateReference(ref: {
+  type: string;
+  name?: string;
+  uriTemplate?: string;
+}): Promise<void> {
   if (ref.type === 'ref/prompt') {
     if (!ref.name) {
       throw new ValidationError(
         'Prompt reference must have a name',
-        new ValiError([{
-          validation: 'required',
-          message: 'Missing name',
-          path: ['name'],
-        }])
+        new ValiError([
+          {
+            validation: 'required',
+            message: 'Missing name',
+            path: ['name'],
+          },
+        ])
       );
     }
   } else if (ref.type === 'ref/resource') {
     if (!ref.uriTemplate) {
       throw new ValidationError(
         'Resource reference must have a uriTemplate',
-        new ValiError([{
-          validation: 'required',
-          message: 'Missing uriTemplate',
-          path: ['uriTemplate'],
-        }])
+        new ValiError([
+          {
+            validation: 'required',
+            message: 'Missing uriTemplate',
+            path: ['uriTemplate'],
+          },
+        ])
       );
     }
   } else {
     throw new ValidationError(
       'Invalid reference type',
-      new ValiError([{
-        validation: 'enum',
-        message: 'Unknown reference type',
-        path: ['type'],
-      }])
+      new ValiError([
+        {
+          validation: 'enum',
+          message: 'Unknown reference type',
+          path: ['type'],
+        },
+      ])
     );
   }
 }
@@ -429,7 +439,10 @@ export class ValidationError extends McpError {
    * @param message Error message
    * @param errors Zod validation error details
    */
-  constructor(message: string, public cause?: ValiError) {
+  constructor(
+    message: string,
+    public cause?: ValiError
+  ) {
     super(-32402, message); // Use custom error code for validation errors
     this.name = 'ValidationError';
     Error.captureStackTrace(this, this.constructor);

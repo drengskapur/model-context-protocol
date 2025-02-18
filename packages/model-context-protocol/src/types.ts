@@ -26,7 +26,7 @@ export type Uri = string;
  * Type for handling asynchronous operations that may fail.
  * Provides type safety for error handling.
  */
-export type Result<T, E = Error> = 
+export type Result<T, E = Error> =
   | { success: true; value: T }
   | { success: false; error: E };
 
