@@ -49,8 +49,8 @@ export interface SamplingConfig {
  * Error class for sampling-related errors.
  */
 export class SamplingError extends McpError {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, cause?: Error) {
+    super(message, { cause });
     this.name = 'SamplingError';
   }
 }
@@ -123,7 +123,7 @@ export class Sampling {
    * @param options Options for the sampling process.
    * @returns A promise that resolves to the created message.
    */
-  createMessage(
+  async createMessage(
     messages: SamplingMessage[],
     options: SamplingOptions
   ): Promise<CreateMessageResult> {
@@ -133,7 +133,7 @@ export class Sampling {
         samplingMessageSchema.parse(message);
       } catch (error) {
         if (error instanceof z.ZodError) {
-          throw new SamplingError(`Invalid message: ${error.message}`);
+          throw new SamplingError(`Invalid message: ${error.message}`, error);
         }
         throw error;
       }
@@ -155,7 +155,7 @@ export class Sampling {
     };
 
     // Return mock result for now
-    return {
+    return Promise.resolve({
       role: 'assistant',
       content: {
         type: 'text',
@@ -163,7 +163,7 @@ export class Sampling {
       },
       model: 'mock-model',
       stopReason: 'endTurn',
-    };
+    });
   }
 
   /**

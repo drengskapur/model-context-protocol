@@ -87,7 +87,7 @@ export class SseTransport extends BaseTransport {
 
       // Create SSE session
       this.session = await createSession(this.options.req, this.options.res);
-      
+
       // Set retry timeout
       this.session.retry(this.options.retryTimeout);
 
@@ -149,11 +149,9 @@ export class SseTransport extends BaseTransport {
         );
       } else if (this.session) {
         // Otherwise send to single client
-        await this.session.push(
-          'message',
-          JSON.stringify(message),
-          { data: { id: 'id' in message ? message.id : undefined } }
-        );
+        await this.session.push('message', JSON.stringify(message), {
+          data: { id: 'id' in message ? message.id : undefined },
+        });
       } else {
         throw new Error('No session or channel available');
       }

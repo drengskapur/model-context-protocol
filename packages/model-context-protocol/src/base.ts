@@ -100,6 +100,17 @@ export abstract class BaseTransport implements McpTransport {
   abstract disconnect(): Promise<void>;
 
   /**
+   * Sends a request and returns a promise that resolves with the response.
+   * @param method Method name
+   * @param params Method parameters
+   * @returns Promise that resolves with the response
+   */
+  abstract request<T>(
+    method: string,
+    params?: Record<string, unknown>
+  ): Promise<T>;
+
+  /**
    * Whether the transport is currently connected.
    */
   isConnected(): boolean {

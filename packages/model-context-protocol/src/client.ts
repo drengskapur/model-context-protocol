@@ -18,7 +18,9 @@ export interface ClientOptions {
   capabilities?: Record<string, unknown>;
 }
 
-type MessageHandler = (message: unknown) => Promise<void>;
+type MessageHandler = (
+  message: JSONRPCRequest | JSONRPCResponse
+) => Promise<void>;
 
 /**
  * Client implementation of the Model Context Protocol.
@@ -34,9 +36,7 @@ export class McpClient {
     this.capabilities = options.capabilities ?? {};
     this.events = new EventEmitter();
 
-    this.transport.onMessage(async (message) => {
-      await this.handleMessage(message);
-    });
+    this.transport.onMessage(this.handleMessage.bind(this));
   }
 
   /**
@@ -88,12 +88,14 @@ export class McpClient {
       await this.transport.send(request);
 
       return new Promise((resolve, reject) => {
-        const handler = (message: JSONRPCRequest | JSONRPCResponse) => {
+        const handler: MessageHandler = async (
+          message: JSONRPCRequest | JSONRPCResponse
+        ) => {
           if ('id' in message && message.id === request.id) {
             this.transport.offMessage(handler);
             if ('error' in message) {
-              reject(new VError({ info: message.error }, 'Server error'));
-            } else {
+              reject(new VError('Server error', { cause: message.error }));
+            } else if ('result' in message) {
               resolve(message.result as T);
             }
           }
@@ -167,7 +169,7 @@ export class McpClient {
   private async handleMessage(message: unknown): Promise<void> {
     try {
       const jsonRpcMessage = message as JSONRPCRequest | JSONRPCResponse;
-      
+
       if ('method' in jsonRpcMessage) {
         await this.events.emit('request', jsonRpcMessage);
       } else if ('id' in jsonRpcMessage && 'result' in jsonRpcMessage) {
@@ -176,7 +178,10 @@ export class McpClient {
         await this.events.emit('notification', jsonRpcMessage);
       }
     } catch (error) {
-      await this.events.emit('error', new VError('Failed to handle message', { cause: error }));
+      await this.events.emit(
+        'error',
+        new VError('Failed to handle message', { cause: error })
+      );
     }
   }
 }
