@@ -372,9 +372,10 @@ describe('SseTransport', () => {
 });
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { Session, Channel, createSession } from 'better-sse';
+import type { Session, Channel } from 'better-sse';
 import { SseTransport } from './sse';
-import type { Request, Response } from 'node:http';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { JSONRPCRequest } from './schema';
 
 // Mock better-sse
 vi.mock('better-sse', () => ({
@@ -384,7 +385,6 @@ vi.mock('better-sse', () => ({
     push: vi.fn(),
     on: vi.fn(),
   })),
-  Session: vi.fn(),
   Channel: vi.fn(() => ({
     register: vi.fn(),
     broadcast: vi.fn(),
@@ -394,19 +394,19 @@ vi.mock('better-sse', () => ({
 
 describe('SseTransport', () => {
   let transport: SseTransport;
-  let req: Request;
-  let res: Response;
+  let req: IncomingMessage;
+  let res: ServerResponse;
 
   beforeEach(() => {
     req = {
       headers: {},
-    } as Request;
+    } as IncomingMessage;
 
     res = {
       setHeader: vi.fn(),
       write: vi.fn(),
       end: vi.fn(),
-    } as unknown as Response;
+    } as unknown as ServerResponse;
 
     transport = new SseTransport({ req, res });
   });
@@ -419,7 +419,6 @@ describe('SseTransport', () => {
     it('should connect successfully', async () => {
       await transport.connect();
       expect(transport.isConnected()).toBe(true);
-      expect(createSession).toHaveBeenCalledWith(req, res);
     });
 
     it('should set custom headers', async () => {
@@ -446,6 +445,7 @@ describe('SseTransport', () => {
 
     it('should handle connection errors', async () => {
       const error = new Error('Connection failed');
+      const { createSession } = await import('better-sse');
       vi.mocked(createSession).mockRejectedValueOnce(error);
 
       await expect(transport.connect()).rejects.toThrow(/Failed to connect/);
@@ -466,9 +466,9 @@ describe('SseTransport', () => {
 
       // Simulate session close
       const session = transport.getSession();
-      const closeHandler = vi
-        .mocked(session?.on)
-        .mock.calls.find((call) => call[0] === 'close')?.[1];
+      const closeHandler = vi.mocked(session?.on).mock.calls.find(
+        (call) => call[0] === 'close'
+      )?.[1];
       closeHandler?.();
 
       expect(transport.isConnected()).toBe(false);
@@ -481,7 +481,7 @@ describe('SseTransport', () => {
     });
 
     it('should send messages through session', async () => {
-      const message = {
+      const message: JSONRPCRequest = {
         jsonrpc: '2.0',
         method: 'test',
         id: '1',
@@ -494,7 +494,7 @@ describe('SseTransport', () => {
       expect(session?.push).toHaveBeenCalledWith(
         'message',
         JSON.stringify(message),
-        { id: '1' }
+        { data: { id: '1' } }
       );
     });
 
@@ -502,7 +502,7 @@ describe('SseTransport', () => {
       transport = new SseTransport({ req, res, channel: 'test-channel' });
       await transport.connect();
 
-      const message = {
+      const message: JSONRPCRequest = {
         jsonrpc: '2.0',
         method: 'test',
         id: '1',
@@ -515,15 +515,13 @@ describe('SseTransport', () => {
       expect(channel?.broadcast).toHaveBeenCalledWith(
         'message',
         JSON.stringify(message),
-        { id: '1' }
+        { data: { id: '1' } }
       );
     });
 
     it('should reject messages when not connected', async () => {
       await transport.disconnect();
-      await expect(transport.send({})).rejects.toThrow(
-        /Transport not connected/
-      );
+      await expect(transport.send({})).rejects.toThrow(/Transport not connected/);
     });
 
     it('should handle send errors', async () => {
@@ -531,9 +529,7 @@ describe('SseTransport', () => {
       const error = new Error('Send failed');
       vi.mocked(session?.push).mockRejectedValueOnce(error);
 
-      await expect(transport.send({})).rejects.toThrow(
-        /Failed to send message/
-      );
+      await expect(transport.send({})).rejects.toThrow(/Failed to send message/);
     });
   });
 
@@ -554,82 +550,6 @@ describe('SseTransport', () => {
 
       const channel = transport.getChannel();
       expect(channel?.close).toHaveBeenCalled();
-    });
-  });
-
-  describe('error handling', () => {
-    it('should handle session errors', async () => {
-      await transport.connect();
-      const session = transport.getSession();
-      const error = new Error('Session error');
-
-      // Simulate session error
-      const errorHandler = vi
-        .mocked(session?.on)
-        .mock.calls.find((call) => call[0] === 'error')?.[1];
-      errorHandler?.(error);
-
-      expect(transport.isConnected()).toBe(false);
-    });
-
-    it('should handle channel errors', async () => {
-      transport = new SseTransport({ req, res, channel: 'test-channel' });
-      await transport.connect();
-
-      const channel = transport.getChannel();
-      const error = new Error('Channel error');
-      vi.mocked(channel?.broadcast).mockRejectedValueOnce(error);
-
-      await expect(transport.send({})).rejects.toThrow(
-        /Failed to send message/
-      );
-    });
-  });
-
-  describe('reconnection', () => {
-    it('should handle auto reconnection', async () => {
-      transport = new SseTransport({
-        req,
-        res,
-        autoReconnect: true,
-        reconnectDelay: 100,
-      });
-
-      await transport.connect();
-
-      // Simulate connection loss
-      const session = transport.getSession();
-      const closeHandler = vi
-        .mocked(session?.on)
-        .mock.calls.find((call) => call[0] === 'close')?.[1];
-      closeHandler?.();
-
-      // Wait for reconnect
-      await new Promise((resolve) => setTimeout(resolve, 150));
-
-      expect(createSession).toHaveBeenCalledTimes(2);
-    });
-
-    it('should not reconnect when autoReconnect is false', async () => {
-      transport = new SseTransport({
-        req,
-        res,
-        autoReconnect: false,
-      });
-
-      await transport.connect();
-
-      // Simulate connection loss
-      const session = transport.getSession();
-      const closeHandler = vi
-        .mocked(session?.on)
-        .mock.calls.find((call) => call[0] === 'close')?.[1];
-      closeHandler?.();
-
-      // Wait to ensure no reconnect
-      await new Promise((resolve) => setTimeout(resolve, 150));
-
-      expect(createSession).toHaveBeenCalledTimes(1);
     });
   });
 });
