@@ -32,10 +32,14 @@ export class InMemoryTransport extends BaseTransport {
 
   /**
    * Pairs two transports together.
-   * @param _transport Transport to pair with
+   * @param transport Transport to pair with
    */
-  pair(_transport: InMemoryTransport): void {
-    // No-op, pairing is not implemented in the new version
+  pair(transport: InMemoryTransport): void {
+    this.onMessage((message) => {
+      if (transport._connected) {
+        transport._messageHandler?.(message);
+      }
+    });
   }
 
   /**
@@ -109,6 +113,7 @@ export class InMemoryTransport extends BaseTransport {
     if (!this._connected) {
       throw new Error('Transport not connected');
     }
+    this.messages.push(message);
     await this.handleMessage(message);
   }
 
