@@ -45,6 +45,7 @@ export class StdioTransport extends BaseTransport {
   private buffer = '';
   private input: Readable;
   private output: Writable;
+  private alreadyConnected = false;
 
   constructor(options: StdioTransportOptions = {}) {
     super();
@@ -68,6 +69,10 @@ export class StdioTransport extends BaseTransport {
    * Connects to stdin/stdout streams.
    */
   connect(): Promise<void> {
+    if (this.alreadyConnected) {
+      throw new VError('Transport already connected');
+    }
+
     try {
       // Setup input handling
       this.input.on('data', (data: Buffer | string) => {
@@ -76,9 +81,10 @@ export class StdioTransport extends BaseTransport {
       });
 
       this.input.on('error', (error: Error) => {
-        this.handleError(new VError(error, 'stdin error'));
+        this.handleError(error);
       });
 
+      this.alreadyConnected = true;
       this.setConnected(true);
       return Promise.resolve();
     } catch (error) {
@@ -93,6 +99,7 @@ export class StdioTransport extends BaseTransport {
     try {
       this.input.removeAllListeners();
       this.buffer = '';
+      this.alreadyConnected = false;
       this.setConnected(false);
       return Promise.resolve();
     } catch (error) {
@@ -114,7 +121,7 @@ export class StdioTransport extends BaseTransport {
       await new Promise<void>((resolve, reject) => {
         this.output.write(data, (error) => {
           if (error) {
-            reject(new VError(error, 'Failed to write to stdout'));
+            reject(new VError(error, 'Write error'));
           } else {
             resolve();
           }
@@ -145,7 +152,9 @@ export class StdioTransport extends BaseTransport {
 
       try {
         const message = JSON.parse(line);
-        this.handleMessage(message);
+        this.handleMessage(message).catch((error) => {
+          this.handleError(error);
+        });
       } catch (error) {
         this.handleError(new VError(error as Error, 'Failed to parse message'));
       }

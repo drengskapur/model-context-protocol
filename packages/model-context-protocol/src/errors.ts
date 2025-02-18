@@ -1,7 +1,8 @@
 /**
  * @file errors.ts
- * @description Custom error classes for the Model Context Protocol.
- * Defines specific error types for various failure scenarios.
+ * @description Error handling utilities for the Model Context Protocol.
+ * Defines custom error types and error handling mechanisms.
+
  */
 
 import { VError } from 'verror';
@@ -9,9 +10,10 @@ import { VError } from 'verror';
 /**
  * Base error class for MCP errors.
  */
-export class McpError extends VError {
+export class McpError extends Error {
   public readonly code: number;
   public readonly data?: unknown;
+  public readonly cause?: Error;
 
   constructor(
     code: number,
@@ -19,9 +21,11 @@ export class McpError extends VError {
     data?: unknown,
     options?: { cause?: Error }
   ) {
-    super({ name: 'McpError', cause: options?.cause }, message);
+    super(message);
+    this.name = 'McpError';
     this.code = code;
     this.data = data;
+    this.cause = options?.cause;
   }
 
   toJSON(): { code: number; message: string; data?: unknown } {
@@ -44,9 +48,9 @@ export const SERVER_NOT_INITIALIZED = -32002;
 export const REQUEST_FAILED = -32001;
 
 // Add new error codes
-export const AUTHENTICATION_ERROR = -32403;
-export const TIMEOUT_ERROR = -32404;
-export const TRANSPORT_ERROR = -32405;
+export const AUTHENTICATION_ERROR = 401;
+export const TIMEOUT_ERROR = 504;
+export const TRANSPORT_ERROR = 500;
 
 /**
  * Error thrown when parsing JSON fails.

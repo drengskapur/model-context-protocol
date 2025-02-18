@@ -9,6 +9,7 @@ import { VError } from 'verror';
 import type { BaseEventEmitter, McpTransport, MessageHandler, TransportEventMap } from './transport';
 import type { JSONRPCMessage, JSONRPCRequest, JSONRPCResponse } from './schema';
 import { JSONRPC_VERSION } from './schema';
+import { TransportError } from './errors';
 
 /**
  * In-memory transport implementation for testing.
@@ -51,12 +52,20 @@ export class InMemoryTransport implements McpTransport {
   }
 
   /**
+   * Creates a linked pair of transports.
+   * @deprecated Use createPair() instead
+   */
+  static createLinkedPair(): [InMemoryTransport, InMemoryTransport] {
+    return InMemoryTransport.createPair();
+  }
+
+  /**
    * Connects the transport.
-   * @throws {VError} If the transport is not paired
+   * @throws {TransportError} If the transport is not paired
    */
   connect(): Promise<void> {
     if (!this.otherTransport) {
-      throw new VError('Transport not paired');
+      throw new TransportError('Transport not paired');
     }
     this.connected = true;
     this._events.emit('connect');
@@ -117,18 +126,24 @@ export class InMemoryTransport implements McpTransport {
   /**
    * Sends a message through the transport.
    * @param message Message to send
+   * @throws {TransportError} If the transport is not connected or not paired
    */
   async send(message: JSONRPCRequest | JSONRPCResponse): Promise<void> {
     if (!this.isConnected()) {
-      throw new VError('Transport not connected');
+      throw new TransportError('Transport not connected');
     }
 
     if (!this.otherTransport) {
-      throw new VError('Transport not paired');
+      throw new TransportError('Transport not paired');
     }
 
-    this.messages.push(message);
-    await this.otherTransport.handleMessage(message);
+    try {
+      this.messages.push(message);
+      this.otherTransport.messages.push(message);
+      await this.otherTransport.handleMessage(message);
+    } catch (error) {
+      throw new TransportError('Failed to send message', error as Error);
+    }
   }
 
   /**
@@ -142,6 +157,7 @@ export class InMemoryTransport implements McpTransport {
   /**
    * Simulates an incoming message for testing.
    * @param message Message to simulate
+   * @throws {TransportError} If the message format is invalid
    */
   async simulateIncomingMessage(message: JSONRPCMessage): Promise<void> {
     if (
@@ -149,12 +165,11 @@ export class InMemoryTransport implements McpTransport {
       message === null ||
       message.jsonrpc !== JSONRPC_VERSION
     ) {
-      throw new VError('Invalid message format');
+      throw new TransportError('Invalid message format');
     }
 
-    for (const handler of this.messageHandlers) {
-      await handler(message);
-    }
+    this.messages.push(message as JSONRPCRequest | JSONRPCResponse);
+    await this.handleMessage(message);
   }
 
   /**
@@ -169,21 +184,39 @@ export class InMemoryTransport implements McpTransport {
    * @param message Message to handle
    */
   private async handleMessage(message: unknown): Promise<void> {
-    for (const handler of this.messageHandlers) {
+    this._events.emit('message', message);
+    
+    const promises = Array.from(this.messageHandlers).map((handler) => {
       try {
-        await handler(message);
+        const result = handler(message);
+        if (result && typeof result.catch === 'function') {
+          return result.catch((error) => {
+            const err = error instanceof Error ? error : new Error(String(error));
+            this._events.emit('error', err);
+          });
+        }
+        return Promise.resolve();
       } catch (error) {
-        this._events.emit('error', error as Error);
+        const err = error instanceof Error ? error : new Error(String(error));
+        this._events.emit('error', err);
+        return Promise.resolve();
       }
-    }
+    });
+
+    await Promise.all(promises);
   }
 
   /**
    * Closes the transport.
    */
   async close(): Promise<void> {
-    await this.disconnect();
-    this.otherTransport = null;
+    if (this.isConnected()) {
+      await this.disconnect();
+    }
+    if (this.otherTransport) {
+      this.otherTransport.otherTransport = null;
+      this.otherTransport = null;
+    }
   }
 
   /**

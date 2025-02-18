@@ -1,7 +1,7 @@
 /**
  * @file auth.ts
- * @description Authentication functionality for the Model Context Protocol.
- * Provides JWT-based authentication and authorization mechanisms.
+ * @description Authentication utilities for the Model Context Protocol.
+ * Provides authentication and authorization mechanisms for secure communication.
  */
 
 import { SignJWT, jwtVerify } from 'jose';

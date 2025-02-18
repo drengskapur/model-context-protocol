@@ -2,6 +2,7 @@
  * @file sampling.ts
  * @description Message sampling and generation functionality for the Model Context Protocol.
  * Provides types and utilities for working with AI model outputs.
+
  */
 
 import {
@@ -16,6 +17,8 @@ import {
   maxValue,
   parse,
   enumType,
+  minLength,
+  custom,
 } from 'valibot';
 import { McpError } from './errors';
 import type {
@@ -23,7 +26,12 @@ import type {
   ModelPreferences,
   SamplingMessage,
   Role,
+  CreateMessageResult,
+  TextContent,
+  ImageContent,
 } from './schema';
+import type { McpClient } from './client';
+import { VError } from 'verror';
 
 /**
  * Sampling options for message generation.
@@ -109,6 +117,19 @@ export interface SamplingClient {
     name?: string,
     metadata?: Record<string, unknown>
   ): Promise<SamplingResponse>;
+}
+
+/**
+ * Error thrown when sampling fails
+ */
+export class SamplingError extends VError {
+  constructor(message: string, cause?: Error) {
+    if (cause) {
+      super({ cause, name: 'SamplingError' }, message);
+    } else {
+      super({ name: 'SamplingError' }, message);
+    }
+  }
 }
 
 /**
@@ -234,207 +255,80 @@ export abstract class BaseSamplingClient implements SamplingClient {
   }
 }
 
-/**
- * Sampling class for generating messages.
- */
+// Content schema for validation
+const contentSchema = union([
+  object({
+    type: literal('text'),
+    text: string([minLength(1)]),
+  }),
+  object({
+    type: literal('image'),
+    mimeType: string([custom((value) => value.startsWith('image/'), 'Invalid image MIME type')]),
+    data: string([minLength(1)]),
+  }),
+]);
+
+// Message schema for validation
+const messageSchema = object({
+  role: enumType(['user', 'assistant', 'system']),
+  content: contentSchema,
+  name: optional(string([minLength(1)])),
+});
+
 export class Sampling {
-  /**
-   * Creates a new message based on the provided messages and options.
-   * @param messages Messages to use as input for the sampling process.
-   * @param options Options for the sampling process.
-   * @returns A promise that resolves to the created message.
-   */
-  createMessage(
-    messages: SamplingMessage[],
-    options: SamplingOptions
-  ): Promise<SamplingResponse> {
-    // Validate messages
-    const messageSchema = array(
-      object({
-        role: enumType(['user', 'assistant']),
-        content: union([
-          object({
-            type: literal('text'),
-            text: string(),
-          }),
-          object({
-            type: literal('function_call'),
-            function: object({
-              name: string(),
-              arguments: string(),
-            }),
-          }),
-          object({
-            type: literal('tool_calls'),
-            tool_calls: array(
-              object({
-                id: string(),
-                type: literal('function'),
-                function: object({
-                  name: string(),
-                  arguments: string(),
-                }),
-              })
-            ),
-          }),
-        ]),
-        tool_call_id: optional(string()),
-      })
-    );
+  constructor(private readonly client: McpClient) {}
 
-    try {
-      parse(messageSchema, messages);
-    } catch (error) {
-      throw new McpError(-32402, 'Invalid message', error);
-    }
-
-    // Create request
-    const _request: CreateMessageRequest = {
-      method: 'sampling/createMessage',
-      params: {
-        messages,
-        modelPreferences: options.modelPreferences,
-        temperature: options.temperature,
-        maxTokens: options.maxTokens ?? 0,
-        stopSequences: options.stop,
-      },
-    };
-
-    // Return mock result for now
-    return Promise.resolve({
-      message: {
-        role: 'assistant',
-        content: {
-          type: 'text',
-          text: 'Mock response',
-        },
-      },
-    });
-  }
-
-  /**
-   * Responds to a sampling message.
-   * @param role Role of the response message.
-   * @param content Content of the response message.
-   * @returns A promise that resolves to the response message.
-   */
-  respondToSampling(
-    role: Role,
-    content: string,
-    name?: string,
-    metadata?: Record<string, unknown>
-  ): Promise<SamplingResponse> {
-    return Promise.resolve({
-      message: {
-        role,
-        content: {
-          type: 'text',
-          text: content,
-        },
-      },
-      metadata,
-    });
-  }
-}
-
-export class SamplingClient implements SamplingClient {
   /**
    * Creates a message using sampling.
    * @param messages Messages to use as context.
    * @param options Options for the sampling process.
    * @returns A promise that resolves to the created message.
    */
-  createMessage(
+  async createMessage(
     messages: SamplingMessage[],
-    options: SamplingOptions
-  ): Promise<SamplingResponse> {
-    // Validate messages
-    const messageSchema = array(
-      object({
-        role: enumType(['user', 'assistant']),
-        content: union([
-          object({
-            type: literal('text'),
-            text: string(),
-          }),
-          object({
-            type: literal('function_call'),
-            function: object({
-              name: string(),
-              arguments: string(),
-            }),
-          }),
-          object({
-            type: literal('tool_calls'),
-            tool_calls: array(
-              object({
-                id: string(),
-                type: literal('function'),
-                function: object({
-                  name: string(),
-                  arguments: string(),
-                }),
-              })
-            ),
-          }),
-        ]),
-        tool_call_id: optional(string()),
-      })
-    );
-
+    options: CreateMessageRequest['params']
+  ): Promise<CreateMessageResult> {
     try {
-      parse(messageSchema, messages);
+      // Validate messages
+      parse(array(messageSchema), messages);
+
+      const result = await this.client.request<CreateMessageResult>(
+        'sampling/createMessage',
+        {
+          messages,
+          temperature: options.temperature,
+          maxTokens: options.maxTokens,
+          stopSequences: options.stopSequences,
+          modelPreferences: options.modelPreferences,
+          systemPrompt: options.systemPrompt,
+          includeContext: options.includeContext,
+          metadata: options.metadata,
+        }
+      );
+
+      return result;
     } catch (error) {
-      throw new McpError(-32402, 'Invalid message', error);
+      throw new McpError(-32402, 'Failed to create message', error);
     }
-
-    // Create request
-    const _request: CreateMessageRequest = {
-      method: 'sampling/createMessage',
-      params: {
-        messages,
-        modelPreferences: options.modelPreferences,
-        temperature: options.temperature,
-        maxTokens: options.maxTokens ?? 0,
-        stopSequences: options.stop,
-      },
-    };
-
-    // Return mock result for now
-    return Promise.resolve({
-      message: {
-        role: 'assistant',
-        content: {
-          type: 'text',
-          text: 'Mock response',
-        },
-      },
-    });
   }
 
   /**
    * Responds to a sampling request.
-   * @param role Role of the message
    * @param content Content of the message
-   * @param name Optional name of the message
-   * @param metadata Optional metadata
    * @returns Promise that resolves with the response
    */
-  respondToSampling(
-    role: Role,
-    content: string,
-    name?: string,
-    metadata?: Record<string, unknown>
-  ): Promise<SamplingResponse> {
-    return Promise.resolve({
-      message: {
-        role,
-        content: {
-          type: 'text',
-          text: content,
-        },
-      },
-      metadata,
-    });
+  async respondToSampling(
+    content: TextContent | ImageContent
+  ): Promise<SamplingMessage> {
+    try {
+      parse(contentSchema, content);
+      
+      return {
+        role: 'assistant',
+        content,
+      };
+    } catch (error) {
+      throw new McpError(-32402, 'Invalid content', error);
+    }
   }
 }

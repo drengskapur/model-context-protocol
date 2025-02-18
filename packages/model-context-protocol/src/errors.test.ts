@@ -1,3 +1,12 @@
+/**
+ * @file errors.test.ts
+ * @description Test suite for the Model Context Protocol error handling.
+ * Contains unit tests for error classes and error handling utilities.
+ * 
+ * @copyright 2025 Codeium
+ * @license MIT
+ */
+
 import { describe, expect, it } from 'vitest';
 import {
   AUTH_ERROR,

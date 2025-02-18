@@ -1,7 +1,7 @@
 /**
  * @file client.ts
  * @description Client implementation for the Model Context Protocol.
- * Provides functionality for connecting to and communicating with MCP servers.
+ * Provides the core client functionality for communicating with model servers.
  */
 
 import { EventEmitter } from 'node:events';

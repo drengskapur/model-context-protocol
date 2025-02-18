@@ -1,3 +1,10 @@
+/**
+ * @file server.ts
+ * @description Server implementation for the Model Context Protocol.
+ * Provides the core server functionality for handling model requests and responses.
+
+ */
+
 import { EventEmitter } from 'eventemitter3';
 import { VError } from 'verror';
 import type { Auth } from './auth';
@@ -23,6 +30,13 @@ import {
   type ClientCapabilities,
   type PromptMessage,
 } from './schema';
+import {
+  McpError,
+  AuthError,
+  InvalidRequestError,
+  MethodNotFoundError,
+  INTERNAL_ERROR,
+} from './errors';
 
 type MethodHandler = (params: unknown) => Promise<unknown>;
 
@@ -115,18 +129,18 @@ export class McpServer {
       if (roles && this.auth) {
         const { token, ...rest } = params as { token?: string } & Record<string, unknown>;
         if (!token) {
-          throw new VError('Authentication token required');
+          throw new AuthError('Authentication token required');
         }
         const payload = await this.auth.validateToken(token);
         if (!roles.every(role => payload.roles.includes(role))) {
-          throw new VError('Insufficient permissions');
+          throw new AuthError('Insufficient permissions');
         }
         return handler(rest);
       }
       return handler(params);
     };
     if (this._methods.has(name)) {
-      throw new VError('Method already registered: %s', name);
+      throw new InvalidRequestError(`Method already registered: ${name}`);
     }
     this._methods.set(name, wrappedHandler);
   }
@@ -137,17 +151,17 @@ export class McpServer {
   private async handleMessage(message: unknown): Promise<void> {
     try {
       if (typeof message !== 'object' || message === null || !('jsonrpc' in message)) {
-        throw new VError('Invalid message format');
+        throw new InvalidRequestError('Invalid message format');
       }
 
       const msg = message as JSONRPCRequest;
       if (!msg.method) {
-        throw new VError('Missing method');
+        throw new InvalidRequestError('Missing method');
       }
 
       const handler = this._methods.get(msg.method);
       if (!handler) {
-        throw new VError('Method not found: ' + msg.method);
+        throw new MethodNotFoundError(`Method not found: ${msg.method}`);
       }
 
       const result = await handler(msg.params);
@@ -160,14 +174,16 @@ export class McpServer {
       }
     } catch (error) {
       if (typeof message === 'object' && message !== null && 'id' in message) {
-        void this._transport?.send({
+        const errorResponse: JSONRPCError = {
           jsonrpc: JSONRPC_VERSION,
           id: (message as { id: string | number }).id,
           error: {
-            code: -32000,
-            message: (error as Error).message,
+            code: error instanceof McpError ? error.code : INTERNAL_ERROR,
+            message: error instanceof Error ? error.message : String(error),
+            data: error instanceof McpError ? error.data : undefined,
           },
-        } satisfies JSONRPCError);
+        };
+        void this._transport?.send(errorResponse);
       }
     }
   }

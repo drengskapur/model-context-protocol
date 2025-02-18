@@ -18,8 +18,10 @@ import {
   string,
   union,
   unknown,
+  custom,
 } from 'valibot';
-import { JSONRPC_VERSION } from './schema.js';
+import { JSONRPC_VERSION, type JSONRPCMessage } from './schema.js';
+import { parse } from 'valibot';
 
 // Basic types
 export const progressTokenSchema = union([string(), number()]);
@@ -84,12 +86,39 @@ export const jsonRpcErrorSchema = object({
   }),
 });
 
+// Custom validation to ensure a message cannot have both result and error
+const validateJsonRpcMessageShape = custom<JSONRPCMessage>((input) => {
+  if (typeof input !== 'object' || input === null) return false;
+  const msg = input as unknown as Record<string, unknown>;
+  if ('result' in msg && 'error' in msg) return false;
+  if ('id' in msg && typeof msg.id !== 'string' && typeof msg.id !== 'number' && msg.id !== null) return false;
+  return true;
+}, 'Invalid JSON-RPC message format');
+
 export const jsonRpcMessageSchema = union([
   jsonRpcRequestSchema,
   jsonRpcNotificationSchema,
   jsonRpcResponseSchema,
   jsonRpcErrorSchema,
-]);
+], [validateJsonRpcMessageShape]);
+
+// Add validation to ensure a message cannot have both result and error
+export const validateJsonRpcMessage = (message: unknown): void => {
+  if (typeof message !== 'object' || message === null) {
+    throw new Error('Message must be an object');
+  }
+
+  const msg = message as Record<string, unknown>;
+  if ('result' in msg && 'error' in msg) {
+    throw new Error('Message cannot have both result and error');
+  }
+
+  if ('id' in msg && typeof msg.id !== 'string' && typeof msg.id !== 'number' && msg.id !== null) {
+    throw new Error('Invalid id type');
+  }
+
+  parse(jsonRpcMessageSchema, message);
+};
 
 // Initialization
 export const clientCapabilitiesSchema = object({

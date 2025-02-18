@@ -1,3 +1,12 @@
+/**
+ * @file sampling.test.ts
+ * @description Test suite for the Model Context Protocol sampling functionality.
+ * Contains unit tests for message generation and validation.
+ * 
+ * @copyright 2025 Codeium
+ * @license MIT
+ */
+
 import { beforeEach, describe, expect, it } from 'vitest';
 import { Sampling, SamplingError } from './sampling';
 import type { ImageContent, SamplingMessage, TextContent } from './schema.js';
@@ -92,6 +101,12 @@ describe('Sampling', () => {
         maxTokens: 100,
       });
       expect(result).toHaveProperty('role', 'assistant');
+    });
+
+    it('should throw error for empty messages', async () => {
+      await expect(sampling.createMessage([], { maxTokens: 100 })).rejects.toThrow(
+        'Messages array is required and must not be empty'
+      );
     });
   });
 

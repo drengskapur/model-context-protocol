@@ -1,3 +1,12 @@
+/**
+ * @file server.test.ts
+ * @description Test suite for the Model Context Protocol server implementation.
+ * Contains unit tests for server functionality and request handling.
+ * 
+ * @copyright 2025 Codeium
+ * @license MIT
+ */
+
 import { EventEmitter } from 'eventemitter3';
 import { beforeEach, describe, expect, it, vi, afterEach } from 'vitest';
 import { object, string, number } from 'valibot';

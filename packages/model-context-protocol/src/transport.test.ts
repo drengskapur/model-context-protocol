@@ -1,3 +1,12 @@
+/**
+ * @file transport.test.ts
+ * @description Test suite for the Model Context Protocol transport layer.
+ * Contains unit tests for message transport and connection handling.
+ * 
+ * @copyright 2025 Codeium
+ * @license MIT
+ */
+
 import { EventEmitter } from 'eventemitter3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { JSONRPCMessage, JSONRPCRequest, JSONRPCResponse } from './schema';

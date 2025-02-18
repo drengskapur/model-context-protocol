@@ -1,3 +1,12 @@
+/**
+ * @file client.test.ts
+ * @description Test suite for the Model Context Protocol client implementation.
+ * Contains unit tests for client functionality and error handling.
+ * 
+ * @copyright 2025 Codeium
+ * @license MIT
+ */
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { McpClient } from './client.js';
 import { InMemoryTransport } from './in-memory.js';
@@ -819,7 +828,7 @@ describe('McpClient', () => {
     const connectPromise = client.connect();
     await Promise.resolve();
     await clientTransport.simulateIncomingMessage({
-      jsonrpc: '2.0',
+      jsonrpc: JSONRPC_VERSION,
       id: 1,
       result: {
         protocolVersion: LATEST_PROTOCOL_VERSION,

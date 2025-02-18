@@ -2,6 +2,7 @@
  * @file validation.ts
  * @description Schema validation utilities for the Model Context Protocol.
  * Provides functions and types for validating protocol messages and data.
+
  */
 
 import {
@@ -20,6 +21,8 @@ import {
   integer,
   union,
   literal,
+  custom,
+  minLength,
 } from 'valibot';
 import { McpError } from './errors';
 import type {
@@ -148,15 +151,22 @@ export function validateSamplingOptions(options: unknown): {
  */
 export async function validateResource(resource: unknown): Promise<void> {
   const schema = object({
-    uri: string(),
-    name: string(),
+    uri: string([minLength(1), custom((value) => {
+      try {
+        new URL(value);
+        return true;
+      } catch {
+        return false;
+      }
+    }, 'Invalid URI')]),
+    name: string([minLength(1)]),
     description: optional(string()),
-    mimeType: optional(string()),
+    mimeType: optional(string([minLength(1)])),
     size: optional(number([minValue(0)])),
   });
 
   try {
-    await parse(schema, resource);
+    parse(schema, resource);
   } catch (error) {
     throw new ValidationError('Invalid resource', error as ValiError);
   }
@@ -170,12 +180,12 @@ export async function validateResource(resource: unknown): Promise<void> {
  */
 export async function validatePrompt(prompt: unknown): Promise<void> {
   const schema = object({
-    name: string(),
+    name: string([minLength(1)]),
     description: optional(string()),
     arguments: optional(
       array(
         object({
-          name: string(),
+          name: string([minLength(1)]),
           description: optional(string()),
           required: optional(literal(true)),
         })
@@ -184,7 +194,7 @@ export async function validatePrompt(prompt: unknown): Promise<void> {
   });
 
   try {
-    await parse(schema, prompt);
+    parse(schema, prompt);
   } catch (error) {
     throw new ValidationError('Invalid prompt', error as ValiError);
   }
@@ -198,23 +208,25 @@ export async function validatePrompt(prompt: unknown): Promise<void> {
  */
 export async function validateSamplingMessage(message: unknown): Promise<void> {
   const schema = object({
-    role: enumType(['user', 'assistant']),
+    role: enumType(['user', 'assistant', 'system']),
     content: union([
       object({
         type: literal('text'),
-        text: string(),
+        text: string([minLength(1)]),
       }),
       object({
         type: literal('image'),
         data: string(),
-        mimeType: string(),
+        mimeType: string([custom((value) => {
+          return value.startsWith('image/');
+        }, 'Invalid image MIME type')]),
       }),
     ]),
     name: optional(string()),
   });
 
   try {
-    await parse(schema, message);
+    parse(schema, message);
   } catch (error) {
     throw new ValidationError('Invalid sampling message', error as ValiError);
   }

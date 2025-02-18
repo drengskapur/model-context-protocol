@@ -65,8 +65,7 @@ export interface SseTransportOptions {
 export class SseTransport extends BaseTransport {
   private readonly options: Required<SseTransportOptions>;
   private session: Session<DefaultSessionState> | null = null;
-  private channel: Channel<DefaultChannelState, DefaultSessionState> | null =
-    null;
+  private channel: Channel<DefaultChannelState, DefaultSessionState> | null = null;
   private connecting = false;
   private disconnecting = false;
 
@@ -152,10 +151,7 @@ export class SseTransport extends BaseTransport {
     this.disconnecting = true;
 
     try {
-      if (this.channel && this.session) {
-        this.channel.deregister(this.session);
-        this.channel = null;
-      }
+      this.channel = null;
 
       if (this.session) {
         // Send a final message to indicate closure
@@ -166,12 +162,11 @@ export class SseTransport extends BaseTransport {
       }
 
       this.setConnected(false);
+      this.disconnecting = false;
     } catch (error) {
       this.disconnecting = false;
       throw new VError(error as Error, 'Failed to disconnect SSE transport');
     }
-
-    this.disconnecting = false;
   }
 
   /**

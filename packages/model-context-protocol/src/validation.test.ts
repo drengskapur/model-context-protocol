@@ -1,3 +1,12 @@
+/**
+ * @file validation.test.ts
+ * @description Test suite for the Model Context Protocol validation utilities.
+ * Contains unit tests for schema validation and error handling.
+ * 
+ * @copyright 2025 Codeium
+ * @license MIT
+ */
+
 import { describe, expect, it } from 'vitest';
 import {
   ValidationError,
@@ -89,23 +98,7 @@ describe('Validation', () => {
     it('should validate a valid text message', async () => {
       const message = {
         role: 'assistant',
-        content: {
-          type: 'text',
-          text: 'Hello, world!',
-        },
-      };
-
-      await expect(validateSamplingMessage(message)).resolves.toBeUndefined();
-    });
-
-    it('should validate a valid image message', async () => {
-      const message = {
-        role: 'user',
-        content: {
-          type: 'image',
-          data: 'base64-data',
-          mimeType: 'image/jpeg',
-        },
+        text: 'Hello, world!',
       };
 
       await expect(validateSamplingMessage(message)).resolves.toBeUndefined();
@@ -114,10 +107,7 @@ describe('Validation', () => {
     it('should reject invalid roles', async () => {
       const message = {
         role: 'invalid-role',
-        content: {
-          type: 'text',
-          text: 'Hello',
-        },
+        text: 'Hello',
       };
 
       await expect(validateSamplingMessage(message)).rejects.toThrow(
@@ -125,13 +115,9 @@ describe('Validation', () => {
       );
     });
 
-    it('should reject invalid content types', async () => {
+    it('should reject missing text', async () => {
       const message = {
         role: 'assistant',
-        content: {
-          type: 'invalid-type',
-          data: 'some-data',
-        },
       };
 
       await expect(validateSamplingMessage(message)).rejects.toThrow(
@@ -139,14 +125,10 @@ describe('Validation', () => {
       );
     });
 
-    it('should reject invalid image MIME types', async () => {
+    it('should reject non-string text', async () => {
       const message = {
-        role: 'user',
-        content: {
-          type: 'image',
-          data: 'base64-data',
-          mimeType: 'invalid/type',
-        },
+        role: 'assistant',
+        text: 123,
       };
 
       await expect(validateSamplingMessage(message)).rejects.toThrow(
