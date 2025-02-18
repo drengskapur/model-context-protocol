@@ -48,7 +48,7 @@ export class McpServer {
    */
   private setupDefaultMethods(): void {
     // Initialize method
-    this.methods.set('initialize', async (params: unknown) => {
+    this.methods.set('initialize', (params: unknown) => {
       if (this.initialized) {
         throw new VError('Server already initialized');
       }
@@ -79,7 +79,7 @@ export class McpServer {
     });
 
     // Ping method
-    this.methods.set('ping', async () => ({ pong: true }));
+    this.methods.set('ping', () => ({ pong: true }));
   }
 
   /**

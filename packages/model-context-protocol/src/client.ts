@@ -1,6 +1,11 @@
-import { EventEmitter } from 'events';
+import { EventEmitter } from 'node:events';
 import { VError } from 'verror';
-import type { JSONRPCRequest, JSONRPCResponse } from './schema';
+import type {
+  JSONRPCRequest,
+  JSONRPCResponse,
+  JSONRPCError,
+  Result,
+} from './schema';
 import type { McpTransport } from './transport';
 
 /**
@@ -18,9 +23,7 @@ export interface ClientOptions {
   capabilities?: Record<string, unknown>;
 }
 
-type MessageHandler = (
-  message: JSONRPCRequest | JSONRPCResponse
-) => Promise<void>;
+type MessageHandler = (message: unknown) => Promise<void>;
 
 /**
  * Client implementation of the Model Context Protocol.
@@ -36,7 +39,7 @@ export class McpClient {
     this.capabilities = options.capabilities ?? {};
     this.events = new EventEmitter();
 
-    this.transport.onMessage(this.handleMessage.bind(this));
+    this.transport.on('message', this.handleMessage.bind(this));
   }
 
   /**
@@ -69,7 +72,7 @@ export class McpClient {
    * @param params Method parameters
    * @returns Promise that resolves with the response
    */
-  async request<T>(
+  async request<T extends Result>(
     method: string,
     params?: Record<string, unknown>
   ): Promise<T> {
@@ -88,24 +91,27 @@ export class McpClient {
       await this.transport.send(request);
 
       return new Promise((resolve, reject) => {
-        const handler: MessageHandler = async (
-          message: JSONRPCRequest | JSONRPCResponse
-        ) => {
-          if ('id' in message && message.id === request.id) {
-            this.transport.offMessage(handler);
-            if ('error' in message) {
-              reject(new VError('Server error', { cause: message.error }));
-            } else if ('result' in message) {
-              resolve(message.result as T);
+        const handler = (message: unknown) => {
+          const rpcMessage = message as JSONRPCResponse | JSONRPCError;
+          
+          if ('id' in rpcMessage && rpcMessage.id === request.id) {
+            this.transport.off('message', handler);
+            
+            if ('error' in rpcMessage) {
+              const errorResponse = rpcMessage as JSONRPCError;
+              reject(new VError('Server error', { cause: errorResponse.error }));
+            } else {
+              const resultResponse = rpcMessage as JSONRPCResponse;
+              resolve(resultResponse.result as T);
             }
           }
         };
 
-        this.transport.onMessage(handler);
+        this.transport.on('message', handler);
 
         // Add timeout
         setTimeout(() => {
-          this.transport.offMessage(handler);
+          this.transport.off('message', handler);
           reject(new VError('Request timed out'));
         }, 30000);
       });
@@ -168,14 +174,16 @@ export class McpClient {
    */
   private async handleMessage(message: unknown): Promise<void> {
     try {
-      const jsonRpcMessage = message as JSONRPCRequest | JSONRPCResponse;
+      const jsonRpcMessage = message as JSONRPCRequest | JSONRPCResponse | JSONRPCError;
 
       if ('method' in jsonRpcMessage) {
         await this.events.emit('request', jsonRpcMessage);
-      } else if ('id' in jsonRpcMessage && 'result' in jsonRpcMessage) {
-        await this.events.emit('response', jsonRpcMessage);
-      } else {
-        await this.events.emit('notification', jsonRpcMessage);
+      } else if ('id' in jsonRpcMessage) {
+        if ('error' in jsonRpcMessage) {
+          await this.events.emit('error', jsonRpcMessage);
+        } else {
+          await this.events.emit('response', jsonRpcMessage);
+        }
       }
     } catch (error) {
       await this.events.emit(

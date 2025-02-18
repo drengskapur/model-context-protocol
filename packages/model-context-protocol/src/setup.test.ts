@@ -58,14 +58,17 @@ export async function createConnectedPair() {
 }
 
 /**
- * Helper to wait for a specific message.
+ * Waits for a message that matches the predicate.
+ * @param transport Transport to wait for message on
+ * @param predicate Predicate to match message against
+ * @returns Promise that resolves with the matched message
  */
-export function waitForMessage<T extends JSONRPCRequest | JSONRPCResponse>(
+function waitForMessage<T extends JSONRPCRequest | JSONRPCResponse>(
   transport: InMemoryTransport,
   predicate: (message: T) => boolean
 ): Promise<T> {
   return new Promise((resolve) => {
-    transport.onMessage(async (message) => {
+    transport.onMessage((message) => {
       if (predicate(message as T)) {
         resolve(message as T);
       }

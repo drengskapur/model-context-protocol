@@ -5,6 +5,7 @@
  */
 
 import { z } from 'zod';
+import { VError } from 'verror';
 import { McpError } from './errors.js';
 import type {
   CreateMessageRequest,
@@ -15,6 +16,259 @@ import type {
   SamplingMessage,
   TextContent,
 } from './schema.js';
+
+/**
+ * Sampling error code.
+ */
+export const SAMPLING_ERROR = -32100;
+
+/**
+ * Sampling error class.
+ */
+export class SamplingError extends McpError {
+  constructor(message: string, cause?: Error) {
+    super(SAMPLING_ERROR, message, undefined, { cause });
+    this.name = 'SamplingError';
+  }
+}
+
+/**
+ * Message role type.
+ */
+export type MessageRole = 'system' | 'user' | 'assistant' | 'function' | 'tool';
+
+/**
+ * Message content type.
+ */
+export type MessageContent =
+  | {
+      type: 'text';
+      text: string;
+    }
+  | {
+      type: 'function_call';
+      function: {
+        name: string;
+        arguments: string;
+      };
+    }
+  | {
+      type: 'tool_calls';
+      tool_calls: Array<{
+        id: string;
+        type: 'function';
+        function: {
+          name: string;
+          arguments: string;
+        };
+      }>;
+    };
+
+/**
+ * Message type.
+ */
+export interface Message {
+  role: MessageRole;
+  content: MessageContent;
+  name?: string;
+  tool_call_id?: string;
+}
+
+/**
+ * Function call type.
+ */
+export interface FunctionCall {
+  name: string;
+  arguments: string;
+}
+
+/**
+ * Tool call type.
+ */
+export interface ToolCall {
+  id: string;
+  type: 'function';
+  function: FunctionCall;
+}
+
+/**
+ * Response to sampling request.
+ */
+export interface RespondToSamplingResponse {
+  messages: Message[];
+}
+
+/**
+ * Sampling client interface.
+ */
+export interface SamplingClient {
+  /**
+   * Responds to a sampling request.
+   * @param role Role of the message
+   * @param content Content of the message
+   * @param name Optional name of the message
+   * @param functionCall Optional function call
+   * @param toolCalls Optional tool calls
+   * @param metadata Optional metadata
+   * @returns Promise that resolves with the response
+   */
+  respondToSampling(
+    role: string,
+    content: string,
+    name?: string,
+    functionCall?: unknown,
+    toolCalls?: unknown[],
+    metadata?: Record<string, unknown>
+  ): Promise<CreateMessageResult>;
+
+  /**
+   * Creates a message.
+   * @param messages Messages to create
+   * @param modelPreferences Model preferences
+   * @param systemPrompt Optional system prompt
+   * @param includeContext Optional context to include
+   * @param temperature Optional temperature
+   * @param maxTokens Maximum tokens to generate
+   * @param stopSequences Optional stop sequences
+   * @param metadata Optional metadata
+   * @returns Promise that resolves with the created message
+   */
+  createMessage(
+    messages: SamplingMessage[],
+    modelPreferences?: ModelPreferences,
+    systemPrompt?: string,
+    includeContext?: 'none' | 'thisServer' | 'allServers',
+    temperature?: number,
+    maxTokens?: number,
+    stopSequences?: string[],
+    metadata?: Record<string, unknown>
+  ): Promise<CreateMessageResult>;
+}
+
+/**
+ * Base class for sampling implementations.
+ */
+export abstract class BaseSamplingClient implements SamplingClient {
+  /**
+   * Validates messages.
+   * @param messages Messages to validate
+   */
+  protected validateMessages(messages: SamplingMessage[]): void {
+    if (!Array.isArray(messages)) {
+      throw new SamplingError('Messages must be an array');
+    }
+
+    if (messages.length === 0) {
+      throw new SamplingError('Messages array must not be empty');
+    }
+
+    const messageSchema = z.object({
+      role: z.string(),
+      content: z.object({
+        type: z.literal('text'),
+        text: z.string(),
+      }),
+    });
+
+    for (const message of messages) {
+      try {
+        messageSchema.parse(message);
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          throw new SamplingError('Invalid message format', error);
+        }
+        throw error;
+      }
+    }
+  }
+
+  /**
+   * Responds to a sampling request.
+   * @param role Role of the message
+   * @param content Content of the message
+   * @param name Optional name of the message
+   * @param functionCall Optional function call
+   * @param toolCalls Optional tool calls
+   * @param metadata Optional metadata
+   * @returns Promise that resolves with the response
+   */
+  respondToSampling(
+    role: string,
+    content: string,
+    name?: string,
+    functionCall?: unknown,
+    toolCalls?: unknown[],
+    metadata?: Record<string, unknown>
+  ): Promise<CreateMessageResult> {
+    return Promise.resolve({
+      method: 'sampling/respondToSampling',
+      params: {
+        role,
+        content: {
+          type: 'text',
+          text: content,
+        },
+        name,
+        functionCall,
+        toolCalls,
+        metadata,
+      },
+    });
+  }
+
+  /**
+   * Creates a message.
+   * @param messages Messages to create
+   * @param modelPreferences Model preferences
+   * @param systemPrompt Optional system prompt
+   * @param includeContext Optional context to include
+   * @param temperature Optional temperature
+   * @param maxTokens Maximum tokens to generate
+   * @param stopSequences Optional stop sequences
+   * @param metadata Optional metadata
+   * @returns Promise that resolves with the created message
+   */
+  createMessage(
+    messages: SamplingMessage[],
+    modelPreferences?: ModelPreferences,
+    systemPrompt?: string,
+    includeContext?: 'none' | 'thisServer' | 'allServers',
+    temperature?: number,
+    maxTokens?: number,
+    stopSequences?: string[],
+    metadata?: Record<string, unknown>
+  ): Promise<CreateMessageResult> {
+    this.validateMessages(messages);
+
+    const _request: CreateMessageRequest = {
+      method: 'sampling/createMessage',
+      params: {
+        messages,
+        modelPreferences,
+        systemPrompt,
+        includeContext,
+        temperature,
+        maxTokens: maxTokens ?? 1000,
+        stopSequences,
+        metadata,
+      },
+    };
+
+    return Promise.resolve({
+      method: 'sampling/createMessage',
+      params: {
+        messages,
+        modelPreferences,
+        systemPrompt,
+        includeContext,
+        temperature,
+        maxTokens: maxTokens ?? 1000,
+        stopSequences,
+        metadata,
+      },
+    });
+  }
+}
 
 /**
  * Configuration for model sampling behavior.
@@ -43,16 +297,6 @@ export interface SamplingConfig {
    * Model-specific metadata.
    */
   metadata?: Record<string, unknown>;
-}
-
-/**
- * Error class for sampling-related errors.
- */
-export class SamplingError extends McpError {
-  constructor(message: string, cause?: Error) {
-    super(message, { cause });
-    this.name = 'SamplingError';
-  }
 }
 
 /**
@@ -192,29 +436,6 @@ export class Sampling {
       },
     });
   }
-}
-
-export interface FunctionCall {
-  name: string;
-  arguments: string;
-}
-
-export interface ToolCall {
-  id: string;
-  type: string;
-  function: FunctionCall;
-}
-
-export interface RespondToSamplingResponse {
-  method: 'sampling/respondToSampling';
-  params: {
-    role: string;
-    content: string;
-    name?: string;
-    functionCall?: FunctionCall;
-    toolCalls?: ToolCall[];
-    metadata?: Record<string, unknown>;
-  };
 }
 
 export class SamplingClient {

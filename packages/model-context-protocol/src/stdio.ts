@@ -4,65 +4,23 @@
  * Provides a transport that uses process stdin/stdout for communication.
  */
 
+import type { Readable, Writable } from 'node:stream';
 import { VError } from 'verror';
-import { Readable, Writable } from 'node:stream';
-import { BaseTransport } from './transport';
 import type { JSONRPCRequest, JSONRPCResponse } from './schema';
+import { BaseTransport } from './transport';
 
 /**
- * Options for StdioTransport.
- */
-export interface StdioTransportOptions {
-  /**
-   * Input stream to read from.
-   * @default process.stdin
-   */
-  input?: Readable;
-
-  /**
-   * Output stream to write to.
-   * @default process.stdout
-   */
-  output?: Writable;
-
-  /**
-   * Buffer size for reading input.
-   * @default 4096
-   */
-  bufferSize?: number;
-
-  /**
-   * Line separator.
-   * @default '\n'
-   */
-  separator?: string;
-}
-
-/**
- * Transport implementation that uses standard I/O streams.
+ * Transport implementation that uses stdin/stdout for communication.
  */
 export class StdioTransport extends BaseTransport {
-  private readonly options: Required<StdioTransportOptions>;
+  private readonly input: Readable;
+  private readonly output: Writable;
   private buffer = '';
-  private input: Readable;
-  private output: Writable;
 
-  constructor(options: StdioTransportOptions = {}) {
+  constructor(input: Readable, output: Writable) {
     super();
-    this.options = {
-      input: options.input ?? process.stdin,
-      output: options.output ?? process.stdout,
-      bufferSize: options.bufferSize ?? 4096,
-      separator: options.separator ?? '\n',
-    };
-
-    this.input = this.options.input;
-    this.output = this.options.output;
-
-    // Set encoding for stdin if it's a raw stream
-    if (this.input === process.stdin) {
-      this.input.setEncoding('utf8');
-    }
+    this.input = input;
+    this.output = output;
   }
 
   /**
@@ -70,76 +28,77 @@ export class StdioTransport extends BaseTransport {
    */
   async connect(): Promise<void> {
     try {
-      // Setup input handling
-      this.input.on('data', (data: Buffer | string) => {
-        this.buffer += data.toString();
-        this.processBuffer();
-      });
-
-      this.input.on('error', (error: Error) => {
-        this.handleError(new VError(error, 'stdin error'));
-      });
-
+      this.input.on('data', this.handleData.bind(this));
+      this.input.on('error', this._handleError.bind(this));
       this.setConnected(true);
     } catch (error) {
-      throw new VError(error as Error, 'Failed to connect stdio transport');
+      throw new VError(error as Error, 'Failed to connect to stdin/stdout');
     }
   }
 
   /**
    * Disconnects from stdin/stdout streams.
    */
-  async disconnect(): Promise<void> {
+  disconnect(): Promise<void> {
     try {
-      this.input.removeAllListeners();
-      this.buffer = '';
+      this.input.removeListener('data', this.handleData.bind(this));
+      this.input.removeListener('error', this._handleError.bind(this));
       this.setConnected(false);
+      return Promise.resolve();
     } catch (error) {
-      throw new VError(error as Error, 'Failed to disconnect stdio transport');
+      throw new VError(error as Error, 'Failed to disconnect from stdin/stdout');
     }
   }
 
   /**
-   * Sends a message through stdout.
+   * Sends a message through stdin/stdout.
    * @param message Message to send
    */
   async send(message: JSONRPCRequest | JSONRPCResponse): Promise<void> {
-    if (!this.isConnected()) {
-      throw new VError('Transport not connected');
-    }
-
-    return new Promise((resolve, reject) => {
-      this.output.write(
-        JSON.stringify(message) + this.options.separator,
-        (error) => {
+    try {
+      const data = JSON.stringify(message) + '\n';
+      await new Promise<void>((resolve, reject) => {
+        this.output.write(data, (error) => {
           if (error) {
-            reject(new VError(error, 'Failed to write to stdout'));
+            reject(error);
           } else {
             resolve();
           }
-        }
-      );
-    });
+        });
+      });
+    } catch (error) {
+      throw new VError(error as Error, 'Failed to send message');
+    }
   }
 
   /**
-   * Processes the input buffer.
+   * Handles incoming data from stdin.
+   * @param data Data chunk from stdin
    */
-  private processBuffer(): void {
-    const lines = this.buffer.split(this.options.separator);
-
-    // Keep the last line if it's incomplete
+  private handleData(data: Buffer): void {
+    this.buffer += data.toString();
+    const lines = this.buffer.split('\n');
     this.buffer = lines.pop() || '';
 
     for (const line of lines) {
-      if (!line) continue;
+      if (!line) {
+        continue;
+      }
 
       try {
         const message = JSON.parse(line);
         this.handleMessage(message);
       } catch (error) {
-        this.handleError(new VError(error as Error, 'Failed to parse message'));
+        this._handleError(new VError(error as Error, 'Failed to parse message'));
       }
     }
+  }
+
+  /**
+   * Handles a transport error.
+   * @param error Error to handle
+   */
+  private _handleError(error: Error): void {
+    this.handleError(error);
   }
 }
