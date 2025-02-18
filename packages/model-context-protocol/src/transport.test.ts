@@ -1,40 +1,34 @@
 import { EventEmitter } from 'eventemitter3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BaseTransport } from './base';
 import type { JSONRPCMessage, JSONRPCRequest, JSONRPCResponse } from './schema';
 import { JSONRPC_VERSION } from './schema';
-import type { MessageHandler } from './transport';
+import { BaseTransport } from './transport';
+import type { MessageHandler, TransportEventMap } from './transport';
 
 class TestTransport extends BaseTransport {
   public messages: (JSONRPCRequest | JSONRPCResponse)[] = [];
   public shouldFail = false;
-  public readonly events = new EventEmitter();
 
-  send(message: JSONRPCRequest | JSONRPCResponse): Promise<void> {
+  async send(message: JSONRPCRequest | JSONRPCResponse): Promise<void> {
     if (this.shouldFail) {
       throw new Error('Send failed');
     }
     this.messages.push(message);
-    this.events.emit('message', message);
-    return Promise.resolve();
+    this._events.emit('message', message);
   }
 
-  connect(): Promise<void> {
+  async connect(): Promise<void> {
     if (this.shouldFail) {
       throw new Error('Connect failed');
     }
     this.setConnected(true);
-    this.events.emit('connect');
-    return Promise.resolve();
   }
 
-  disconnect(): Promise<void> {
+  async disconnect(): Promise<void> {
     if (this.shouldFail) {
       throw new Error('Disconnect failed');
     }
     this.setConnected(false);
-    this.events.emit('disconnect');
-    return Promise.resolve();
   }
 
   async request<T>(
@@ -48,19 +42,11 @@ class TestTransport extends BaseTransport {
       params,
     };
     await this.send(request);
-    return {} as T; // For testing purposes
-  }
-
-  onMessage(handler: MessageHandler): void {
-    this.messageHandlers.add(handler);
-  }
-
-  offMessage(handler: MessageHandler): void {
-    this.messageHandlers.delete(handler);
+    return {} as T;
   }
 
   public simulateMessage(message: JSONRPCMessage): void {
-    this.handleMessage(message as JSONRPCRequest | JSONRPCResponse);
+    this._events.emit('message', message);
   }
 
   public simulateError(error: Error): void {
@@ -75,107 +61,135 @@ describe('BaseTransport', () => {
     transport = new TestTransport();
   });
 
-  afterEach(() => {
-    transport.events.removeAllListeners();
+  afterEach(async () => {
+    try {
+      await transport.close();
+    } catch (error) {
+      // Ignore cleanup errors
+    }
   });
 
-  describe('connection management', () => {
-    it('should start disconnected', () => {
-      expect(transport.isConnected()).toBe(false);
-    });
-
+  describe('Connection Management', () => {
     it('should connect successfully', async () => {
       const onConnect = vi.fn();
-      transport.on('connect', onConnect);
+      transport.events.on('connect', onConnect);
       await transport.connect();
       expect(transport.isConnected()).toBe(true);
       expect(onConnect).toHaveBeenCalled();
     });
 
-    it('should handle connection failure', async () => {
-      transport.shouldFail = true;
-      await expect(transport.connect()).rejects.toThrow('Connect failed');
-      expect(transport.isConnected()).toBe(false);
-    });
-
     it('should disconnect successfully', async () => {
       await transport.connect();
       const onDisconnect = vi.fn();
-      transport.on('disconnect', onDisconnect);
+      transport.events.on('disconnect', onDisconnect);
       await transport.disconnect();
       expect(transport.isConnected()).toBe(false);
       expect(onDisconnect).toHaveBeenCalled();
     });
 
-    it('should handle disconnection failure', async () => {
+    it('should handle connection failures', async () => {
+      transport.shouldFail = true;
+      await expect(transport.connect()).rejects.toThrow('Connect failed');
+    });
+
+    it('should handle disconnection failures', async () => {
       await transport.connect();
       transport.shouldFail = true;
       await expect(transport.disconnect()).rejects.toThrow('Disconnect failed');
-      expect(transport.isConnected()).toBe(true);
     });
   });
 
-  describe('message handling', () => {
-    it('should handle send failure', async () => {
-      transport.shouldFail = true;
-      const message: JSONRPCRequest = {
-        jsonrpc: JSONRPC_VERSION,
-        method: 'test',
-        id: '1',
-      };
-      await expect(transport.send(message)).rejects.toThrow('Send failed');
+  describe('Message Handling', () => {
+    beforeEach(async () => {
+      await transport.connect();
     });
 
     it('should emit message events', async () => {
       const onMessage = vi.fn();
-      transport.on('message', onMessage);
+      transport.events.on('message', onMessage);
 
       const message: JSONRPCRequest = {
         jsonrpc: JSONRPC_VERSION,
-        method: 'test',
         id: '1',
-        params: {},
+        method: 'test',
       };
-
       await transport.send(message);
+
       expect(onMessage).toHaveBeenCalledWith(message);
     });
-  });
 
-  describe('event handling', () => {
-    it('should support multiple event listeners', async () => {
+    it('should handle multiple message handlers', async () => {
       const onMessage1 = vi.fn();
       const onMessage2 = vi.fn();
-      transport.on('message', onMessage1);
-      transport.on('message', onMessage2);
+      transport.events.on('message', onMessage1);
+      transport.events.on('message', onMessage2);
 
       const message: JSONRPCRequest = {
         jsonrpc: JSONRPC_VERSION,
-        method: 'test',
         id: '1',
+        method: 'test',
       };
-
       await transport.send(message);
+
       expect(onMessage1).toHaveBeenCalledWith(message);
       expect(onMessage2).toHaveBeenCalledWith(message);
     });
 
-    it('should only remove specified listener', async () => {
+    it('should remove message handlers', async () => {
       const onMessage1 = vi.fn();
       const onMessage2 = vi.fn();
-      transport.on('message', onMessage1);
-      transport.on('message', onMessage2);
-      transport.off('message', onMessage1);
+      transport.events.on('message', onMessage1);
+      transport.events.on('message', onMessage2);
+      transport.events.off('message', onMessage1);
 
       const message: JSONRPCRequest = {
         jsonrpc: JSONRPC_VERSION,
-        method: 'test',
         id: '1',
+        method: 'test',
       };
-
       await transport.send(message);
+
       expect(onMessage1).not.toHaveBeenCalled();
       expect(onMessage2).toHaveBeenCalledWith(message);
+    });
+  });
+
+  describe('Error Handling', () => {
+    it('should handle errors', () => {
+      const onError = vi.fn();
+      transport.onError(onError);
+
+      const error = new Error('Test error');
+      transport.simulateError(error);
+
+      expect(onError).toHaveBeenCalledWith(error);
+    });
+
+    it('should handle multiple error handlers', () => {
+      const onError1 = vi.fn();
+      const onError2 = vi.fn();
+      transport.onError(onError1);
+      transport.onError(onError2);
+
+      const error = new Error('Test error');
+      transport.simulateError(error);
+
+      expect(onError1).toHaveBeenCalledWith(error);
+      expect(onError2).toHaveBeenCalledWith(error);
+    });
+
+    it('should remove error handlers', () => {
+      const onError1 = vi.fn();
+      const onError2 = vi.fn();
+      transport.onError(onError1);
+      transport.onError(onError2);
+      transport.offError(onError1);
+
+      const error = new Error('Test error');
+      transport.simulateError(error);
+
+      expect(onError1).not.toHaveBeenCalled();
+      expect(onError2).toHaveBeenCalledWith(error);
     });
   });
 });

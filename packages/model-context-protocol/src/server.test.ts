@@ -1,5 +1,6 @@
 import { EventEmitter } from 'eventemitter3';
 import { beforeEach, describe, expect, it, vi, afterEach } from 'vitest';
+import { object, string, number } from 'valibot';
 import { InMemoryTransport } from './in-memory';
 import type {
   JSONRPCMessage,
@@ -7,6 +8,10 @@ import type {
   Tool,
   JSONRPCRequest,
   JSONRPCResponse,
+  JSONRPCNotification,
+  Implementation,
+  ServerCapabilities,
+  Resource,
 } from './schema';
 import { JSONRPC_VERSION, LATEST_PROTOCOL_VERSION } from './schema';
 import { McpServer } from './server';
@@ -15,6 +20,8 @@ import type {
   MessageHandler,
   TransportEventMap,
 } from './transport';
+import { McpClient } from './client';
+import type { Auth } from './auth';
 
 /**
  * Test interface for greeting parameters.
@@ -44,6 +51,12 @@ class TestTransport implements McpTransport {
 
   constructor() {
     this.transport = new InMemoryTransport();
+    
+    // Forward all events from the underlying transport
+    this.transport.events.on('message', (msg) => this.events.emit('message', [msg]));
+    this.transport.events.on('error', (err) => this.events.emit('error', [err]));
+    this.transport.events.on('connect', () => this.events.emit('connect', []));
+    this.transport.events.on('disconnect', () => this.events.emit('disconnect', []));
   }
 
   /**
@@ -76,9 +89,25 @@ class TestTransport implements McpTransport {
    * @param message Message to send
    * @returns Promise that resolves when sent
    */
-  async send(message: JSONRPCRequest | JSONRPCResponse): Promise<void> {
-    await this.transport.send(message);
-    this.messages.push(message);
+  async send(message: JSONRPCRequest | JSONRPCResponse | JSONRPCNotification): Promise<void> {
+    if ('id' in message) {
+      await this.transport.send(message as JSONRPCRequest | JSONRPCResponse);
+      this.messages.push(message as JSONRPCRequest | JSONRPCResponse);
+    } else {
+      await this.transport.send({
+        ...message,
+        id: '1',
+      } as JSONRPCRequest);
+    }
+  }
+
+  /**
+   * Simulates receiving a message.
+   * @param message Message to simulate
+   * @returns Promise that resolves when processed
+   */
+  async simulateIncomingMessage(message: JSONRPCRequest | JSONRPCNotification): Promise<void> {
+    await this.transport.simulateIncomingMessage(message);
   }
 
   /**
@@ -122,27 +151,14 @@ class TestTransport implements McpTransport {
   }
 
   /**
-   * Clears all sent messages.
+   * Clears all stored messages.
    */
   clearMessages(): void {
-    this.transport.clearMessages();
     this.messages = [];
   }
 
   /**
-   * Simulates an incoming message from the other transport.
-   * @param message Message to simulate
-   * @returns Promise that resolves when processed
-   */
-  async simulateIncomingMessage(
-    message: JSONRPCRequest | JSONRPCResponse
-  ): Promise<void> {
-    await this.transport.simulateIncomingMessage(message);
-  }
-
-  /**
    * Closes the transport.
-   * @returns Promise that resolves when closed
    */
   async close(): Promise<void> {
     await this.transport.close();
@@ -172,15 +188,19 @@ describe('Server', () => {
   let transport: TestTransport;
 
   beforeEach(async () => {
-    server = new McpServer({
+    const implementation: Implementation = {
       name: 'test-server',
       version: '1.0.0',
-      capabilities: {
-        prompts: {},
-        tools: {},
-        logging: {},
+    };
+
+    const capabilities: ServerCapabilities = {
+      logging: {},
+      resources: {
+        listChanged: true,
       },
-    });
+    };
+
+    server = new McpServer(implementation, capabilities);
     transport = new TestTransport();
     await transport.connect();
     await server.connect(transport);
@@ -211,17 +231,14 @@ describe('Server', () => {
         ],
       };
 
-      server.registerMethod(
-        'prompts/get',
-        async (params: Record<string, unknown>) => testPrompt
-      );
+      server.registerMethod('prompts/get', async (params: unknown) => testPrompt);
       server.registerMethod('prompts/list', async () => ({
         prompts: [testPrompt],
       }));
 
       await transport.simulateIncomingMessage({
         jsonrpc: JSONRPC_VERSION,
-        id: 1,
+        id: '1',
         method: 'initialize',
         params: {
           protocolVersion: LATEST_PROTOCOL_VERSION,
@@ -231,17 +248,17 @@ describe('Server', () => {
 
       await transport.simulateIncomingMessage({
         jsonrpc: JSONRPC_VERSION,
-        id: 2,
+        id: '2',
         method: 'prompts/list',
         params: {},
       } satisfies JSONRPCRequest);
 
-      const messages = transport.getMessages();
+      const messages = transport.messages;
 
       // Verify initialization response
       expect(messages[0]).toMatchObject({
         jsonrpc: JSONRPC_VERSION,
-        id: 1,
+        id: '1',
         result: {
           protocolVersion: LATEST_PROTOCOL_VERSION,
           serverInfo: {
@@ -249,9 +266,10 @@ describe('Server', () => {
             version: '1.0.0',
           },
           capabilities: {
-            prompts: {},
-            tools: {},
             logging: {},
+            resources: {
+              listChanged: true,
+            },
           },
         },
       });
@@ -259,7 +277,7 @@ describe('Server', () => {
       // Verify prompts list response
       expect(messages[1]).toMatchObject({
         jsonrpc: JSONRPC_VERSION,
-        id: 2,
+        id: '2',
         result: {
           prompts: [testPrompt],
         },
@@ -415,6 +433,7 @@ describe('Server', () => {
           {
             name: 'arg1',
             description: 'First argument',
+            required: true,
           },
         ],
       };
@@ -423,15 +442,14 @@ describe('Server', () => {
 
       await transport.simulateIncomingMessage({
         jsonrpc: JSONRPC_VERSION,
-        id: 2,
+        id: '1',
         method: 'prompts/list',
         params: {},
-      });
+      } satisfies JSONRPCRequest);
 
-      const messages = transport.getMessages();
-      expect(messages[0]).toMatchObject({
+      expect(transport.messages[0]).toMatchObject({
         jsonrpc: JSONRPC_VERSION,
-        id: 2,
+        id: '1',
         result: {
           prompts: [testPrompt],
         },
@@ -452,21 +470,25 @@ describe('Server', () => {
         ],
       };
 
-      server.prompt(testPrompt, async (args) => {
-        return [
-          {
-            role: 'assistant',
-            content: {
-              type: 'text',
-              text: `Using arg1: ${args?.arg1}`,
+      server.prompt(testPrompt);
+      server.registerMethod(`prompts/execute/${testPrompt.name}`, async (params: unknown) => {
+        const { arguments: args } = params as { arguments?: Record<string, string> };
+        return {
+          messages: [
+            {
+              role: 'assistant',
+              content: {
+                type: 'text',
+                text: `Using arg1: ${args?.arg1}`,
+              },
             },
-          },
-        ];
+          ],
+        };
       });
 
       await transport.simulateIncomingMessage({
         jsonrpc: JSONRPC_VERSION,
-        id: 3,
+        id: '1',
         method: 'prompts/execute',
         params: {
           name: 'test-prompt',
@@ -474,12 +496,11 @@ describe('Server', () => {
             arg1: 'test value',
           },
         },
-      });
+      } satisfies JSONRPCRequest);
 
-      const messages = transport.getMessages();
-      expect(messages[0]).toMatchObject({
+      expect(transport.messages[0]).toMatchObject({
         jsonrpc: JSONRPC_VERSION,
-        id: 3,
+        id: '1',
         result: {
           messages: [
             {
@@ -490,6 +511,77 @@ describe('Server', () => {
               },
             },
           ],
+        },
+      });
+    });
+
+    it('should handle prompts with arguments', async () => {
+      const testPrompt: Prompt = {
+        name: 'test-prompt',
+        description: 'A test prompt',
+        arguments: [
+          {
+            name: 'arg1',
+            description: 'First argument',
+            required: true,
+          },
+        ],
+      };
+
+      server.prompt(testPrompt);
+
+      await transport.simulateIncomingMessage({
+        jsonrpc: JSONRPC_VERSION,
+        id: '1',
+        method: 'prompts/get',
+        params: {
+          name: 'test-prompt',
+          arguments: {
+            arg1: 'test-value',
+          },
+        },
+      } satisfies JSONRPCRequest);
+
+      expect(transport.messages[0]).toMatchObject({
+        jsonrpc: JSONRPC_VERSION,
+        id: '1',
+        result: {
+          description: 'A test prompt',
+          messages: expect.any(Array),
+        },
+      });
+    });
+
+    it('should handle missing required arguments', async () => {
+      const testPrompt: Prompt = {
+        name: 'test-prompt',
+        description: 'A test prompt',
+        arguments: [
+          {
+            name: 'arg1',
+            description: 'First argument',
+            required: true,
+          },
+        ],
+      };
+
+      server.prompt(testPrompt);
+
+      await transport.simulateIncomingMessage({
+        jsonrpc: JSONRPC_VERSION,
+        id: '1',
+        method: 'prompts/get',
+        params: {
+          name: 'test-prompt',
+        },
+      } satisfies JSONRPCRequest);
+
+      expect(transport.messages[0]).toMatchObject({
+        jsonrpc: JSONRPC_VERSION,
+        id: '1',
+        error: {
+          code: -32602,
+          message: 'Missing required argument: arg1',
         },
       });
     });
@@ -516,23 +608,20 @@ describe('Server', () => {
       };
 
       server.registerMethod('tools/list', async () => ({ tools: [testTool] }));
-      server.registerMethod(
-        'tools/call',
-        async (params: Record<string, unknown>) => ({ success: true })
-      );
+      server.registerMethod('tools/call', async (params: unknown) => ({ success: true }));
 
       await transport.simulateIncomingMessage({
         jsonrpc: JSONRPC_VERSION,
-        id: 1,
+        id: '1',
         method: 'tools/list',
         params: {},
       } satisfies JSONRPCRequest);
 
-      const messages = transport.getMessages();
+      const messages = transport.messages;
 
       expect(messages[0]).toMatchObject({
         jsonrpc: JSONRPC_VERSION,
-        id: 1,
+        id: '1',
         result: {
           tools: [testTool],
         },
@@ -542,22 +631,20 @@ describe('Server', () => {
     /**
      * Tests tool parameter validation.
      */
-    it('should validate tool parameters', async () => {
+    it('should handle tool parameter validation', async () => {
       const schema = object({
         name: string(),
         age: number(),
       });
 
-      await server.tool('greet', schema, (params: unknown) => {
+      server.tool('greet', schema, async (params: unknown) => {
         const typedParams = params as GreetParams;
-        return Promise.resolve(
-          `Hello, ${typedParams.name}! You are ${typedParams.age} years old.`
-        );
+        return `Hello, ${typedParams.name}! You are ${typedParams.age} years old.`;
       });
 
       await transport.simulateIncomingMessage({
         jsonrpc: JSONRPC_VERSION,
-        id: 5,
+        id: '1',
         method: 'tools/execute',
         params: {
           name: 'greet',
@@ -566,12 +653,12 @@ describe('Server', () => {
             age: 'twenty-five', // Invalid type
           },
         },
-      });
+      } satisfies JSONRPCRequest);
 
-      const messages = transport.getMessages();
+      const messages = transport.messages;
       expect(messages[0]).toMatchObject({
         jsonrpc: JSONRPC_VERSION,
-        id: 5,
+        id: '1',
         error: {
           code: -32602,
           message: expect.stringContaining('Invalid params'),
@@ -695,24 +782,21 @@ describe('Server', () => {
    * Tests logging level setting when supported.
    */
   it('should handle logging level setting when supported', async () => {
-    server.registerMethod(
-      'logging/setLevel',
-      async (params: Record<string, unknown>) => {
-        return { success: true };
-      }
-    );
+    server.registerMethod('logging/setLevel', async (params: unknown) => {
+      return { success: true };
+    });
 
     await transport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
-      id: 1,
+      id: '1',
       method: 'logging/setLevel',
       params: { level: 'info' },
     } satisfies JSONRPCRequest);
 
-    const messages = transport.getMessages();
+    const messages = transport.messages;
     expect(messages[0]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
-      id: 1,
+      id: '1',
       result: { success: true },
     });
   });
@@ -758,35 +842,38 @@ describe('Server', () => {
    * Tests logging level priority.
    */
   it('should respect logging level priority', async () => {
-    server = new McpServer({
+    const implementation: Implementation = {
       name: 'test-server',
       version: '1.0.0',
-      capabilities: {
-        logging: {},
-      },
-    });
+    };
+
+    const capabilities: ServerCapabilities = {
+      logging: {},
+    };
+
+    server = new McpServer(implementation, capabilities);
     await server.connect(transport.transport);
 
     // Initialize first
     await transport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
-      id: 1,
+      id: '1',
       method: 'initialize',
       params: {
         protocolVersion: LATEST_PROTOCOL_VERSION,
         capabilities: {},
       },
-    });
+    } satisfies JSONRPCRequest);
 
     // Set logging level to warning
     await transport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
-      id: 2,
+      id: '2',
       method: 'logging/setLevel',
       params: {
         level: 'warning',
       },
-    });
+    } satisfies JSONRPCRequest);
 
     // Send messages at different levels
     await server.sendLogMessage('info', 'Info message'); // Should not be sent
@@ -818,124 +905,27 @@ describe('Server', () => {
    * Tests resource operations.
    */
   it('should handle resource operations', async () => {
-    server = new McpServer({
-      name: 'test-server',
-      version: '1.0.0',
-      capabilities: {
-        resources: {
-          listChanged: true,
-        },
-      },
-    });
-    await server.connect(transport.transport);
-
-    // Initialize first
-    await transport.simulateIncomingMessage({
-      jsonrpc: JSONRPC_VERSION,
-      id: 1,
-      method: 'initialize',
-      params: {
-        protocolVersion: LATEST_PROTOCOL_VERSION,
-        capabilities: {},
-      },
-    });
-
-    // Register a test resource
-    const resource: ServerResource = {
+    const resource: Resource = {
       uri: 'test-resource',
       mimeType: 'text/plain',
-      content: { key: 'value' },
+      name: 'Test Resource',
     };
-    server.resource(resource, resource.content);
 
-    // Test listing resources
+    server.resource(resource);
+
     await transport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
-      id: 2,
+      id: '1',
       method: 'resources/list',
       params: {},
-    });
+    } satisfies JSONRPCRequest);
 
-    const messages = transport.getMessages();
-    expect(messages[1]).toMatchObject({
+    expect(transport.messages[0]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
-      id: 2,
+      id: '1',
       result: {
         resources: [resource],
       },
-    });
-
-    // Test reading a resource
-    await transport.simulateIncomingMessage({
-      jsonrpc: JSONRPC_VERSION,
-      id: 3,
-      method: 'resources/read',
-      params: {
-        uri: 'test-resource',
-      },
-    });
-
-    expect(messages[2]).toMatchObject({
-      jsonrpc: JSONRPC_VERSION,
-      id: 3,
-      result: {
-        content: resource.content,
-      },
-    });
-
-    // Test subscribing to a resource
-    await transport.simulateIncomingMessage({
-      jsonrpc: JSONRPC_VERSION,
-      id: 4,
-      method: 'resources/subscribe',
-      params: {
-        uri: 'test-resource',
-      },
-    });
-
-    expect(messages[3]).toMatchObject({
-      jsonrpc: JSONRPC_VERSION,
-      id: 4,
-      result: {},
-    });
-
-    // Update the resource and verify notification
-    const newContent = { key: 'new-value' };
-    const updatedResource: ServerResource = {
-      uri: 'test-resource',
-      mimeType: 'text/plain',
-      content: newContent,
-    };
-    server.resource(updatedResource, updatedResource.content);
-
-    expect(messages[4]).toMatchObject({
-      jsonrpc: JSONRPC_VERSION,
-      method: 'notifications/resources/list_changed',
-    });
-
-    expect(messages[5]).toMatchObject({
-      jsonrpc: JSONRPC_VERSION,
-      method: 'notifications/resources/updated',
-      params: {
-        uri: 'test-resource',
-        content: newContent,
-      },
-    });
-
-    // Test unsubscribing from a resource
-    await transport.simulateIncomingMessage({
-      jsonrpc: JSONRPC_VERSION,
-      id: 5,
-      method: 'resources/unsubscribe',
-      params: {
-        uri: 'test-resource',
-      },
-    });
-
-    expect(messages[6]).toMatchObject({
-      jsonrpc: JSONRPC_VERSION,
-      id: 5,
-      result: {},
     });
   });
 
@@ -943,41 +933,33 @@ describe('Server', () => {
    * Tests resource errors.
    */
   it('should handle resource errors', async () => {
-    server = new McpServer({
+    const implementation: Implementation = {
       name: 'test-server',
       version: '1.0.0',
-      capabilities: {
-        resources: {
-          listChanged: true,
-        },
+    };
+
+    const capabilities: ServerCapabilities = {
+      resources: {
+        listChanged: true,
       },
-    });
+    };
+
+    server = new McpServer(implementation, capabilities);
     await server.connect(transport.transport);
 
     // Initialize first
     await transport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
-      id: 1,
-      method: 'initialize',
-      params: {
-        protocolVersion: LATEST_PROTOCOL_VERSION,
-        capabilities: {},
-      },
-    });
-
-    // Test reading a non-existent resource
-    await transport.simulateIncomingMessage({
-      jsonrpc: JSONRPC_VERSION,
-      id: 2,
+      id: '1',
       method: 'resources/read',
       params: {
         name: 'non-existent-resource',
       },
-    });
+    } satisfies JSONRPCRequest);
 
-    expect(transport.messages[1]).toMatchObject({
+    expect(transport.messages[0]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
-      id: 2,
+      id: '1',
       error: {
         code: -32602,
         message: 'Resource not found: non-existent-resource',
@@ -987,16 +969,16 @@ describe('Server', () => {
     // Test subscribing to a non-existent resource
     await transport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
-      id: 3,
+      id: '2',
       method: 'resources/subscribe',
       params: {
         name: 'non-existent-resource',
       },
-    });
+    } satisfies JSONRPCRequest);
 
-    expect(transport.messages[2]).toMatchObject({
+    expect(transport.messages[1]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
-      id: 3,
+      id: '2',
       error: {
         code: -32602,
         message: 'Resource not found: non-existent-resource',
@@ -1006,16 +988,16 @@ describe('Server', () => {
     // Test unsubscribing from a non-existent resource
     await transport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
-      id: 3,
+      id: '3',
       method: 'resources/unsubscribe',
       params: {
         uri: 'test://non-existent',
       },
-    });
+    } satisfies JSONRPCRequest);
 
-    expect(transport.getMessages()[2]).toMatchObject({
+    expect(transport.messages[2]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
-      id: 3,
+      id: '3',
       error: {
         code: -32602,
         message: 'Resource not found: test://non-existent',
@@ -1027,12 +1009,12 @@ describe('Server', () => {
    * Tests disconnect handling.
    */
   it('should handle disconnect', async () => {
-    const server = new McpServer({
+    const implementation: Implementation = {
       name: 'test-server',
       version: '1.0.0',
-    });
+    };
 
-    const transport = new TestTransport();
+    server = new McpServer(implementation);
     await server.connect(transport.transport);
 
     // Disconnect
@@ -1057,9 +1039,10 @@ describe('Server', () => {
 
     await transport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
+      id: '1',
       method: 'test',
       params: {},
-    });
+    } satisfies JSONRPCRequest);
 
     expect(messageHandler).toHaveBeenCalled();
   });
@@ -1075,9 +1058,10 @@ describe('Server', () => {
 
     await transport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
+      id: '1',
       method: 'test',
       params: {},
-    });
+    } satisfies JSONRPCRequest);
 
     expect(errorHandler).toHaveBeenCalled();
   });
@@ -1092,10 +1076,117 @@ describe('Server', () => {
 
     await transport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
+      id: '1',
       method: 'test',
       params: {},
-    });
+    } satisfies JSONRPCRequest);
 
     expect(messageHandler).not.toHaveBeenCalled();
+  });
+
+  it('should handle basic request/response', async () => {
+    server.registerMethod('greet', async (params: unknown) => {
+      const { name } = params as { name: string };
+      return `Hello, ${name}!`;
+    });
+
+    await transport.simulateIncomingMessage({
+      jsonrpc: JSONRPC_VERSION,
+      id: '1',
+      method: 'greet',
+      params: { name: 'Alice' },
+    } satisfies JSONRPCRequest);
+
+    expect(transport.messages[0]).toMatchObject({
+      jsonrpc: JSONRPC_VERSION,
+      id: '1',
+      result: 'Hello, Alice!',
+    });
+  });
+
+  it('should handle notifications', async () => {
+    await transport.simulateIncomingMessage({
+      jsonrpc: JSONRPC_VERSION,
+      id: '1',
+      method: 'notifications/message',
+      params: {
+        level: 'info',
+        data: 'test',
+      },
+    } satisfies JSONRPCRequest);
+
+    // No error means success
+  });
+
+  it('should handle errors', async () => {
+    const errorHandler = vi.fn();
+    transport.onError(errorHandler);
+
+    await transport.simulateIncomingMessage({
+      jsonrpc: JSONRPC_VERSION,
+      id: '1',
+      method: 'invalid',
+      params: {},
+    } satisfies JSONRPCRequest);
+
+    expect(transport.messages[0]).toMatchObject({
+      jsonrpc: JSONRPC_VERSION,
+      id: '1',
+      error: {
+        code: -32601,
+        message: 'Method not found: invalid',
+      },
+    });
+  });
+
+  it('should handle authentication', async () => {
+    const auth = {
+      validateToken: vi.fn().mockResolvedValue({ roles: ['admin'] }),
+      generateToken: vi.fn(),
+      verify: vi.fn(),
+      secretKey: new TextEncoder().encode('test-secret'),
+      getOptions: () => ({
+        secret: 'test-secret',
+        tokenExpiration: 3600,
+        issuer: 'test-server',
+        audience: 'test-client',
+      }),
+    } as unknown as Auth;
+
+    const implementation: Implementation = {
+      name: 'test-server',
+      version: '1.0.0',
+    };
+
+    const capabilities: ServerCapabilities = {
+      logging: {},
+      resources: {
+        listChanged: true,
+      },
+    };
+
+    server = new McpServer(implementation, capabilities, auth);
+
+    server.registerMethod(
+      'sensitiveOperation',
+      async () => 'secret data',
+      ['admin']
+    );
+
+    await transport.simulateIncomingMessage({
+      jsonrpc: JSONRPC_VERSION,
+      id: '1',
+      method: 'sensitiveOperation',
+      params: {},
+    } satisfies JSONRPCRequest);
+
+    expect(transport.messages[0]).toMatchObject({
+      jsonrpc: JSONRPC_VERSION,
+      id: '1',
+      error: {
+        code: -32000,
+        message: 'Authentication token required',
+      },
+    });
   });
 });

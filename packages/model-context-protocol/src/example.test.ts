@@ -22,7 +22,7 @@ describe('Model Context Protocol', () => {
     );
 
     // Register a method on the server
-    server.registerMethod('greet', (params) => {
+    server.registerMethod('greet', async (params) => {
       const { name } = params as { name: string };
       return `Hello, ${name}!`;
     });
@@ -74,14 +74,16 @@ describe('Model Context Protocol', () => {
     await server.connect(serverTransport);
     await client.connect();
 
-    // This should fail as the client doesn't have admin role
-    await expect(client.request('sensitiveOperation')).rejects.toThrow(
-      'Authentication token required'
-    );
-
-    // Cleanup
-    await client.disconnect();
-    await serverTransport.close();
+    try {
+      // This should fail as the client doesn't have admin role
+      await expect(client.request('sensitiveOperation')).rejects.toThrow(
+        'Authentication token required'
+      );
+    } finally {
+      // Cleanup
+      await client.disconnect();
+      await serverTransport.close();
+    }
   });
 
   it('should handle notifications', async () => {
@@ -104,11 +106,14 @@ describe('Model Context Protocol', () => {
     await server.connect(serverTransport);
     await client.connect();
 
-    // Send a notification
-    await client.notify('log', { level: 'info', message: 'test' });
+    try {
+      // Send a notification
+      await client.notify('log', { level: 'info', message: 'test' });
 
-    // No error means success
-    await client.disconnect();
-    await serverTransport.close();
+      // No error means success
+    } finally {
+      await client.disconnect();
+      await serverTransport.close();
+    }
   });
 });
