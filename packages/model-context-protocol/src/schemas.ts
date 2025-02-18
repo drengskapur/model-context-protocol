@@ -10,6 +10,7 @@ import {
   boolean,
   intersect,
   literal,
+  nullType,
   number,
   object,
   optional,
@@ -23,7 +24,7 @@ import { JSONRPC_VERSION } from './schema.js';
 // Basic types
 export const progressTokenSchema = union([string(), number()]);
 export const cursorSchema = string();
-export const requestIdSchema = union([string(), number()]);
+export const requestIdSchema = union([string(), number(), nullType()]);
 
 // Base schemas
 export const metaSchema = object({

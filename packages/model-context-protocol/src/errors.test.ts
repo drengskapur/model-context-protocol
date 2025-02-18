@@ -39,7 +39,9 @@ describe('McpError', () => {
 
   it('should support error chaining', () => {
     const cause = new Error('Original error');
-    const error = new McpError(PARSE_ERROR, 'Invalid JSON', undefined, { cause });
+    const error = new McpError(PARSE_ERROR, 'Invalid JSON', undefined, {
+      cause,
+    });
     expect(error.code).toBe(PARSE_ERROR);
     expect(error.message).toBe('Invalid JSON');
     expect(error.cause).toBe(cause);
@@ -203,7 +205,12 @@ describe('Error Handling', () => {
       TimeoutError: 504,
     } as const;
 
-    const errorClasses: Record<keyof typeof codeMap, new (message: string) => McpError> = {
+    const errorClasses: Record<
+      keyof typeof codeMap,
+      new (
+        message: string
+      ) => McpError
+    > = {
       ParseError,
       InvalidRequestError,
       MethodNotFoundError,
@@ -226,7 +233,9 @@ describe('Error Handling', () => {
 
   it('should support error chaining with VError', () => {
     const dbError = new Error('Failed to query database');
-    const apiError = new McpError(-32603, 'API error', undefined, { cause: dbError });
+    const apiError = new McpError(-32603, 'API error', undefined, {
+      cause: dbError,
+    });
     expect(apiError.message).toBe('API error');
     expect(apiError.cause).toBe(dbError);
   });
@@ -246,7 +255,9 @@ describe('Error Handling', () => {
 
   it('should handle nested errors', () => {
     const level2 = new Error('Level 2');
-    const level1 = new McpError(-32603, 'Level 1', undefined, { cause: level2 });
+    const level1 = new McpError(-32603, 'Level 1', undefined, {
+      cause: level2,
+    });
     expect(level1.message).toBe('Level 1');
     expect(level1.cause).toBe(level2);
   });

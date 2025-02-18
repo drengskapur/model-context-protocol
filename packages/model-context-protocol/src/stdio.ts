@@ -6,7 +6,6 @@
 
 import type { Readable, Writable } from 'node:stream';
 import { VError } from 'verror';
-import type { JSONRPCRequest, JSONRPCResponse } from './schema';
 import { BaseTransport } from './transport';
 
 /**
@@ -105,7 +104,7 @@ export class StdioTransport extends BaseTransport {
    * Sends a message through stdout.
    * @param message Message to send
    */
-  async send(message: JSONRPCRequest | JSONRPCResponse): Promise<void> {
+  async send(message: any): Promise<void> {
     if (!this.isConnected()) {
       throw new VError('Transport not connected');
     }

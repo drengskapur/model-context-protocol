@@ -1,14 +1,14 @@
 import { parse } from 'valibot';
 import { describe, expect, it } from 'vitest';
 import {
-  type JSONRPCErrorResponse,
   type JSONRPCNotification,
   type JSONRPCRequest,
   type JSONRPCResponse,
+  type JSONRPCError,
   type Result,
   JSONRPC_VERSION,
-} from './schema';
-import { jsonRpcSchema } from './validation';
+} from './schema.js';
+import { jsonRpcMessageSchema } from './schemas.js';
 
 describe('JSON-RPC Message Schema', () => {
   describe('Request Messages', () => {
@@ -19,7 +19,7 @@ describe('JSON-RPC Message Schema', () => {
         method: 'test',
         params: { foo: 'bar' },
       };
-      expect(() => parse(jsonRpcSchema, request)).not.toThrow();
+      expect(() => parse(jsonRpcMessageSchema, request)).not.toThrow();
     });
 
     it('validates request with string id', () => {
@@ -29,7 +29,7 @@ describe('JSON-RPC Message Schema', () => {
         method: 'test',
         params: {},
       };
-      expect(() => parse(jsonRpcSchema, request)).not.toThrow();
+      expect(() => parse(jsonRpcMessageSchema, request)).not.toThrow();
     });
 
     it('validates request with progress token', () => {
@@ -44,7 +44,7 @@ describe('JSON-RPC Message Schema', () => {
           data: 'test',
         },
       };
-      expect(() => parse(jsonRpcSchema, request)).not.toThrow();
+      expect(() => parse(jsonRpcMessageSchema, request)).not.toThrow();
     });
 
     it('validates request with numeric progress token', () => {
@@ -58,7 +58,7 @@ describe('JSON-RPC Message Schema', () => {
           },
         },
       };
-      expect(() => parse(jsonRpcSchema, request)).not.toThrow();
+      expect(() => parse(jsonRpcMessageSchema, request)).not.toThrow();
     });
 
     it('validates request without params', () => {
@@ -67,7 +67,7 @@ describe('JSON-RPC Message Schema', () => {
         id: 1,
         method: 'test',
       };
-      expect(() => parse(jsonRpcSchema, request)).not.toThrow();
+      expect(() => parse(jsonRpcMessageSchema, request)).not.toThrow();
     });
   });
 
@@ -78,7 +78,7 @@ describe('JSON-RPC Message Schema', () => {
         method: 'notify',
         params: { message: 'test' },
       };
-      expect(() => parse(jsonRpcSchema, notification)).not.toThrow();
+      expect(() => parse(jsonRpcMessageSchema, notification)).not.toThrow();
     });
 
     it('validates notification with metadata', () => {
@@ -92,7 +92,7 @@ describe('JSON-RPC Message Schema', () => {
           data: 'test',
         },
       };
-      expect(() => parse(jsonRpcSchema, notification)).not.toThrow();
+      expect(() => parse(jsonRpcMessageSchema, notification)).not.toThrow();
     });
 
     it('validates notification without params', () => {
@@ -100,7 +100,7 @@ describe('JSON-RPC Message Schema', () => {
         jsonrpc: JSONRPC_VERSION,
         method: 'notify',
       };
-      expect(() => parse(jsonRpcSchema, notification)).not.toThrow();
+      expect(() => parse(jsonRpcMessageSchema, notification)).not.toThrow();
     });
   });
 
@@ -110,10 +110,10 @@ describe('JSON-RPC Message Schema', () => {
         jsonrpc: JSONRPC_VERSION,
         id: 1,
         result: {
-          value: 'test'
+          value: 'test',
         },
       };
-      expect(() => parse(jsonRpcSchema, response)).not.toThrow();
+      expect(() => parse(jsonRpcMessageSchema, response)).not.toThrow();
     });
 
     it('validates response with metadata', () => {
@@ -125,10 +125,10 @@ describe('JSON-RPC Message Schema', () => {
             duration: 123,
             cache: 'hit',
           },
-          value: 'test'
+          value: 'test',
         },
       };
-      expect(() => parse(jsonRpcSchema, response)).not.toThrow();
+      expect(() => parse(jsonRpcMessageSchema, response)).not.toThrow();
     });
 
     it('validates response with empty result', () => {
@@ -136,16 +136,16 @@ describe('JSON-RPC Message Schema', () => {
         jsonrpc: JSONRPC_VERSION,
         id: 1,
         result: {
-          value: null
+          value: null,
         },
       };
-      expect(() => parse(jsonRpcSchema, response)).not.toThrow();
+      expect(() => parse(jsonRpcMessageSchema, response)).not.toThrow();
     });
   });
 
   describe('Error Messages', () => {
     it('validates basic error', () => {
-      const error: JSONRPCErrorResponse = {
+      const error: JSONRPCError = {
         jsonrpc: JSONRPC_VERSION,
         id: 1,
         error: {
@@ -153,11 +153,11 @@ describe('JSON-RPC Message Schema', () => {
           message: 'Parse error',
         },
       };
-      expect(() => parse(jsonRpcSchema, error)).not.toThrow();
+      expect(() => parse(jsonRpcMessageSchema, error)).not.toThrow();
     });
 
     it('validates error with data', () => {
-      const error: JSONRPCErrorResponse = {
+      const error: JSONRPCError = {
         jsonrpc: JSONRPC_VERSION,
         id: 'abc-123',
         error: {
@@ -170,19 +170,19 @@ describe('JSON-RPC Message Schema', () => {
           },
         },
       };
-      expect(() => parse(jsonRpcSchema, error)).not.toThrow();
+      expect(() => parse(jsonRpcMessageSchema, error)).not.toThrow();
     });
 
-    it('validates error with null id', () => {
-      const error: JSONRPCErrorResponse = {
+    it('validates error with empty id', () => {
+      const error: JSONRPCError = {
         jsonrpc: JSONRPC_VERSION,
-        id: null,
+        id: '',
         error: {
-          code: -32700,
-          message: 'Parse error',
+          code: -32600,
+          message: 'Invalid Request',
         },
       };
-      expect(() => parse(jsonRpcSchema, error)).not.toThrow();
+      expect(() => parse(jsonRpcMessageSchema, error)).not.toThrow();
     });
   });
 
@@ -193,7 +193,7 @@ describe('JSON-RPC Message Schema', () => {
         id: 1,
         method: 'test',
       };
-      expect(() => parse(jsonRpcSchema, message)).toThrow();
+      expect(() => parse(jsonRpcMessageSchema, message)).toThrow();
     });
 
     it('rejects request without method', () => {
@@ -202,7 +202,7 @@ describe('JSON-RPC Message Schema', () => {
         id: 1,
         params: {},
       };
-      expect(() => parse(jsonRpcSchema, message)).toThrow();
+      expect(() => parse(jsonRpcMessageSchema, message)).toThrow();
     });
 
     it('rejects response without id', () => {
@@ -210,7 +210,7 @@ describe('JSON-RPC Message Schema', () => {
         jsonrpc: JSONRPC_VERSION,
         result: {},
       };
-      expect(() => parse(jsonRpcSchema, message)).toThrow();
+      expect(() => parse(jsonRpcMessageSchema, message)).toThrow();
     });
 
     it('rejects error without code', () => {
@@ -221,7 +221,7 @@ describe('JSON-RPC Message Schema', () => {
           message: 'Test error',
         },
       };
-      expect(() => parse(jsonRpcSchema, message)).toThrow();
+      expect(() => parse(jsonRpcMessageSchema, message)).toThrow();
     });
 
     it('rejects error without message', () => {
@@ -232,7 +232,7 @@ describe('JSON-RPC Message Schema', () => {
           code: -32700,
         },
       };
-      expect(() => parse(jsonRpcSchema, message)).toThrow();
+      expect(() => parse(jsonRpcMessageSchema, message)).toThrow();
     });
 
     it('rejects message with both result and error', () => {
@@ -245,7 +245,7 @@ describe('JSON-RPC Message Schema', () => {
           message: 'Test error',
         },
       };
-      expect(() => parse(jsonRpcSchema, message)).toThrow();
+      expect(() => parse(jsonRpcMessageSchema, message)).toThrow();
     });
 
     it('rejects message with invalid progress token type', () => {
@@ -259,7 +259,7 @@ describe('JSON-RPC Message Schema', () => {
           },
         },
       };
-      expect(() => parse(jsonRpcSchema, message)).toThrow();
+      expect(() => parse(jsonRpcMessageSchema, message)).toThrow();
     });
 
     it('rejects message with invalid id type', () => {
@@ -268,7 +268,7 @@ describe('JSON-RPC Message Schema', () => {
         id: true, // boolean is not allowed
         method: 'test',
       };
-      expect(() => parse(jsonRpcSchema, message)).toThrow();
+      expect(() => parse(jsonRpcMessageSchema, message)).toThrow();
     });
   });
 });

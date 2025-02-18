@@ -8,7 +8,12 @@ import { VError } from 'verror';
 import type { Auth } from './auth';
 import type { McpTransport } from './transport';
 import { LATEST_PROTOCOL_VERSION, JSONRPC_VERSION } from './schema';
-import type { JSONRPCRequest, JSONRPCResponse, Result, JSONRPCError } from './schema';
+import type {
+  JSONRPCRequest,
+  JSONRPCResponse,
+  Result,
+  JSONRPCError,
+} from './schema';
 
 /**
  * Server options for Model Context Protocol.
@@ -112,12 +117,18 @@ export class McpServer {
     roles?: string[]
   ): void {
     const wrappedMethod = async (params: unknown) => {
-      if (params !== undefined && (typeof params !== 'object' || params === null)) {
+      if (
+        params !== undefined &&
+        (typeof params !== 'object' || params === null)
+      ) {
         throw new VError('Invalid parameters: expected object');
       }
 
       if (roles && this.options.auth) {
-        const { token, ...rest } = params as { token?: string } & Record<string, unknown>;
+        const { token, ...rest } = params as { token?: string } & Record<
+          string,
+          unknown
+        >;
         if (!token) {
           throw new VError('Authentication token required');
         }
@@ -133,7 +144,7 @@ export class McpServer {
         }
       }
 
-      return method(params as Record<string, unknown> ?? {});
+      return method((params as Record<string, unknown>) ?? {});
     };
 
     this.methods.set(name, wrappedMethod);
@@ -190,7 +201,11 @@ export class McpServer {
       transport.onMessage(async (message) => {
         try {
           const response = await this.handleMessage(message);
-          if (typeof message === 'object' && message !== null && 'id' in message) {
+          if (
+            typeof message === 'object' &&
+            message !== null &&
+            'id' in message
+          ) {
             const request = message as JSONRPCRequest;
             if (
               typeof response === 'object' &&
@@ -213,7 +228,11 @@ export class McpServer {
             }
           }
         } catch (error) {
-          if (typeof message === 'object' && message !== null && 'id' in message) {
+          if (
+            typeof message === 'object' &&
+            message !== null &&
+            'id' in message
+          ) {
             const request = message as JSONRPCRequest;
             await transport.send({
               jsonrpc: JSONRPC_VERSION,

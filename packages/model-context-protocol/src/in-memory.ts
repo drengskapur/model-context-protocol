@@ -25,15 +25,15 @@ export class InMemoryTransport implements McpTransport {
     return {
       on: <K extends keyof TransportEventMap>(
         event: K,
-        handler: (...args: TransportEventMap[K]) => void
+        handler: K extends 'connect' | 'disconnect' ? () => void : (...args: TransportEventMap[K]) => void
       ) => {
-        this._events.on(event, handler);
+        this._events.on(event, handler as (...args: any[]) => void);
       },
       off: <K extends keyof TransportEventMap>(
         event: K,
-        handler: (...args: TransportEventMap[K]) => void
+        handler: K extends 'connect' | 'disconnect' ? () => void : (...args: TransportEventMap[K]) => void
       ) => {
-        this._events.off(event, handler);
+        this._events.off(event, handler as (...args: any[]) => void);
       },
     };
   }
@@ -85,9 +85,9 @@ export class InMemoryTransport implements McpTransport {
    */
   on<K extends keyof TransportEventMap>(
     event: K,
-    handler: (...args: TransportEventMap[K]) => void
+    handler: K extends 'connect' | 'disconnect' ? () => void : (...args: TransportEventMap[K]) => void
   ): void {
-    this._events.on(event, handler);
+    this._events.on(event, handler as (...args: any[]) => void);
   }
 
   /**
@@ -95,9 +95,9 @@ export class InMemoryTransport implements McpTransport {
    */
   off<K extends keyof TransportEventMap>(
     event: K,
-    handler: (...args: TransportEventMap[K]) => void
+    handler: K extends 'connect' | 'disconnect' ? () => void : (...args: TransportEventMap[K]) => void
   ): void {
-    this._events.off(event, handler);
+    this._events.off(event, handler as (...args: any[]) => void);
   }
 
   /**

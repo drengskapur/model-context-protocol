@@ -64,7 +64,7 @@ describe('SseTransport', () => {
       const handler = vi.fn();
       transport.on('message', handler);
       await transport.connect();
-      
+
       const message: JSONRPCRequest = {
         jsonrpc: JSONRPC_VERSION,
         method: 'test',
@@ -90,7 +90,7 @@ describe('SseTransport', () => {
       const handler = vi.fn();
       transport.on('error', handler);
       await transport.connect();
-      
+
       // Get the session mock and simulate an error
       const { createSession } = await import('better-sse');
       const mockSession = await (createSession as any).mock.results[0].value;
@@ -108,7 +108,7 @@ describe('SseTransport', () => {
     it('should handle multiple event listeners', async () => {
       const handler1 = vi.fn();
       const handler2 = vi.fn();
-      
+
       transport.on('message', handler1);
       transport.on('message', handler2);
       await transport.connect();
@@ -154,9 +154,13 @@ describe('SseTransport', () => {
 
     it('should set retry timeout', async () => {
       const retryTimeout = 5000;
-      transport = new SseTransport({ req: mockReq, res: mockRes, retryTimeout });
+      transport = new SseTransport({
+        req: mockReq,
+        res: mockRes,
+        retryTimeout,
+      });
       await transport.connect();
-      
+
       // Verify retry timeout was set
       const { createSession } = await import('better-sse');
       const mockSession = await (createSession as any).mock.results[0].value;
@@ -165,8 +169,10 @@ describe('SseTransport', () => {
 
     it('should handle connection errors', async () => {
       const { createSession } = await import('better-sse');
-      (createSession as any).mockRejectedValueOnce(new Error('Connection failed'));
-      
+      (createSession as any).mockRejectedValueOnce(
+        new Error('Connection failed')
+      );
+
       await expect(transport.connect()).rejects.toThrow(/Failed to connect/);
     });
 

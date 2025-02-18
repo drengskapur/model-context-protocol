@@ -17,11 +17,14 @@ const PROTOCOL_VERSION_MISMATCH_REGEX = /Protocol version mismatch/;
 async function createConnectedPair() {
   const [clientTransport, serverTransport] = InMemoryTransport.createPair();
 
-  const client = new McpClient({
-    name: 'test-client',
-    version: '1.0.0',
-    requestTimeout: 1000,
-  }, clientTransport);
+  const client = new McpClient(
+    {
+      name: 'test-client',
+      version: '1.0.0',
+      requestTimeout: 1000,
+    },
+    clientTransport
+  );
 
   const server = new McpServer({
     name: 'test-server',
@@ -1189,7 +1192,7 @@ describe('McpClient', () => {
           name: 'test-prompt',
           description: 'A test prompt',
         },
-      ] as unknown as Record<string, unknown>
+      ] as unknown as Record<string, unknown>,
     } as JSONRPCResponse);
 
     const prompts = await listPromise;
@@ -1237,11 +1240,13 @@ describe('McpClient', () => {
       },
     } as JSONRPCError);
 
-    expect(messageHandler).toHaveBeenCalledWith(expect.objectContaining({
-      error: expect.objectContaining({
-        message: 'Test error',
-      }),
-    }));
+    expect(messageHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: expect.objectContaining({
+          message: 'Test error',
+        }),
+      })
+    );
 
     // Clean up
     client.offMessage(messageHandler);

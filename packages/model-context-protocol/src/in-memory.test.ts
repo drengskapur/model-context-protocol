@@ -186,9 +186,9 @@ describe('InMemoryTransport', () => {
 
     it('should reject invalid messages in simulation', async () => {
       const invalidMessage = { invalid: 'message' };
-      await expect(transport1.simulateIncomingMessage(invalidMessage as any)).rejects.toThrow(
-        'Invalid message format'
-      );
+      await expect(
+        transport1.simulateIncomingMessage(invalidMessage as any)
+      ).rejects.toThrow('Invalid message format');
     });
 
     it('should store and retrieve sent messages', async () => {
@@ -253,19 +253,23 @@ describe('InMemoryTransport', () => {
     it('should properly close the transport', async () => {
       await transport1.connect();
       await transport1.close();
-      
+
       expect(transport1.isConnected()).toBe(false);
       const message: JSONRPCRequest = {
         jsonrpc: JSONRPC_VERSION,
         method: 'test',
         id: '1',
       };
-      await expect(transport1.send(message)).rejects.toThrow('Transport not connected');
+      await expect(transport1.send(message)).rejects.toThrow(
+        'Transport not connected'
+      );
     });
 
     it('should clear transport pairing on close', async () => {
       await transport1.close();
-      await expect(transport1.connect()).rejects.toThrow('Transport not paired');
+      await expect(transport1.connect()).rejects.toThrow(
+        'Transport not paired'
+      );
     });
   });
 });

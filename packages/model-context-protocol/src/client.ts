@@ -451,7 +451,11 @@ export class McpClient {
       if (message.method === 'notifications/progress' && 'params' in message) {
         const params = message.params;
         if (params && typeof params === 'object' && 'progressToken' in params) {
-          const { progressToken, progress, total } = params as { progressToken: string; progress: number; total: number };
+          const { progressToken, progress, total } = params as {
+            progressToken: string;
+            progress: number;
+            total: number;
+          };
           this.events.emit(`progress:${progressToken}`, progress, total);
         }
       }

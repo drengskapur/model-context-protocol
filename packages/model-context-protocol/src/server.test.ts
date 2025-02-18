@@ -1,10 +1,20 @@
 import { EventEmitter } from 'eventemitter3';
 import { beforeEach, describe, expect, it, vi, afterEach } from 'vitest';
 import { InMemoryTransport } from './in-memory';
-import type { JSONRPCMessage, Prompt, Tool, JSONRPCRequest, JSONRPCResponse } from './schema';
+import type {
+  JSONRPCMessage,
+  Prompt,
+  Tool,
+  JSONRPCRequest,
+  JSONRPCResponse,
+} from './schema';
 import { JSONRPC_VERSION, LATEST_PROTOCOL_VERSION } from './schema';
 import { McpServer } from './server';
-import type { McpTransport, MessageHandler, TransportEventMap } from './transport';
+import type {
+  McpTransport,
+  MessageHandler,
+  TransportEventMap,
+} from './transport';
 
 /**
  * Test interface for greeting parameters.
@@ -124,7 +134,9 @@ class TestTransport implements McpTransport {
    * @param message Message to simulate
    * @returns Promise that resolves when processed
    */
-  async simulateIncomingMessage(message: JSONRPCRequest | JSONRPCResponse): Promise<void> {
+  async simulateIncomingMessage(
+    message: JSONRPCRequest | JSONRPCResponse
+  ): Promise<void> {
     await this.transport.simulateIncomingMessage(message);
   }
 
@@ -199,8 +211,13 @@ describe('Server', () => {
         ],
       };
 
-      server.registerMethod('prompts/get', async (params: Record<string, unknown>) => testPrompt);
-      server.registerMethod('prompts/list', async () => ({ prompts: [testPrompt] }));
+      server.registerMethod(
+        'prompts/get',
+        async (params: Record<string, unknown>) => testPrompt
+      );
+      server.registerMethod('prompts/list', async () => ({
+        prompts: [testPrompt],
+      }));
 
       await transport.simulateIncomingMessage({
         jsonrpc: JSONRPC_VERSION,
@@ -499,7 +516,10 @@ describe('Server', () => {
       };
 
       server.registerMethod('tools/list', async () => ({ tools: [testTool] }));
-      server.registerMethod('tools/call', async (params: Record<string, unknown>) => ({ success: true }));
+      server.registerMethod(
+        'tools/call',
+        async (params: Record<string, unknown>) => ({ success: true })
+      );
 
       await transport.simulateIncomingMessage({
         jsonrpc: JSONRPC_VERSION,
@@ -675,9 +695,12 @@ describe('Server', () => {
    * Tests logging level setting when supported.
    */
   it('should handle logging level setting when supported', async () => {
-    server.registerMethod('logging/setLevel', async (params: Record<string, unknown>) => {
-      return { success: true };
-    });
+    server.registerMethod(
+      'logging/setLevel',
+      async (params: Record<string, unknown>) => {
+        return { success: true };
+      }
+    );
 
     await transport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,

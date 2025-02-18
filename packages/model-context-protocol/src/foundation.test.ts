@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { JSONRPC_VERSION, LATEST_PROTOCOL_VERSION } from './schema';
-import type { JSONRPCRequest, JSONRPCResponse, JSONRPCMessage } from './schema';
 import { InMemoryTransport } from './in-memory';
+import { JSONRPC_VERSION, LATEST_PROTOCOL_VERSION } from './schema';
 import { McpClient } from './client';
 import { McpServer } from './server';
+import type { JSONRPCMessage, JSONRPCRequest, JSONRPCResponse } from './schema';
+
+// Regex patterns
+const PROTOCOL_VERSION_MISMATCH = /Protocol version mismatch/;
 
 describe('Model Context Protocol Foundation', () => {
   describe('Protocol Versions', () => {
@@ -25,10 +28,10 @@ describe('Model Context Protocol Foundation', () => {
 
     it('should connect and disconnect transports', async () => {
       const [transport1, transport2] = InMemoryTransport.createPair();
-      
+
       await transport1.connect();
       await transport2.connect();
-      
+
       expect(transport1.isConnected()).toBe(true);
       expect(transport2.isConnected()).toBe(true);
 
@@ -69,7 +72,9 @@ describe('Model Context Protocol Foundation', () => {
         method: 'test',
       } as unknown as JSONRPCMessage;
 
-      await expect(transport1.simulateIncomingMessage(invalidMessage)).rejects.toThrow('Invalid message format');
+      await expect(
+        transport1.simulateIncomingMessage(invalidMessage)
+      ).rejects.toThrow('Invalid message format');
     });
   });
 
@@ -77,10 +82,13 @@ describe('Model Context Protocol Foundation', () => {
     it('should establish a connection', async () => {
       const [clientTransport, serverTransport] = InMemoryTransport.createPair();
 
-      const client = new McpClient({
-        name: 'test-client',
-        version: '1.0.0',
-      }, clientTransport);
+      const client = new McpClient(
+        {
+          name: 'test-client',
+          version: '1.0.0',
+        },
+        clientTransport
+      );
 
       const server = new McpServer({
         name: 'test-server',
@@ -98,10 +106,13 @@ describe('Model Context Protocol Foundation', () => {
     it('should handle protocol version mismatch', async () => {
       const [clientTransport, serverTransport] = InMemoryTransport.createPair();
 
-      const client = new McpClient({
-        name: 'test-client',
-        version: '1.0.0',
-      }, clientTransport);
+      const client = new McpClient(
+        {
+          name: 'test-client',
+          version: '1.0.0',
+        },
+        clientTransport
+      );
 
       const server = new McpServer({
         name: 'test-server',
@@ -128,17 +139,20 @@ describe('Model Context Protocol Foundation', () => {
         },
       } satisfies JSONRPCResponse);
 
-      await expect(connectPromise).rejects.toThrow(/Protocol version mismatch/);
+      await expect(connectPromise).rejects.toThrow(PROTOCOL_VERSION_MISMATCH);
       expect(client.isInitialized()).toBe(false);
     });
 
     it('should handle basic request-response', async () => {
       const [clientTransport, serverTransport] = InMemoryTransport.createPair();
 
-      const client = new McpClient({
-        name: 'test-client',
-        version: '1.0.0',
-      }, clientTransport);
+      const client = new McpClient(
+        {
+          name: 'test-client',
+          version: '1.0.0',
+        },
+        clientTransport
+      );
 
       const server = new McpServer({
         name: 'test-server',
@@ -159,4 +173,4 @@ describe('Model Context Protocol Foundation', () => {
       expect(result).toEqual({ success: true });
     });
   });
-}); 
+});

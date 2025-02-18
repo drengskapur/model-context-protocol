@@ -35,16 +35,16 @@ export abstract class JsonRpcTransport implements McpTransport {
     return {
       on: <K extends keyof TransportEventMap>(
         event: K,
-        handler: (...args: TransportEventMap[K]) => void
+        handler: K extends 'connect' | 'disconnect' ? () => void : (...args: TransportEventMap[K]) => void
       ) => {
-        this._events.on(event, handler);
+        this._events.on(event, handler as ((...args: any[]) => void) & ((...args: TransportEventMap[K]) => void));
       },
       off: <K extends keyof TransportEventMap>(
         event: K,
-        handler: (...args: TransportEventMap[K]) => void
+        handler: K extends 'connect' | 'disconnect' ? () => void : (...args: TransportEventMap[K]) => void
       ) => {
-        this._events.off(event, handler);
-      }
+        this._events.off(event, handler as ((...args: any[]) => void) & ((...args: TransportEventMap[K]) => void));
+      },
     };
   }
 
@@ -81,11 +81,9 @@ export abstract class JsonRpcTransport implements McpTransport {
    */
   on<K extends keyof TransportEventMap>(
     event: K,
-    handler: TransportEventMap[K] extends never[] 
-      ? () => void 
-      : (...args: TransportEventMap[K]) => void
+    handler: K extends 'connect' | 'disconnect' ? () => void : (...args: TransportEventMap[K]) => void
   ): void {
-    this._events.on(event, handler);
+    this._events.on(event, handler as (...args: any[]) => void);
   }
 
   /**
@@ -93,11 +91,9 @@ export abstract class JsonRpcTransport implements McpTransport {
    */
   off<K extends keyof TransportEventMap>(
     event: K,
-    handler: TransportEventMap[K] extends never[] 
-      ? () => void 
-      : (...args: TransportEventMap[K]) => void
+    handler: K extends 'connect' | 'disconnect' ? () => void : (...args: TransportEventMap[K]) => void
   ): void {
-    this._events.off(event, handler);
+    this._events.off(event, handler as (...args: any[]) => void);
   }
 
   /**

@@ -6,10 +6,14 @@
 
 import { VError } from 'verror';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { Session, Channel, DefaultSessionState, DefaultChannelState } from 'better-sse';
+import type {
+  Session,
+  Channel,
+  DefaultSessionState,
+  DefaultChannelState,
+} from 'better-sse';
 import { createSession, createChannel } from 'better-sse';
 import { BaseTransport } from './transport';
-import type { JSONRPCRequest, JSONRPCResponse } from './schema';
 
 /**
  * Options for SSE transport.
@@ -61,7 +65,8 @@ export interface SseTransportOptions {
 export class SseTransport extends BaseTransport {
   private readonly options: Required<SseTransportOptions>;
   private session: Session<DefaultSessionState> | null = null;
-  private channel: Channel<DefaultChannelState, DefaultSessionState> | null = null;
+  private channel: Channel<DefaultChannelState, DefaultSessionState> | null =
+    null;
   private connecting = false;
   private disconnecting = false;
 
@@ -100,7 +105,7 @@ export class SseTransport extends BaseTransport {
 
       // Create SSE session
       this.session = await createSession(this.options.req, this.options.res);
-      
+
       // Set retry timeout
       this.session.retry(this.options.retryTimeout);
 
@@ -173,7 +178,7 @@ export class SseTransport extends BaseTransport {
    * Sends a message through the SSE stream.
    * @param message Message to send
    */
-  async send(message: JSONRPCRequest | JSONRPCResponse): Promise<void> {
+  async send(message: any): Promise<void> {
     if (!this.isConnected()) {
       throw new VError('Transport not connected');
     }

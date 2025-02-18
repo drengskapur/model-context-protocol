@@ -4,7 +4,19 @@
  * Provides types and utilities for working with AI model outputs.
  */
 
-import { object, string, number, array, union, literal, optional, minValue, maxValue, parse, enumType } from 'valibot';
+import {
+  object,
+  string,
+  number,
+  array,
+  union,
+  literal,
+  optional,
+  minValue,
+  maxValue,
+  parse,
+  enumType,
+} from 'valibot';
 import { McpError } from './errors';
 import type {
   CreateMessageRequest,
@@ -128,14 +140,20 @@ export abstract class BaseSamplingClient implements SamplingClient {
         frequencyPenalty: optional(number([minValue(-2), maxValue(2)])),
         presencePenalty: optional(number([minValue(-2), maxValue(2)])),
         stop: optional(array(string())),
-        modelPreferences: optional(object({
-          hints: optional(array(object({
-            name: optional(string()),
-          }))),
-          costPriority: optional(number([minValue(0), maxValue(1)])),
-          speedPriority: optional(number([minValue(0), maxValue(1)])),
-          intelligencePriority: optional(number([minValue(0), maxValue(1)])),
-        })),
+        modelPreferences: optional(
+          object({
+            hints: optional(
+              array(
+                object({
+                  name: optional(string()),
+                })
+              )
+            ),
+            costPriority: optional(number([minValue(0), maxValue(1)])),
+            speedPriority: optional(number([minValue(0), maxValue(1)])),
+            intelligencePriority: optional(number([minValue(0), maxValue(1)])),
+          })
+        ),
       });
       return parse(schema, options);
     } catch (error) {
@@ -149,34 +167,38 @@ export abstract class BaseSamplingClient implements SamplingClient {
    */
   protected validateMessages(messages: SamplingMessage[]): void {
     try {
-      const schema = array(object({
-        role: enumType(['user', 'assistant']),
-        content: union([
-          object({
-            type: literal('text'),
-            text: string(),
-          }),
-          object({
-            type: literal('function_call'),
-            function: object({
-              name: string(),
-              arguments: string(),
+      const schema = array(
+        object({
+          role: enumType(['user', 'assistant']),
+          content: union([
+            object({
+              type: literal('text'),
+              text: string(),
             }),
-          }),
-          object({
-            type: literal('tool_calls'),
-            tool_calls: array(object({
-              id: string(),
-              type: literal('function'),
+            object({
+              type: literal('function_call'),
               function: object({
                 name: string(),
                 arguments: string(),
               }),
-            })),
-          }),
-        ]),
-        tool_call_id: optional(string()),
-      }));
+            }),
+            object({
+              type: literal('tool_calls'),
+              tool_calls: array(
+                object({
+                  id: string(),
+                  type: literal('function'),
+                  function: object({
+                    name: string(),
+                    arguments: string(),
+                  }),
+                })
+              ),
+            }),
+          ]),
+          tool_call_id: optional(string()),
+        })
+      );
       parse(schema, messages);
     } catch (error) {
       throw new McpError(-32402, 'Invalid messages', error);
@@ -227,34 +249,38 @@ export class Sampling {
     options: SamplingOptions
   ): Promise<SamplingResponse> {
     // Validate messages
-    const messageSchema = array(object({
-      role: enumType(['user', 'assistant']),
-      content: union([
-        object({
-          type: literal('text'),
-          text: string(),
-        }),
-        object({
-          type: literal('function_call'),
-          function: object({
-            name: string(),
-            arguments: string(),
+    const messageSchema = array(
+      object({
+        role: enumType(['user', 'assistant']),
+        content: union([
+          object({
+            type: literal('text'),
+            text: string(),
           }),
-        }),
-        object({
-          type: literal('tool_calls'),
-          tool_calls: array(object({
-            id: string(),
-            type: literal('function'),
+          object({
+            type: literal('function_call'),
             function: object({
               name: string(),
               arguments: string(),
             }),
-          })),
-        }),
-      ]),
-      tool_call_id: optional(string()),
-    }));
+          }),
+          object({
+            type: literal('tool_calls'),
+            tool_calls: array(
+              object({
+                id: string(),
+                type: literal('function'),
+                function: object({
+                  name: string(),
+                  arguments: string(),
+                }),
+              })
+            ),
+          }),
+        ]),
+        tool_call_id: optional(string()),
+      })
+    );
 
     try {
       parse(messageSchema, messages);
@@ -323,34 +349,38 @@ export class SamplingClient implements SamplingClient {
     options: SamplingOptions
   ): Promise<SamplingResponse> {
     // Validate messages
-    const messageSchema = array(object({
-      role: enumType(['user', 'assistant']),
-      content: union([
-        object({
-          type: literal('text'),
-          text: string(),
-        }),
-        object({
-          type: literal('function_call'),
-          function: object({
-            name: string(),
-            arguments: string(),
+    const messageSchema = array(
+      object({
+        role: enumType(['user', 'assistant']),
+        content: union([
+          object({
+            type: literal('text'),
+            text: string(),
           }),
-        }),
-        object({
-          type: literal('tool_calls'),
-          tool_calls: array(object({
-            id: string(),
-            type: literal('function'),
+          object({
+            type: literal('function_call'),
             function: object({
               name: string(),
               arguments: string(),
             }),
-          })),
-        }),
-      ]),
-      tool_call_id: optional(string()),
-    }));
+          }),
+          object({
+            type: literal('tool_calls'),
+            tool_calls: array(
+              object({
+                id: string(),
+                type: literal('function'),
+                function: object({
+                  name: string(),
+                  arguments: string(),
+                }),
+              })
+            ),
+          }),
+        ]),
+        tool_call_id: optional(string()),
+      })
+    );
 
     try {
       parse(messageSchema, messages);

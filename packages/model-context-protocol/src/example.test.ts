@@ -3,25 +3,26 @@ import { Auth } from './auth';
 import { McpClient } from './client';
 import { InMemoryTransport } from './in-memory';
 import { McpServer } from './server';
-import type { McpTransport } from './transport';
 
 describe('Model Context Protocol', () => {
   it('should handle basic request/response', async () => {
-    const [clientTransport, serverTransport] =
-      InMemoryTransport.createPair();
+    const [clientTransport, serverTransport] = InMemoryTransport.createPair();
 
     const server = new McpServer({
       name: 'test-server',
       version: '1.0.0',
     });
 
-    const client = new McpClient({
-      name: 'test-client',
-      version: '1.0.0',
-    }, clientTransport);
+    const client = new McpClient(
+      {
+        name: 'test-client',
+        version: '1.0.0',
+      },
+      clientTransport
+    );
 
     // Register a method on the server
-    server.registerMethod('greet', async (params) => {
+    server.registerMethod('greet', (params) => {
       const { name } = params as { name: string };
       return `Hello, ${name}!`;
     });
@@ -46,8 +47,7 @@ describe('Model Context Protocol', () => {
       audience: 'test-client',
     });
 
-    const [clientTransport, serverTransport] =
-      InMemoryTransport.createPair();
+    const [clientTransport, serverTransport] = InMemoryTransport.createPair();
 
     const server = new McpServer({
       name: 'test-server',
@@ -55,10 +55,13 @@ describe('Model Context Protocol', () => {
       auth,
     });
 
-    const client = new McpClient({
-      name: 'test-client',
-      version: '1.0.0',
-    }, clientTransport);
+    const client = new McpClient(
+      {
+        name: 'test-client',
+        version: '1.0.0',
+      },
+      clientTransport
+    );
 
     // Register a protected method on the server
     server.registerMethod(
@@ -82,18 +85,20 @@ describe('Model Context Protocol', () => {
   });
 
   it('should handle notifications', async () => {
-    const [clientTransport, serverTransport] =
-      InMemoryTransport.createPair();
+    const [clientTransport, serverTransport] = InMemoryTransport.createPair();
 
     const server = new McpServer({
       name: 'test-server',
       version: '1.0.0',
     });
 
-    const client = new McpClient({
-      name: 'test-client',
-      version: '1.0.0',
-    }, clientTransport);
+    const client = new McpClient(
+      {
+        name: 'test-client',
+        version: '1.0.0',
+      },
+      clientTransport
+    );
 
     // Connect both sides
     await server.connect(serverTransport);

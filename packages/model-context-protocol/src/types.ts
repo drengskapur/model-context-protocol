@@ -4,7 +4,16 @@
  * Provides shared types and type utilities.
  */
 
-import { object, string, number, union, literal, optional, never, unknown } from 'valibot';
+import {
+  object,
+  string,
+  number,
+  union,
+  literal,
+  optional,
+  never,
+  unknown,
+} from 'valibot';
 
 /**
  * Represents a unique identifier.

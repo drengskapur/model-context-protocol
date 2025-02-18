@@ -54,7 +54,9 @@ describe('StdioTransport', () => {
 
     it('should prevent double connect', async () => {
       await transport.connect();
-      await expect(transport.connect()).rejects.toThrow(ALREADY_CONNECTED_REGEX);
+      await expect(transport.connect()).rejects.toThrow(
+        ALREADY_CONNECTED_REGEX
+      );
     });
   });
 
@@ -103,8 +105,8 @@ describe('StdioTransport', () => {
         return Promise.resolve();
       });
 
-      input.push(messages.map(m => `${JSON.stringify(m)}\n`).join(''));
-      await new Promise(resolve => setTimeout(resolve, 10));
+      input.push(messages.map((m) => `${JSON.stringify(m)}\n`).join(''));
+      await new Promise((resolve) => setTimeout(resolve, 10));
 
       expect(received).toEqual(messages);
     });
@@ -135,7 +137,7 @@ describe('StdioTransport', () => {
       transport.onError(onError);
 
       input.push('invalid json\n');
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await new Promise((resolve) => setTimeout(resolve, 10));
 
       expect(onError).toHaveBeenCalledWith(expect.any(Error));
     });
@@ -149,8 +151,10 @@ describe('StdioTransport', () => {
       const onError = vi.fn();
       transport.onError(onError);
 
-      input.push(`${JSON.stringify({ jsonrpc: JSONRPC_VERSION, method: 'test', id: '1' })}\n`);
-      await new Promise(resolve => setTimeout(resolve, 10));
+      input.push(
+        `${JSON.stringify({ jsonrpc: JSONRPC_VERSION, method: 'test', id: '1' })}\n`
+      );
+      await new Promise((resolve) => setTimeout(resolve, 10));
 
       expect(onError).toHaveBeenCalledWith(error);
     });
@@ -202,7 +206,7 @@ describe('StdioTransport', () => {
         id: '1',
       };
       input.push(`${JSON.stringify(message)}\n`);
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await new Promise((resolve) => setTimeout(resolve, 10));
 
       expect(messageCount).toBe(0);
     });

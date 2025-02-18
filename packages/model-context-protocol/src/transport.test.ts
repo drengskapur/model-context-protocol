@@ -1,14 +1,14 @@
 import { EventEmitter } from 'eventemitter3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BaseTransport } from './base';
-import type { JSONRPCRequest, JSONRPCResponse } from './schema';
+import type { JSONRPCMessage, JSONRPCRequest, JSONRPCResponse } from './schema';
 import { JSONRPC_VERSION } from './schema';
-import type { MessageHandler, TransportEventMap } from './transport';
+import type { MessageHandler } from './transport';
 
 class TestTransport extends BaseTransport {
   public messages: (JSONRPCRequest | JSONRPCResponse)[] = [];
   public shouldFail = false;
-  public readonly events = new EventEmitter<TransportEventMap>();
+  public readonly events = new EventEmitter();
 
   send(message: JSONRPCRequest | JSONRPCResponse): Promise<void> {
     if (this.shouldFail) {
@@ -51,26 +51,20 @@ class TestTransport extends BaseTransport {
     return {} as T; // For testing purposes
   }
 
-  on<K extends keyof TransportEventMap>(
-    event: K,
-    handler: (...args: TransportEventMap[K]) => void
-  ): void {
-    this.events.on(event, handler);
+  onMessage(handler: MessageHandler): void {
+    this.messageHandlers.add(handler);
   }
 
-  off<K extends keyof TransportEventMap>(
-    event: K,
-    handler: (...args: TransportEventMap[K]) => void
-  ): void {
-    this.events.off(event, handler);
+  offMessage(handler: MessageHandler): void {
+    this.messageHandlers.delete(handler);
   }
 
-  public simulateMessage(message: JSONRPCRequest | JSONRPCResponse): void {
-    this.events.emit('message', message);
+  public simulateMessage(message: JSONRPCMessage): void {
+    this.handleMessage(message as JSONRPCRequest | JSONRPCResponse);
   }
 
   public simulateError(error: Error): void {
-    this.events.emit('error', error);
+    this.handleError(error);
   }
 }
 

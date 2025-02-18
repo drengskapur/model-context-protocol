@@ -4,9 +4,32 @@
  * Provides functions and types for validating protocol messages and data.
  */
 
-import { type ValiError, type BaseSchema, type Input, enumType, number, object, string, array, parse, optional, minValue, maxValue, integer, union, literal } from 'valibot';
+import {
+  type ValiError,
+  type BaseSchema,
+  type Input,
+  enumType,
+  number,
+  object,
+  string,
+  array,
+  parse,
+  optional,
+  minValue,
+  maxValue,
+  integer,
+  union,
+  literal,
+} from 'valibot';
 import { McpError } from './errors';
-import type { JSONRPCRequest, JSONRPCResponse, Resource, Prompt, SamplingMessage, Tool, PromptReference, ResourceReference } from './schema';
+import type {
+  JSONRPCRequest,
+  JSONRPCResponse,
+  SamplingMessage,
+  Tool,
+  PromptReference,
+  ResourceReference,
+} from './schema';
 
 /**
  * Validation error code.
@@ -71,7 +94,16 @@ export function validateResponse<T extends BaseSchema>(
  * @throws {ValidationError} If validation fails
  */
 export async function validateLoggingLevel(level: unknown): Promise<void> {
-  const schema = enumType(['debug', 'info', 'notice', 'warning', 'error', 'critical', 'alert', 'emergency']);
+  const schema = enumType([
+    'debug',
+    'info',
+    'notice',
+    'warning',
+    'error',
+    'critical',
+    'alert',
+    'emergency',
+  ]);
   try {
     await parse(schema, level);
   } catch (error) {
@@ -122,7 +154,7 @@ export async function validateResource(resource: unknown): Promise<void> {
     mimeType: optional(string()),
     size: optional(number([minValue(0)])),
   });
-  
+
   try {
     await parse(schema, resource);
   } catch (error) {
@@ -140,13 +172,17 @@ export async function validatePrompt(prompt: unknown): Promise<void> {
   const schema = object({
     name: string(),
     description: optional(string()),
-    arguments: optional(array(object({
-      name: string(),
-      description: optional(string()),
-      required: optional(literal(true)),
-    }))),
+    arguments: optional(
+      array(
+        object({
+          name: string(),
+          description: optional(string()),
+          required: optional(literal(true)),
+        })
+      )
+    ),
   });
-  
+
   try {
     await parse(schema, prompt);
   } catch (error) {
@@ -176,7 +212,7 @@ export async function validateSamplingMessage(message: unknown): Promise<void> {
     ]),
     name: optional(string()),
   });
-  
+
   try {
     await parse(schema, message);
   } catch (error) {
@@ -200,7 +236,7 @@ export async function validateTool(tool: unknown): Promise<void> {
       required: optional(array(string())),
     }),
   });
-  
+
   try {
     await parse(schema, tool);
   } catch (error) {
@@ -225,7 +261,7 @@ export async function validateReference(ref: unknown): Promise<void> {
       uri: string(),
     }),
   ]);
-  
+
   try {
     await parse(schema, ref);
   } catch (error) {
