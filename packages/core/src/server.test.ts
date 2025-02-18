@@ -5,6 +5,11 @@ import { JSONRPC_VERSION, LATEST_PROTOCOL_VERSION } from './schema.js';
 import { Server } from './server.js';
 import type { McpTransport } from './transport.js';
 
+interface GreetParams {
+  name: string;
+  age: number;
+}
+
 class TestTransport implements McpTransport {
   messages: JSONRPCMessage[] = [];
   handler: ((message: JSONRPCMessage) => Promise<void>) | null = null;
@@ -83,15 +88,10 @@ describe('Server', () => {
   });
 
   it('should register and expose tools', async () => {
-    const schema = object({
-      name: string(),
-      age: number(),
-    });
-
     server.tool(
       'greet',
-      schema,
-      async (params) => `Hello ${params.name}, you are ${params.age} years old`
+      greetSchema,
+      async (params: GreetParams) => `Hello ${params.name}, you are ${params.age} years old`
     );
     await server.connect(transport);
 
@@ -155,15 +155,10 @@ describe('Server', () => {
   });
 
   it('should reject invalid parameters', async () => {
-    const schema = object({
-      name: string(),
-      age: number(),
-    });
-
     server.tool(
       'greet',
-      schema,
-      async (params) => `Hello ${params.name}, you are ${params.age} years old`
+      greetSchema,
+      async (params: GreetParams) => `Hello ${params.name}, you are ${params.age} years old`
     );
     await server.connect(transport);
 

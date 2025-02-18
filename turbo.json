@@ -1,41 +1,41 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalEnv": ["NODE_ENV", "CI"],
-  "globalDependencies": ["tsup.config.ts", "tsconfig.json", "**/.env.*local"],
+  "globalDependencies": ["**/.env.*local"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**"],
-      "env": ["NODE_ENV"]
+      "outputs": ["dist/**"]
+    },
+    "lint": {
+      "inputs": ["**/*.{ts,tsx,js,jsx}", ".biome.json"],
+      "outputs": ["node_modules/.cache/biome/**"]
+    },
+    "format": {
+      "inputs": ["**/*.{ts,tsx,js,jsx}", ".biome.json"],
+      "outputs": ["node_modules/.cache/biome/**"]
     },
     "dev": {
       "cache": false,
       "persistent": true
     },
-    "lint": {
-      "dependsOn": [],
-      "inputs": ["src/**/*.{ts,tsx,js,jsx}", "test/**/*.{ts,tsx,js,jsx}", ".biome.json"],
-      "outputs": ["node_modules/.cache/biome/**"]
-    },
-    "format": {
-      "inputs": ["src/**/*.{ts,tsx,js,jsx}", "test/**/*.{ts,tsx,js,jsx}", ".biome.json"],
-      "outputs": ["node_modules/.cache/biome/**"]
-    },
-    "typecheck": {
-      "dependsOn": [],
-      "inputs": ["src/**/*.{ts,tsx}", "test/**/*.{ts,tsx}", "tsconfig.json"],
-      "outputs": ["*.tsbuildinfo", "node_modules/.cache/tsc/**"]
-    },
     "test": {
       "dependsOn": ["^build"],
       "inputs": ["src/**/*.{ts,tsx}", "test/**/*.{ts,tsx}"],
       "outputs": ["coverage/**"],
-      "env": ["CI", "VITEST_SEGFAULT_RETRY"]
+      "env": ["CI"]
+    },
+    "test:coverage": {
+      "dependsOn": ["test"],
+      "outputs": ["coverage/**"]
     },
     "test:watch": {
       "dependsOn": ["build"],
       "cache": false,
       "persistent": true
+    },
+    "typecheck": {
+      "inputs": ["src/**/*.{ts,tsx}", "test/**/*.{ts,tsx}", "tsconfig.json"],
+      "outputs": ["node_modules/.cache/tsc/**", "*.tsbuildinfo"]
     },
     "clean": {
       "cache": false

@@ -163,26 +163,25 @@ export class McpClient {
       throw new ServerNotInitializedError('Client not initialized');
     }
 
-    await transport.send(message);
+    const promise = new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pendingRequests.delete(message.id);
+        reject(
+          new RequestFailedError(
+            `Request timed out after ${this.options.requestTimeout}ms`
+          )
+        );
+      }, this.options.requestTimeout);
 
-    if ('id' in message) {
-      return new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          this.pendingRequests.delete(message.id);
-          reject(
-            new RequestFailedError(
-              `Request timed out after ${this.options.requestTimeout}ms`
-            )
-          );
-        }, this.options.requestTimeout);
-
-        this.pendingRequests.set(message.id, {
-          resolve,
-          reject,
-          timeout,
-        });
+      this.pendingRequests.set(message.id, {
+        resolve,
+        reject,
+        timeout,
       });
-    }
+    });
+
+    await transport.send(message);
+    return promise;
   }
 
   public onMessage(handler: MessageHandler): void {

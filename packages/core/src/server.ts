@@ -11,7 +11,7 @@ import {
   type Result,
 } from './schema.js';
 
-import type { BaseSchema, Output } from 'valibot';
+import type { BaseSchema } from 'valibot';
 import { object, parse, string } from 'valibot';
 import {
   InvalidParamsError,
@@ -40,7 +40,7 @@ export class Server {
   private tools = new Map<
     string,
     {
-      schema: BaseSchema<unknown>;
+      schema: BaseSchema;
       handler: (args: unknown) => Promise<unknown>;
     }
   >();
@@ -54,10 +54,10 @@ export class Server {
     this.capabilities = options.capabilities || {};
   }
 
-  public tool<T extends BaseSchema<unknown>>(
+  public tool<T extends BaseSchema>(
     name: string,
     schema: T,
-    handler: (params: Output<T>) => string | Promise<string>
+    handler: (params: unknown) => string | Promise<string>
   ): void {
     this.tools.set(name, {
       schema,
@@ -252,10 +252,10 @@ export class McpServer {
     this.server = new Server(options);
   }
 
-  public tool<T extends BaseSchema<unknown>>(
+  public tool<T extends BaseSchema>(
     name: string,
     schema: T,
-    handler: (params: Output<T>) => string | Promise<string>
+    handler: (params: unknown) => string | Promise<string>
   ): void {
     this.server.tool(name, schema, handler);
   }

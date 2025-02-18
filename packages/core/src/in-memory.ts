@@ -6,6 +6,7 @@ export class InMemoryTransport implements McpTransport {
   private _messageHandlers = new Set<MessageHandler>();
   private _errorHandlers = new Set<(error: Error) => void>();
   private _otherTransport: InMemoryTransport | null = null;
+  private _messages: JSONRPCMessage[] = [];
 
   static createLinkedPair(): [InMemoryTransport, InMemoryTransport] {
     const transport1 = new InMemoryTransport();
@@ -27,16 +28,25 @@ export class InMemoryTransport implements McpTransport {
     return Promise.resolve();
   }
 
+  isConnected(): boolean {
+    return this._connected;
+  }
+
   async send(message: JSONRPCMessage): Promise<void> {
     if (!this._connected) {
       throw new Error('Transport not connected');
     }
+    this._messages.push(message);
 
-    // Process message in next tick to simulate async behavior
-    await Promise.resolve();
-    await Promise.all(
-      Array.from(this._messageHandlers).map((handler) => handler(message))
-    );
+    // If we're in a linked pair, forward the message
+    if (this._otherTransport) {
+      await Promise.resolve(); // Process in next tick to simulate async behavior
+      await Promise.all(
+        Array.from(this._otherTransport._messageHandlers).map((handler) =>
+          handler(message)
+        )
+      );
+    }
   }
 
   onMessage(handler: MessageHandler): void {
@@ -87,5 +97,25 @@ export class InMemoryTransport implements McpTransport {
         reason,
       },
     });
+  }
+
+  // Test helper methods
+  getMessages(): JSONRPCMessage[] {
+    return this._messages;
+  }
+
+  async simulateIncomingMessage(message: JSONRPCMessage): Promise<void> {
+    if (!this._connected) {
+      throw new Error('Transport not connected');
+    }
+    // Process in next tick to simulate async behavior
+    await Promise.resolve();
+    await Promise.all(
+      Array.from(this._messageHandlers).map((handler) => handler(message))
+    );
+  }
+
+  clearMessages(): void {
+    this._messages = [];
   }
 }

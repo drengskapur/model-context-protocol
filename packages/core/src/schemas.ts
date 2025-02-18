@@ -1,5 +1,6 @@
 import {
-  type Output,
+  type BaseSchema,
+  type ValiError,
   any,
   array,
   boolean,
@@ -13,7 +14,19 @@ import {
   union,
   unknown,
 } from 'valibot';
-import { JSONRPC_VERSION } from './schema';
+import type {
+  JSONRPCRequest,
+  JSONRPCNotification,
+  JSONRPCResponse,
+  JSONRPCError,
+  JSONRPCMessage,
+  Resource,
+  ResourceTemplate,
+  Tool,
+  Prompt,
+  PromptMessage,
+} from './schema.js';
+import { JSONRPC_VERSION } from './schema.js';
 
 // Basic types
 export const progressTokenSchema = union([string(), number()]);
@@ -199,15 +212,3 @@ export const promptMessageSchema = object({
     }),
   ]),
 });
-
-// Types for validation
-export type JSONRPCRequest = Output<typeof jsonRpcRequestSchema>;
-export type JSONRPCNotification = Output<typeof jsonRpcNotificationSchema>;
-export type JSONRPCResponse = Output<typeof jsonRpcResponseSchema>;
-export type JSONRPCError = Output<typeof jsonRpcErrorSchema>;
-export type JSONRPCMessage = Output<typeof jsonRpcMessageSchema>;
-export type Resource = Output<typeof resourceSchema>;
-export type ResourceTemplate = Output<typeof resourceTemplateSchema>;
-export type Tool = Output<typeof toolSchema>;
-export type Prompt = Output<typeof promptSchema>;
-export type PromptMessage = Output<typeof promptMessageSchema>;
