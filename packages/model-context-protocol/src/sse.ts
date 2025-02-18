@@ -6,8 +6,8 @@
 
 import { VError } from 'verror';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { Session } from 'better-sse';
-import { Channel, createSession } from 'better-sse';
+import type { Session, Channel, DefaultSessionState, DefaultChannelState } from 'better-sse';
+import { createSession, createChannel } from 'better-sse';
 import { BaseTransport } from './transport';
 import type { JSONRPCRequest, JSONRPCResponse } from './schema';
 
@@ -60,8 +60,8 @@ export interface SseTransportOptions {
  */
 export class SseTransport extends BaseTransport {
   private readonly options: Required<SseTransportOptions>;
-  private session: Session | null = null;
-  private channel: Channel | null = null;
+  private session: Session<DefaultSessionState> | null = null;
+  private channel: Channel<DefaultChannelState, DefaultSessionState> | null = null;
   private connecting = false;
   private disconnecting = false;
 
@@ -106,7 +106,7 @@ export class SseTransport extends BaseTransport {
 
       // Join channel if specified
       if (this.options.channel) {
-        this.channel = new Channel(this.options.channel);
+        this.channel = createChannel();
         this.channel.register(this.session);
       }
 
@@ -147,13 +147,16 @@ export class SseTransport extends BaseTransport {
     this.disconnecting = true;
 
     try {
-      if (this.channel) {
-        this.channel.close();
+      if (this.channel && this.session) {
+        this.channel.deregister(this.session);
         this.channel = null;
       }
 
       if (this.session) {
-        this.session.close();
+        // Send a final message to indicate closure
+        await this.session.push('close', '');
+        // End the response
+        this.options.res.end();
         this.session = null;
       }
 
@@ -176,26 +179,14 @@ export class SseTransport extends BaseTransport {
     }
 
     try {
-      const eventData = {
-        data: {
-          id: 'id' in message ? message.id : undefined,
-        },
-      };
+      const messageStr = JSON.stringify(message);
 
       // If we have a channel, broadcast to all clients
       if (this.channel) {
-        await this.channel.broadcast(
-          'message',
-          JSON.stringify(message),
-          eventData
-        );
+        await this.channel.broadcast('message', messageStr);
       } else if (this.session) {
         // Otherwise send to single client
-        await this.session.push(
-          'message',
-          JSON.stringify(message),
-          eventData
-        );
+        await this.session.push('message', messageStr);
       } else {
         throw new Error('No session or channel available');
       }
@@ -208,7 +199,7 @@ export class SseTransport extends BaseTransport {
    * Gets the current session.
    * @returns The current session or null if not connected
    */
-  getSession(): Session | null {
+  getSession(): Session<DefaultSessionState> | null {
     return this.session;
   }
 
@@ -216,7 +207,7 @@ export class SseTransport extends BaseTransport {
    * Gets the current channel.
    * @returns The current channel or null if not using channels
    */
-  getChannel(): Channel | null {
+  getChannel(): Channel<DefaultChannelState, DefaultSessionState> | null {
     return this.channel;
   }
 }

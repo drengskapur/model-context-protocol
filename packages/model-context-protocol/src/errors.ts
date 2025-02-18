@@ -43,6 +43,11 @@ export const AUTH_ERROR = -32401;
 export const SERVER_NOT_INITIALIZED = -32002;
 export const REQUEST_FAILED = -32001;
 
+// Add new error codes
+export const AUTHENTICATION_ERROR = -32403;
+export const TIMEOUT_ERROR = -32404;
+export const TRANSPORT_ERROR = -32405;
+
 /**
  * Error thrown when parsing JSON fails.
  */
@@ -112,5 +117,32 @@ export class ServerNotInitializedError extends McpError {
 export class RequestFailedError extends McpError {
   constructor(message: string, cause?: Error) {
     super(REQUEST_FAILED, message, undefined, { cause });
+  }
+}
+
+/**
+ * Error thrown when authentication fails.
+ */
+export class AuthenticationError extends McpError {
+  constructor(message: string, cause?: Error) {
+    super(AUTHENTICATION_ERROR, message, undefined, { cause });
+  }
+}
+
+/**
+ * Error thrown when a request times out.
+ */
+export class TimeoutError extends McpError {
+  constructor(message: string, cause?: Error) {
+    super(TIMEOUT_ERROR, message, undefined, { cause });
+  }
+}
+
+/**
+ * Error thrown when transport operations fail.
+ */
+export class TransportError extends McpError {
+  constructor(message: string, cause?: Error) {
+    super(TRANSPORT_ERROR, message, undefined, { cause });
   }
 }

@@ -5,9 +5,10 @@ import {
   type JSONRPCNotification,
   type JSONRPCRequest,
   type JSONRPCResponse,
+  type Result,
   JSONRPC_VERSION,
-  jsonRpcMessageSchema,
-} from './types.js';
+} from './schema';
+import { jsonRpcSchema } from './validation';
 
 describe('JSON-RPC Message Schema', () => {
   describe('Request Messages', () => {
@@ -18,7 +19,7 @@ describe('JSON-RPC Message Schema', () => {
         method: 'test',
         params: { foo: 'bar' },
       };
-      expect(() => parse(jsonRpcMessageSchema, request)).not.toThrow();
+      expect(() => parse(jsonRpcSchema, request)).not.toThrow();
     });
 
     it('validates request with string id', () => {
@@ -28,7 +29,7 @@ describe('JSON-RPC Message Schema', () => {
         method: 'test',
         params: {},
       };
-      expect(() => parse(jsonRpcMessageSchema, request)).not.toThrow();
+      expect(() => parse(jsonRpcSchema, request)).not.toThrow();
     });
 
     it('validates request with progress token', () => {
@@ -43,7 +44,7 @@ describe('JSON-RPC Message Schema', () => {
           data: 'test',
         },
       };
-      expect(() => parse(jsonRpcMessageSchema, request)).not.toThrow();
+      expect(() => parse(jsonRpcSchema, request)).not.toThrow();
     });
 
     it('validates request with numeric progress token', () => {
@@ -57,7 +58,7 @@ describe('JSON-RPC Message Schema', () => {
           },
         },
       };
-      expect(() => parse(jsonRpcMessageSchema, request)).not.toThrow();
+      expect(() => parse(jsonRpcSchema, request)).not.toThrow();
     });
 
     it('validates request without params', () => {
@@ -66,7 +67,7 @@ describe('JSON-RPC Message Schema', () => {
         id: 1,
         method: 'test',
       };
-      expect(() => parse(jsonRpcMessageSchema, request)).not.toThrow();
+      expect(() => parse(jsonRpcSchema, request)).not.toThrow();
     });
   });
 
@@ -77,7 +78,7 @@ describe('JSON-RPC Message Schema', () => {
         method: 'notify',
         params: { message: 'test' },
       };
-      expect(() => parse(jsonRpcMessageSchema, notification)).not.toThrow();
+      expect(() => parse(jsonRpcSchema, notification)).not.toThrow();
     });
 
     it('validates notification with metadata', () => {
@@ -91,7 +92,7 @@ describe('JSON-RPC Message Schema', () => {
           data: 'test',
         },
       };
-      expect(() => parse(jsonRpcMessageSchema, notification)).not.toThrow();
+      expect(() => parse(jsonRpcSchema, notification)).not.toThrow();
     });
 
     it('validates notification without params', () => {
@@ -99,7 +100,7 @@ describe('JSON-RPC Message Schema', () => {
         jsonrpc: JSONRPC_VERSION,
         method: 'notify',
       };
-      expect(() => parse(jsonRpcMessageSchema, notification)).not.toThrow();
+      expect(() => parse(jsonRpcSchema, notification)).not.toThrow();
     });
   });
 
@@ -108,9 +109,11 @@ describe('JSON-RPC Message Schema', () => {
       const response: JSONRPCResponse = {
         jsonrpc: JSONRPC_VERSION,
         id: 1,
-        result: { data: 'test' },
+        result: {
+          value: 'test'
+        },
       };
-      expect(() => parse(jsonRpcMessageSchema, response)).not.toThrow();
+      expect(() => parse(jsonRpcSchema, response)).not.toThrow();
     });
 
     it('validates response with metadata', () => {
@@ -122,19 +125,21 @@ describe('JSON-RPC Message Schema', () => {
             duration: 123,
             cache: 'hit',
           },
-          data: 'test',
+          value: 'test'
         },
       };
-      expect(() => parse(jsonRpcMessageSchema, response)).not.toThrow();
+      expect(() => parse(jsonRpcSchema, response)).not.toThrow();
     });
 
     it('validates response with empty result', () => {
       const response: JSONRPCResponse = {
         jsonrpc: JSONRPC_VERSION,
         id: 1,
-        result: {},
+        result: {
+          value: null
+        },
       };
-      expect(() => parse(jsonRpcMessageSchema, response)).not.toThrow();
+      expect(() => parse(jsonRpcSchema, response)).not.toThrow();
     });
   });
 
@@ -148,7 +153,7 @@ describe('JSON-RPC Message Schema', () => {
           message: 'Parse error',
         },
       };
-      expect(() => parse(jsonRpcMessageSchema, error)).not.toThrow();
+      expect(() => parse(jsonRpcSchema, error)).not.toThrow();
     });
 
     it('validates error with data', () => {
@@ -165,7 +170,7 @@ describe('JSON-RPC Message Schema', () => {
           },
         },
       };
-      expect(() => parse(jsonRpcMessageSchema, error)).not.toThrow();
+      expect(() => parse(jsonRpcSchema, error)).not.toThrow();
     });
 
     it('validates error with null id', () => {
@@ -177,7 +182,7 @@ describe('JSON-RPC Message Schema', () => {
           message: 'Parse error',
         },
       };
-      expect(() => parse(jsonRpcMessageSchema, error)).not.toThrow();
+      expect(() => parse(jsonRpcSchema, error)).not.toThrow();
     });
   });
 
@@ -188,7 +193,7 @@ describe('JSON-RPC Message Schema', () => {
         id: 1,
         method: 'test',
       };
-      expect(() => parse(jsonRpcMessageSchema, message)).toThrow();
+      expect(() => parse(jsonRpcSchema, message)).toThrow();
     });
 
     it('rejects request without method', () => {
@@ -197,7 +202,7 @@ describe('JSON-RPC Message Schema', () => {
         id: 1,
         params: {},
       };
-      expect(() => parse(jsonRpcMessageSchema, message)).toThrow();
+      expect(() => parse(jsonRpcSchema, message)).toThrow();
     });
 
     it('rejects response without id', () => {
@@ -205,7 +210,7 @@ describe('JSON-RPC Message Schema', () => {
         jsonrpc: JSONRPC_VERSION,
         result: {},
       };
-      expect(() => parse(jsonRpcMessageSchema, message)).toThrow();
+      expect(() => parse(jsonRpcSchema, message)).toThrow();
     });
 
     it('rejects error without code', () => {
@@ -216,7 +221,7 @@ describe('JSON-RPC Message Schema', () => {
           message: 'Test error',
         },
       };
-      expect(() => parse(jsonRpcMessageSchema, message)).toThrow();
+      expect(() => parse(jsonRpcSchema, message)).toThrow();
     });
 
     it('rejects error without message', () => {
@@ -227,7 +232,7 @@ describe('JSON-RPC Message Schema', () => {
           code: -32700,
         },
       };
-      expect(() => parse(jsonRpcMessageSchema, message)).toThrow();
+      expect(() => parse(jsonRpcSchema, message)).toThrow();
     });
 
     it('rejects message with both result and error', () => {
@@ -240,7 +245,7 @@ describe('JSON-RPC Message Schema', () => {
           message: 'Test error',
         },
       };
-      expect(() => parse(jsonRpcMessageSchema, message)).toThrow();
+      expect(() => parse(jsonRpcSchema, message)).toThrow();
     });
 
     it('rejects message with invalid progress token type', () => {
@@ -254,7 +259,7 @@ describe('JSON-RPC Message Schema', () => {
           },
         },
       };
-      expect(() => parse(jsonRpcMessageSchema, message)).toThrow();
+      expect(() => parse(jsonRpcSchema, message)).toThrow();
     });
 
     it('rejects message with invalid id type', () => {
@@ -263,7 +268,7 @@ describe('JSON-RPC Message Schema', () => {
         id: true, // boolean is not allowed
         method: 'test',
       };
-      expect(() => parse(jsonRpcMessageSchema, message)).toThrow();
+      expect(() => parse(jsonRpcSchema, message)).toThrow();
     });
   });
 });

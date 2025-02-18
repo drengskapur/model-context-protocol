@@ -13,14 +13,13 @@ import { VError } from 'verror';
  * Event types for transport events
  */
 export type TransportEventMap = {
-  message: [message: JSONRPCRequest | Omit<JSONRPCResponse, 'id'> & { id: RequestId }];
-  error: [error: Error];
+  message: [JSONRPCRequest | (Omit<JSONRPCResponse, 'id'> & { id: RequestId })];
+  error: [Error];
   connect: [];
   disconnect: [];
 };
 
 /**
- * 
  * Base interface for event emitter functionality
  */
 export interface BaseEventEmitter {
@@ -126,10 +125,14 @@ export abstract class BaseTransport implements McpTransport {
   public get events(): BaseEventEmitter {
     return {
       on: <K extends keyof TransportEventMap>(event: K, handler: (...args: TransportEventMap[K]) => void) => {
-        this._events.on(event, handler);
+        this._events.on(event, (...args: any[]) => {
+          (handler as any)(...args);
+        });
       },
       off: <K extends keyof TransportEventMap>(event: K, handler: (...args: TransportEventMap[K]) => void) => {
-        this._events.off(event, handler);
+        this._events.off(event, (...args: any[]) => {
+          (handler as any)(...args);
+        });
       }
     };
   }
@@ -169,7 +172,9 @@ export abstract class BaseTransport implements McpTransport {
     event: K,
     handler: (...args: TransportEventMap[K]) => void
   ): void {
-    this._events.on(event, handler);
+    this._events.on(event, (...args: any[]) => {
+      (handler as any)(...args);
+    });
   }
 
   /**
@@ -181,7 +186,9 @@ export abstract class BaseTransport implements McpTransport {
     event: K,
     handler: (...args: TransportEventMap[K]) => void
   ): void {
-    this._events.off(event, handler);
+    this._events.off(event, (...args: any[]) => {
+      (handler as any)(...args);
+    });
   }
 
   /**
@@ -222,6 +229,7 @@ export abstract class BaseTransport implements McpTransport {
   async close(): Promise<void> {
     await this.disconnect();
     this.messageHandlers.clear();
+    this.errorHandlers.clear();
   }
 
   /**
@@ -241,6 +249,7 @@ export abstract class BaseTransport implements McpTransport {
    * @param error Error to handle
    */
   protected handleError(error: Error): void {
+    this._events.emit('error', error);
     for (const handler of this.errorHandlers) {
       try {
         handler(error);

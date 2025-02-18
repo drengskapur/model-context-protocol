@@ -12,6 +12,7 @@ import type {
   McpTransport,
   MessageHandler,
   TransportEventMap,
+  BaseEventEmitter,
 } from './transport';
 
 /**
@@ -23,7 +24,18 @@ export class InMemoryTransport implements McpTransport {
   private messageHandlers = new Set<MessageHandler>();
   private messages: (JSONRPCRequest | JSONRPCResponse)[] = [];
   private connected = false;
-  public readonly events = new EventEmitter();
+  private readonly _events = new EventEmitter();
+
+  public get events(): BaseEventEmitter {
+    return {
+      on: <K extends keyof TransportEventMap>(event: K, handler: (...args: TransportEventMap[K]) => void) => {
+        this._events.on(event, handler as (...args: any[]) => void);
+      },
+      off: <K extends keyof TransportEventMap>(event: K, handler: (...args: TransportEventMap[K]) => void) => {
+        this._events.off(event, handler as (...args: any[]) => void);
+      }
+    };
+  }
 
   /**
    * Creates a pair of linked transports.
@@ -46,7 +58,7 @@ export class InMemoryTransport implements McpTransport {
       throw new VError('Transport not paired');
     }
     this.connected = true;
-    this.events.emit('connect');
+    this._events.emit('connect');
     return Promise.resolve();
   }
 
@@ -56,7 +68,7 @@ export class InMemoryTransport implements McpTransport {
   disconnect(): Promise<void> {
     this.connected = false;
     this.messageHandlers.clear();
-    this.events.emit('disconnect');
+    this._events.emit('disconnect');
     return Promise.resolve();
   }
 
@@ -74,7 +86,7 @@ export class InMemoryTransport implements McpTransport {
     event: K,
     handler: (...args: TransportEventMap[K]) => void
   ): void {
-    this.events.on(event, handler);
+    this._events.on(event, handler as (...args: any[]) => void);
   }
 
   /**
@@ -84,7 +96,7 @@ export class InMemoryTransport implements McpTransport {
     event: K,
     handler: (...args: TransportEventMap[K]) => void
   ): void {
-    this.events.off(event, handler);
+    this._events.off(event, handler as (...args: any[]) => void);
   }
 
   /**
@@ -156,7 +168,7 @@ export class InMemoryTransport implements McpTransport {
       try {
         await handler(message);
       } catch (error) {
-        this.events.emit('error', error as Error);
+        this._events.emit('error', error as Error);
       }
     }
   }
@@ -174,7 +186,7 @@ export class InMemoryTransport implements McpTransport {
    * @param handler Error handler function
    */
   onError(handler: (error: Error) => void): void {
-    this.events.on('error', handler);
+    this._events.on('error', handler);
   }
 
   /**
@@ -182,6 +194,6 @@ export class InMemoryTransport implements McpTransport {
    * @param handler Error handler function
    */
   offError(handler: (error: Error) => void): void {
-    this.events.off('error', handler);
+    this._events.off('error', handler);
   }
 }

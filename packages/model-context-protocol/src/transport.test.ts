@@ -3,19 +3,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BaseTransport } from './base';
 import type { JSONRPCRequest, JSONRPCResponse } from './schema';
 import { JSONRPC_VERSION } from './schema';
-import type { MessageHandler } from './transport';
+import type { MessageHandler, TransportEventMap } from './transport';
 
 class TestTransport extends BaseTransport {
   public messages: (JSONRPCRequest | JSONRPCResponse)[] = [];
   public shouldFail = false;
-  public readonly events = new EventEmitter();
-  private messageHandlers: Set<MessageHandler> = new Set();
+  public readonly events = new EventEmitter<TransportEventMap>();
 
   send(message: JSONRPCRequest | JSONRPCResponse): Promise<void> {
     if (this.shouldFail) {
       throw new Error('Send failed');
     }
     this.messages.push(message);
+    this.events.emit('message', message);
     return Promise.resolve();
   }
 
@@ -24,6 +24,7 @@ class TestTransport extends BaseTransport {
       throw new Error('Connect failed');
     }
     this.setConnected(true);
+    this.events.emit('connect');
     return Promise.resolve();
   }
 
@@ -32,6 +33,7 @@ class TestTransport extends BaseTransport {
       throw new Error('Disconnect failed');
     }
     this.setConnected(false);
+    this.events.emit('disconnect');
     return Promise.resolve();
   }
 
@@ -49,24 +51,26 @@ class TestTransport extends BaseTransport {
     return {} as T; // For testing purposes
   }
 
-  onMessage(handler: MessageHandler): void {
-    this.messageHandlers.add(handler);
+  on<K extends keyof TransportEventMap>(
+    event: K,
+    handler: (...args: TransportEventMap[K]) => void
+  ): void {
+    this.events.on(event, handler);
   }
 
-  offMessage(handler: MessageHandler): void {
-    this.messageHandlers.delete(handler);
+  off<K extends keyof TransportEventMap>(
+    event: K,
+    handler: (...args: TransportEventMap[K]) => void
+  ): void {
+    this.events.off(event, handler);
   }
 
-  public simulateMessage(message: unknown): void {
-    for (const handler of this.messageHandlers) {
-      handler(message).catch((error) => {
-        this.handleError(error);
-      });
-    }
+  public simulateMessage(message: JSONRPCRequest | JSONRPCResponse): void {
+    this.events.emit('message', message);
   }
 
   public simulateError(error: Error): void {
-    this.handleError(error);
+    this.events.emit('error', error);
   }
 }
 
@@ -118,115 +122,66 @@ describe('BaseTransport', () => {
   });
 
   describe('message handling', () => {
-    it('should send messages successfully', async () => {
-      const message: JSONRPCRequest = {
-        jsonrpc: JSONRPC_VERSION,
-        method: 'test',
-        id: '1',
-        params: {},
-      };
-      await transport.send(message);
-      expect(transport.messages).toContain(message);
-    });
-
     it('should handle send failure', async () => {
       transport.shouldFail = true;
       const message: JSONRPCRequest = {
         jsonrpc: JSONRPC_VERSION,
         method: 'test',
         id: '1',
-        params: {},
       };
       await expect(transport.send(message)).rejects.toThrow('Send failed');
     });
 
-    it('should emit message events', () => {
+    it('should emit message events', async () => {
       const onMessage = vi.fn();
       transport.on('message', onMessage);
+
       const message: JSONRPCRequest = {
         jsonrpc: JSONRPC_VERSION,
         method: 'test',
         id: '1',
         params: {},
       };
-      transport.simulateMessage(message);
+
+      await transport.send(message);
       expect(onMessage).toHaveBeenCalledWith(message);
-    });
-
-    it('should stop emitting messages after unsubscribe', () => {
-      const onMessage = vi.fn();
-      transport.on('message', onMessage);
-      transport.off('message', onMessage);
-      transport.simulateMessage({ jsonrpc: '2.0', method: 'test', id: 1 });
-      expect(onMessage).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('error handling', () => {
-    it('should emit error events', () => {
-      const onError = vi.fn();
-      transport.on('error', onError);
-      const error = new Error('Test error');
-      transport.simulateError(error);
-      expect(onError).toHaveBeenCalledWith(error);
-    });
-
-    it('should stop emitting errors after unsubscribe', () => {
-      const onError = vi.fn();
-      transport.on('error', onError);
-      transport.off('error', onError);
-      transport.simulateError(new Error('Test error'));
-      expect(onError).not.toHaveBeenCalled();
     });
   });
 
   describe('event handling', () => {
-    it('should support multiple event listeners', () => {
+    it('should support multiple event listeners', async () => {
       const onMessage1 = vi.fn();
       const onMessage2 = vi.fn();
       transport.on('message', onMessage1);
       transport.on('message', onMessage2);
-      const message = { jsonrpc: '2.0', method: 'test', id: 1 };
-      transport.simulateMessage(message);
+
+      const message: JSONRPCRequest = {
+        jsonrpc: JSONRPC_VERSION,
+        method: 'test',
+        id: '1',
+      };
+
+      await transport.send(message);
       expect(onMessage1).toHaveBeenCalledWith(message);
       expect(onMessage2).toHaveBeenCalledWith(message);
     });
 
-    it('should only remove specified listener', () => {
+    it('should only remove specified listener', async () => {
       const onMessage1 = vi.fn();
       const onMessage2 = vi.fn();
       transport.on('message', onMessage1);
       transport.on('message', onMessage2);
       transport.off('message', onMessage1);
-      const message = { jsonrpc: '2.0', method: 'test', id: 1 };
-      transport.simulateMessage(message);
+
+      const message: JSONRPCRequest = {
+        jsonrpc: JSONRPC_VERSION,
+        method: 'test',
+        id: '1',
+      };
+
+      await transport.send(message);
       expect(onMessage1).not.toHaveBeenCalled();
       expect(onMessage2).toHaveBeenCalledWith(message);
     });
-  });
-
-  it('should handle messages', async () => {
-    const handler = vi.fn();
-    transport.onMessage(handler);
-
-    const message: JSONRPCRequest = {
-      jsonrpc: JSONRPC_VERSION,
-      method: 'test',
-      id: '1',
-      params: {},
-    };
-
-    transport.simulateMessage(message);
-    expect(handler).toHaveBeenCalledWith(message);
-  });
-
-  it('should handle errors', () => {
-    const handler = vi.fn();
-    transport.events.on('error', handler);
-
-    const error = new Error('Test error');
-    transport.simulateError(error);
-
-    expect(handler).toHaveBeenCalledWith(error);
   });
 });

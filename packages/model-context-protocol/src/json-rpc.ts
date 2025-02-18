@@ -4,10 +4,11 @@
  * Provides base classes for JSON-RPC client and server communication.
  */
 
+import { EventEmitter } from 'eventemitter3';
 import { JSONRPCClient, JSONRPCServer } from 'json-rpc-2.0';
 import { VError } from 'verror';
-import type { JSONRPCRequest, JSONRPCResponse } from '../schema.js';
-import type { McpTransport, MessageHandler } from '../transport.js';
+import type { JSONRPCRequest, JSONRPCResponse, JSONRPCMessage } from './schema.js';
+import type { McpTransport, MessageHandler, TransportEventMap, BaseEventEmitter } from './transport.js';
 
 /**
  * Base class for JSON-RPC transports.
@@ -19,6 +20,18 @@ export abstract class JsonRpcTransport implements McpTransport {
   private connected = false;
   private messageHandlers = new Set<MessageHandler>();
   private errorHandlers = new Set<(error: Error) => void>();
+  private readonly _events = new EventEmitter();
+
+  public get events(): BaseEventEmitter {
+    return {
+      on: <K extends keyof TransportEventMap>(event: K, handler: (...args: TransportEventMap[K]) => void) => {
+        this._events.on(event, handler as (...args: any[]) => void);
+      },
+      off: <K extends keyof TransportEventMap>(event: K, handler: (...args: TransportEventMap[K]) => void) => {
+        this._events.off(event, handler as (...args: any[]) => void);
+      }
+    };
+  }
 
   constructor() {
     this.client = new JSONRPCClient((request) => this.sendRequest(request));
@@ -49,11 +62,38 @@ export abstract class JsonRpcTransport implements McpTransport {
   }
 
   /**
+   * Subscribe to transport events.
+   */
+  on<K extends keyof TransportEventMap>(
+    event: K,
+    handler: (...args: TransportEventMap[K]) => void
+  ): void {
+    this._events.on(event, handler as (...args: any[]) => void);
+  }
+
+  /**
+   * Unsubscribe from transport events.
+   */
+  off<K extends keyof TransportEventMap>(
+    event: K,
+    handler: (...args: TransportEventMap[K]) => void
+  ): void {
+    this._events.off(event, handler as (...args: any[]) => void);
+  }
+
+  /**
    * Subscribes to incoming messages.
    * @param handler Message handler function
    */
   onMessage(handler: MessageHandler): void {
     this.messageHandlers.add(handler);
+  }
+
+  /**
+   * Unsubscribe from message events.
+   */
+  offMessage(handler: MessageHandler): void {
+    this.messageHandlers.delete(handler);
   }
 
   /**
@@ -65,6 +105,22 @@ export abstract class JsonRpcTransport implements McpTransport {
   }
 
   /**
+   * Unsubscribe from error events.
+   */
+  offError(handler: (error: Error) => void): void {
+    this.errorHandlers.delete(handler);
+  }
+
+  /**
+   * Close the transport and clean up any resources.
+   */
+  async close(): Promise<void> {
+    await this.disconnect();
+    this.messageHandlers.clear();
+    this.errorHandlers.clear();
+  }
+
+  /**
    * Handles an incoming message.
    * @param message Incoming message
    */
@@ -72,7 +128,11 @@ export abstract class JsonRpcTransport implements McpTransport {
     try {
       const response = await this.server.receive(message);
       if (response) {
-        await this.send(response);
+        await this.send(response as JSONRPCResponse);
+      }
+      this._events.emit('message', message);
+      for (const handler of this.messageHandlers) {
+        await handler(message);
       }
     } catch (error) {
       this.handleError(new VError(error as Error, 'Failed to handle message'));
@@ -84,19 +144,22 @@ export abstract class JsonRpcTransport implements McpTransport {
    * @param request Request to send
    * @returns Promise that resolves with the response
    */
-  protected async sendRequest(request: JSONRPCRequest): Promise<unknown> {
+  protected async sendRequest(request: JSONRPCRequest): Promise<void> {
     try {
       await this.send(request);
-      return new Promise((resolve, reject) => {
-        this.onMessage((message) => {
-          if ('id' in message && message.id === request.id) {
+      return new Promise<void>((resolve, reject) => {
+        const handler: MessageHandler = (message) => {
+          if (this.isJSONRPCMessage(message) && 'id' in message && message.id === request.id) {
+            this.offMessage(handler);
             if ('error' in message) {
               reject(message.error);
             } else if ('result' in message) {
-              resolve(message.result);
+              resolve();
             }
           }
-        });
+          return Promise.resolve();
+        };
+        this.onMessage(handler);
       });
     } catch (error) {
       throw new VError(error as Error, 'Failed to send request');
@@ -104,10 +167,23 @@ export abstract class JsonRpcTransport implements McpTransport {
   }
 
   /**
+   * Type guard for JSON-RPC messages
+   */
+  private isJSONRPCMessage(message: unknown): message is JSONRPCMessage {
+    return (
+      typeof message === 'object' &&
+      message !== null &&
+      'jsonrpc' in message &&
+      message.jsonrpc === '2.0'
+    );
+  }
+
+  /**
    * Handles an error by notifying all error handlers
    * @param error Error to handle
    */
   protected handleError(error: Error): void {
+    this._events.emit('error', error);
     for (const handler of this.errorHandlers) {
       handler(error);
     }
@@ -119,5 +195,6 @@ export abstract class JsonRpcTransport implements McpTransport {
    */
   protected setConnected(state: boolean): void {
     this.connected = state;
+    this._events.emit(state ? 'connect' : 'disconnect');
   }
 }

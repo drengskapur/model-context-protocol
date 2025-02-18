@@ -104,11 +104,6 @@ export const LATEST_PROTOCOL_VERSION = '2024-02-18';
 export const JSONRPC_VERSION = '2.0' as const;
 
 /**
- * Request ID type.
- */
-export type RequestId = string | number;
-
-/**
  * Base request interface.
  */
 export interface Request {
@@ -130,7 +125,7 @@ export interface Request {
   /**
    * Method parameters.
    */
-  params?: unknown;
+  params?: RequestParams;
 }
 
 /**
@@ -190,7 +185,7 @@ export interface Notification {
   /**
    * Method parameters.
    */
-  params?: unknown;
+  params?: NotificationParams;
 }
 
 /**
@@ -214,9 +209,9 @@ export interface Error {
 }
 
 /**
- * Base result interface.
+ * Base result interface for JSON-RPC responses.
  */
-export interface Result {
+export interface JsonRpcResult {
   /**
    * This result property is reserved by the protocol to allow clients and servers
    * to include custom data in the result that is not specified by the method.
@@ -227,26 +222,11 @@ export interface Result {
 /**
  * JSON-RPC request interface.
  */
-export interface JSONRPCRequest extends Request {
-  /**
-   * JSON-RPC version.
-   */
+export interface JSONRPCRequest {
   jsonrpc: typeof JSONRPC_VERSION;
-
-  /**
-   * Request ID.
-   */
   id: RequestId;
-
-  /**
-   * Method name.
-   */
   method: string;
-
-  /**
-   * Method parameters.
-   */
-  params?: unknown;
+  params?: RequestParams;
 }
 
 /**
@@ -266,7 +246,7 @@ export interface JSONRPCResponse {
   /**
    * Response result.
    */
-  result: Result;
+  result: JsonRpcResult;
 }
 
 /**
@@ -281,7 +261,7 @@ export interface JSONRPCErrorResponse {
   /**
    * Request ID.
    */
-  id: RequestId;
+  id: ErrorResponseId;
 
   /**
    * Error details.
@@ -292,21 +272,10 @@ export interface JSONRPCErrorResponse {
 /**
  * JSON-RPC notification interface.
  */
-export interface JSONRPCNotification extends Notification {
-  /**
-   * JSON-RPC version.
-   */
+export interface JSONRPCNotification {
   jsonrpc: typeof JSONRPC_VERSION;
-
-  /**
-   * Method name.
-   */
   method: string;
-
-  /**
-   * Method parameters.
-   */
-  params?: unknown;
+  params?: NotificationParams;
 }
 
 // Valibot schemas for validation
@@ -389,26 +358,23 @@ export interface InitializeResult {
   instructions?: string;
 }
 
+// Define a common params type
+export type RequestParams = {
+  _meta?: {
+    progressToken?: ProgressToken;
+  };
+  [key: string]: unknown;
+};
+
+export type NotificationParams = {
+  _meta?: { [key: string]: unknown };
+  [key: string]: unknown;
+};
+
+// Update interfaces to use the common type
 export interface Request {
   method: string;
-  params?: {
-    _meta?: {
-      /**
-       * If specified, the caller is requesting out-of-band progress notifications for this request.
-       * The value of this parameter is an opaque token that will be attached to any subsequent notifications.
-       */
-      progressToken?: ProgressToken;
-    };
-    [key: string]: unknown;
-  };
-}
-
-export interface JSONRPCResult {
-  /**
-   * This result property is reserved by the protocol to allow clients and servers
-   * to include custom data in the result that is not specified by the method.
-   */
-  result: unknown;
+  params?: RequestParams;
 }
 
 export interface JSONRPCRequest extends Request {
@@ -419,20 +385,13 @@ export interface JSONRPCRequest extends Request {
 export interface JSONRPCNotification {
   jsonrpc: typeof JSONRPC_VERSION;
   method: string;
-  params?: {
-    /**
-     * This parameter name is reserved by MCP to allow clients and servers
-     * to attach additional metadata to their notifications.
-     */
-    _meta?: { [key: string]: unknown };
-    [key: string]: unknown;
-  };
+  params?: NotificationParams;
 }
 
 export interface JSONRPCResponse {
   jsonrpc: typeof JSONRPC_VERSION;
   id: RequestId;
-  result: JSONRPCResult;
+  result: JsonRpcResult;
 }
 
 export interface JSONRPCErrorResponse {

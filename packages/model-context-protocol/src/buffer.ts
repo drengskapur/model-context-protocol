@@ -4,7 +4,7 @@
  * Provides functionality for buffering and batching messages.
  */
 
-import type { JSONRPCRequest, JSONRPCResponse } from './schema';
+import type { JSONRPCMessage } from './schema';
 
 /**
  * A buffer for reading line-based text data.
@@ -121,9 +121,7 @@ export class MessageBuffer {
  * @param message Message to serialize
  * @returns Serialized message string
  */
-export function serializeMessage(
-  message: JSONRPCRequest | JSONRPCResponse
-): string {
+export function serializeMessage(message: JSONRPCMessage): string {
   return `${JSON.stringify(message)}\n`;
 }
 
@@ -134,7 +132,7 @@ export function serializeMessage(
  */
 export function* deserializeMessage(
   lines: string[]
-): Generator<JSONRPCRequest | JSONRPCResponse> {
+): Generator<JSONRPCMessage> {
   for (const line of lines) {
     if (!line) {
       continue;

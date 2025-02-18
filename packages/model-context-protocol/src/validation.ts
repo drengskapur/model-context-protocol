@@ -17,11 +17,14 @@ export const VALIDATION_ERROR = -32402;
  * Custom validation error class.
  */
 export class ValidationError extends McpError {
+  public readonly errors?: ValiError['issues'];
+
   constructor(message: string, cause?: ValiError) {
     super(VALIDATION_ERROR, message, {
       errors: cause?.issues,
     });
     this.name = 'ValidationError';
+    this.errors = cause?.issues;
   }
 }
 
@@ -67,10 +70,10 @@ export function validateResponse<T extends BaseSchema>(
  * @returns Promise that resolves with the validated level
  * @throws {ValidationError} If validation fails
  */
-export async function validateLoggingLevel(level: unknown): Promise<string> {
+export async function validateLoggingLevel(level: unknown): Promise<void> {
   const schema = enumType(['debug', 'info', 'notice', 'warning', 'error', 'critical', 'alert', 'emergency']);
   try {
-    return parse(schema, level);
+    await parse(schema, level);
   } catch (error) {
     throw new ValidationError('Invalid logging level', error as ValiError);
   }
@@ -121,7 +124,7 @@ export async function validateResource(resource: unknown): Promise<void> {
   });
   
   try {
-    parse(schema, resource);
+    await parse(schema, resource);
   } catch (error) {
     throw new ValidationError('Invalid resource', error as ValiError);
   }
@@ -145,7 +148,7 @@ export async function validatePrompt(prompt: unknown): Promise<void> {
   });
   
   try {
-    parse(schema, prompt);
+    await parse(schema, prompt);
   } catch (error) {
     throw new ValidationError('Invalid prompt', error as ValiError);
   }
@@ -159,7 +162,7 @@ export async function validatePrompt(prompt: unknown): Promise<void> {
  */
 export async function validateSamplingMessage(message: unknown): Promise<void> {
   const schema = object({
-    role: enumType(['user', 'assistant', 'system', 'function', 'tool']),
+    role: enumType(['user', 'assistant']),
     content: union([
       object({
         type: literal('text'),
@@ -175,7 +178,7 @@ export async function validateSamplingMessage(message: unknown): Promise<void> {
   });
   
   try {
-    parse(schema, message);
+    await parse(schema, message);
   } catch (error) {
     throw new ValidationError('Invalid sampling message', error as ValiError);
   }
@@ -199,7 +202,7 @@ export async function validateTool(tool: unknown): Promise<void> {
   });
   
   try {
-    parse(schema, tool);
+    await parse(schema, tool);
   } catch (error) {
     throw new ValidationError('Invalid tool', error as ValiError);
   }
@@ -224,7 +227,7 @@ export async function validateReference(ref: unknown): Promise<void> {
   ]);
   
   try {
-    parse(schema, ref);
+    await parse(schema, ref);
   } catch (error) {
     throw new ValidationError('Invalid reference', error as ValiError);
   }

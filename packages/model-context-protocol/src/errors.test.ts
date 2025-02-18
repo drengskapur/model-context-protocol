@@ -201,9 +201,9 @@ describe('Error Handling', () => {
       AuthenticationError: 401,
       TransportError: 500,
       TimeoutError: 504,
-    };
+    } as const;
 
-    const errorClasses = {
+    const errorClasses: Record<keyof typeof codeMap, new (message: string) => McpError> = {
       ParseError,
       InvalidRequestError,
       MethodNotFoundError,
@@ -218,7 +218,8 @@ describe('Error Handling', () => {
     };
 
     for (const [type, code] of Object.entries(codeMap)) {
-      const error = new errorClasses[type]('Test error');
+      const ErrorClass = errorClasses[type as keyof typeof codeMap];
+      const error = new ErrorClass('Test error');
       expect(error.toJSON().code).toBe(code);
     }
   });

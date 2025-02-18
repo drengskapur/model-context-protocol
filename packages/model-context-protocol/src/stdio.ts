@@ -95,6 +95,7 @@ export class StdioTransport extends BaseTransport {
       this.input.removeAllListeners();
       this.buffer = '';
       this.setConnected(false);
+      return Promise.resolve();
     } catch (error) {
       throw new VError(error as Error, 'Failed to disconnect stdio transport');
     }
