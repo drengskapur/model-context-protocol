@@ -746,7 +746,7 @@ describe('McpClient', () => {
     const invalidResponse = {
       jsonrpc: JSONRPC_VERSION,
       id: request.id,
-      result: null
+      result: {} as Record<string, unknown>,
     } as JSONRPCResponse;
     await clientTransport.simulateIncomingMessage(invalidResponse);
 
@@ -937,7 +937,7 @@ describe('McpClient', () => {
 
   it('should handle transport errors during send', async () => {
     // First initialize the client
-    const connectPromise = client.connect(clientTransport);
+    const connectPromise = client.connect();
     await Promise.resolve();
     await clientTransport.simulateIncomingMessage({
       jsonrpc: '2.0',
@@ -970,9 +970,7 @@ describe('McpClient', () => {
     const originalConnect = clientTransport.connect;
     clientTransport.connect = vi.fn().mockRejectedValue(error);
 
-    await expect(client.connect(clientTransport)).rejects.toThrow(
-      'Connect failed'
-    );
+    await expect(client.connect()).rejects.toThrow('Connect failed');
 
     // Restore original connect
     clientTransport.connect = originalConnect;
@@ -980,7 +978,7 @@ describe('McpClient', () => {
 
   it('should handle transport errors during disconnect', async () => {
     // First initialize the client
-    const connectPromise = client.connect(clientTransport);
+    const connectPromise = client.connect();
     await Promise.resolve();
     await clientTransport.simulateIncomingMessage({
       jsonrpc: '2.0',
@@ -1012,7 +1010,7 @@ describe('McpClient', () => {
     client.onMessage(messageHandler);
 
     // First initialize the client
-    const connectPromise = client.connect(clientTransport);
+    const connectPromise = client.connect();
     await Promise.resolve();
     await clientTransport.simulateIncomingMessage({
       jsonrpc: '2.0',
@@ -1047,7 +1045,7 @@ describe('McpClient', () => {
 
     // First initialize the client
     await clientTransport.connect();
-    const connectPromise = client.connect(clientTransport);
+    const connectPromise = client.connect();
     await Promise.resolve();
     await clientTransport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
