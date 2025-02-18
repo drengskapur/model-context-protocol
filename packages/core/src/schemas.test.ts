@@ -156,4 +156,4 @@ describe('Prompt Schemas', () => {
       expect(() => parse(promptMessageSchema, message)).toThrow();
     });
   });
-}); 
+});

@@ -21,6 +21,12 @@ export { McpClient } from './client.js';
 export { McpTransport, MessageHandler } from './transport.js';
 export { InMemoryTransport } from './in-memory.js';
 
+// Export authorization types and classes
+export * from './auth.js';
+
 // Export transports
 export * from './transports/stdio.js';
 export * from './transports/sse.js';
+
+// Export sampling types and classes
+export * from './sampling.js';

@@ -52,7 +52,9 @@ describe('serializeMessage', () => {
       method: 'test',
       params: { foo: 'bar' },
     };
-    expect(serializeMessage(message)).toBe('{"jsonrpc":"2.0","method":"test","params":{"foo":"bar"}}\n');
+    expect(serializeMessage(message)).toBe(
+      '{"jsonrpc":"2.0","method":"test","params":{"foo":"bar"}}\n'
+    );
   });
 
   it('should serialize JSON-RPC request with id', () => {
@@ -62,7 +64,9 @@ describe('serializeMessage', () => {
       method: 'test',
       params: { foo: 'bar' },
     };
-    expect(serializeMessage(message)).toBe('{"jsonrpc":"2.0","id":1,"method":"test","params":{"foo":"bar"}}\n');
+    expect(serializeMessage(message)).toBe(
+      '{"jsonrpc":"2.0","id":1,"method":"test","params":{"foo":"bar"}}\n'
+    );
   });
 
   it('should serialize JSON-RPC response', () => {
@@ -71,7 +75,9 @@ describe('serializeMessage', () => {
       id: 1,
       result: { value: 'success' },
     };
-    expect(serializeMessage(message)).toBe('{"jsonrpc":"2.0","id":1,"result":{"value":"success"}}\n');
+    expect(serializeMessage(message)).toBe(
+      '{"jsonrpc":"2.0","id":1,"result":{"value":"success"}}\n'
+    );
   });
 
   it('should serialize JSON-RPC error', () => {
@@ -83,6 +89,8 @@ describe('serializeMessage', () => {
         message: 'Invalid request',
       },
     };
-    expect(serializeMessage(message)).toBe('{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"Invalid request"}}\n');
+    expect(serializeMessage(message)).toBe(
+      '{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"Invalid request"}}\n'
+    );
   });
-}); 
+});

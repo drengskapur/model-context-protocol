@@ -12,7 +12,7 @@
     },
     "format": {
       "inputs": ["**/*.{ts,tsx,js,jsx}", ".biome.json"],
-      "outputs": ["node_modules/.cache/biome/**"]
+      "outputs": []
     },
     "dev": {
       "cache": false,
