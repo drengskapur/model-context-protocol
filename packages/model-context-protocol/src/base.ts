@@ -5,7 +5,7 @@
  */
 
 import EventEmitter from 'eventemitter3';
-import type { JSONRPCMessage, JSONRPCRequest, JSONRPCResponse } from './schema';
+import type { JSONRPCMessage, JSONRPCRequest } from './schema';
 
 /**
  * Event handler types for different events

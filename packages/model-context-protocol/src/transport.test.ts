@@ -1,34 +1,65 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { BaseTransport } from './base';
 import type { JSONRPCRequest, JSONRPCResponse } from './schema';
+import type { MessageHandler } from './transport';
+import { EventEmitter } from 'eventemitter3';
+import { JSONRPC_VERSION } from './schema';
 
 class TestTransport extends BaseTransport {
   public messages: (JSONRPCRequest | JSONRPCResponse)[] = [];
   public shouldFail = false;
+  public readonly events = new EventEmitter();
+  private messageHandlers: Set<MessageHandler> = new Set();
 
-  async send(message: JSONRPCRequest | JSONRPCResponse): Promise<void> {
+  send(message: JSONRPCRequest | JSONRPCResponse): Promise<void> {
     if (this.shouldFail) {
       throw new Error('Send failed');
     }
     this.messages.push(message);
+    return Promise.resolve();
   }
 
-  async connect(): Promise<void> {
+  connect(): Promise<void> {
     if (this.shouldFail) {
       throw new Error('Connect failed');
     }
     this.setConnected(true);
+    return Promise.resolve();
   }
 
-  async disconnect(): Promise<void> {
+  disconnect(): Promise<void> {
     if (this.shouldFail) {
       throw new Error('Disconnect failed');
     }
     this.setConnected(false);
+    return Promise.resolve();
   }
 
-  public simulateMessage(message: JSONRPCRequest): void {
-    this.handleMessage(message);
+  async request<T>(method: string, params?: Record<string, unknown>): Promise<T> {
+    const request: JSONRPCRequest = {
+      jsonrpc: JSONRPC_VERSION,
+      id: Math.random().toString(36).slice(2),
+      method,
+      params,
+    };
+    await this.send(request);
+    return {} as T; // For testing purposes
+  }
+
+  onMessage(handler: MessageHandler): void {
+    this.messageHandlers.add(handler);
+  }
+
+  offMessage(handler: MessageHandler): void {
+    this.messageHandlers.delete(handler);
+  }
+
+  public simulateMessage(message: unknown): void {
+    for (const handler of this.messageHandlers) {
+      handler(message).catch((error) => {
+        this.handleError(error);
+      });
+    }
   }
 
   public simulateError(error: Error): void {
@@ -85,21 +116,36 @@ describe('BaseTransport', () => {
 
   describe('message handling', () => {
     it('should send messages successfully', async () => {
-      const message = { jsonrpc: '2.0', method: 'test', id: 1 };
+      const message: JSONRPCRequest = {
+        jsonrpc: JSONRPC_VERSION,
+        method: 'test',
+        id: '1',
+        params: {},
+      };
       await transport.send(message);
       expect(transport.messages).toContain(message);
     });
 
     it('should handle send failure', async () => {
       transport.shouldFail = true;
-      const message = { jsonrpc: '2.0', method: 'test', id: 1 };
+      const message: JSONRPCRequest = {
+        jsonrpc: JSONRPC_VERSION,
+        method: 'test',
+        id: '1',
+        params: {},
+      };
       await expect(transport.send(message)).rejects.toThrow('Send failed');
     });
 
     it('should emit message events', () => {
       const onMessage = vi.fn();
       transport.on('message', onMessage);
-      const message = { jsonrpc: '2.0', method: 'test', id: 1 };
+      const message: JSONRPCRequest = {
+        jsonrpc: JSONRPC_VERSION,
+        method: 'test',
+        id: '1',
+        params: {},
+      };
       transport.simulateMessage(message);
       expect(onMessage).toHaveBeenCalledWith(message);
     });
@@ -154,5 +200,30 @@ describe('BaseTransport', () => {
       expect(onMessage1).not.toHaveBeenCalled();
       expect(onMessage2).toHaveBeenCalledWith(message);
     });
+  });
+
+  it('should handle messages', async () => {
+    const handler = vi.fn();
+    transport.onMessage(handler);
+
+    const message: JSONRPCRequest = {
+      jsonrpc: JSONRPC_VERSION,
+      method: 'test',
+      id: '1',
+      params: {},
+    };
+
+    transport.simulateMessage(message);
+    expect(handler).toHaveBeenCalledWith(message);
+  });
+
+  it('should handle errors', () => {
+    const handler = vi.fn();
+    transport.events.on('error', handler);
+
+    const error = new Error('Test error');
+    transport.simulateError(error);
+
+    expect(handler).toHaveBeenCalledWith(error);
   });
 });

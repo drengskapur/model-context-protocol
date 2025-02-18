@@ -1,15 +1,12 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { Auth, AuthError, createAuthMiddleware } from './auth.js';
+import type { JSONRPCRequest, JSONRPCResponse } from './schema.js';
 
 describe('Auth', () => {
   const auth = new Auth({
     secret: 'test-secret-key-must-be-at-least-32-characters',
     issuer: 'test-issuer',
     audience: 'test-audience',
-  });
-
-  beforeAll(async () => {
-    await auth.initialize();
   });
 
   it('should generate and validate tokens', async () => {
@@ -38,7 +35,6 @@ describe('Auth', () => {
       secret: 'test-secret-key-must-be-at-least-32-characters',
       tokenExpiration: 0, // Expire immediately
     });
-    await auth.initialize();
 
     const token = await auth.generateToken('user123', ['user']);
     await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait for token to expire
@@ -53,36 +49,65 @@ describe('Auth', () => {
   });
 
   describe('AuthMiddleware', () => {
-    it('should allow access with valid token and roles', async () => {
-      const middleware = createAuthMiddleware(
-        { auth, requiredRoles: ['user'] },
-        async (params: Record<string, unknown>) => params
-      );
-
+    it('should allow access with valid token', async () => {
+      const middleware = createAuthMiddleware(auth);
       const token = await auth.generateToken('user123', ['user']);
-      const result = await middleware({ token, data: 'test' });
-      expect(result).toEqual({ data: 'test' });
+
+      const request: JSONRPCRequest = {
+        jsonrpc: '2.0',
+        id: '1',
+        method: 'test',
+        params: { token, data: 'test' },
+      };
+
+      const next = async (): Promise<JSONRPCResponse> => ({
+        jsonrpc: '2.0' as const,
+        id: '1',
+        result: { data: 'test' },
+      });
+
+      const result = await middleware(request, next);
+      expect(result).toEqual({
+        jsonrpc: '2.0',
+        id: '1',
+        result: { data: 'test' },
+      });
     });
 
     it('should deny access with missing token', async () => {
-      const middleware = createAuthMiddleware(
-        { auth, requiredRoles: ['user'] },
-        async (params: Record<string, unknown>) => params
-      );
+      const middleware = createAuthMiddleware(auth);
+      const request: JSONRPCRequest = {
+        jsonrpc: '2.0',
+        id: '1',
+        method: 'test',
+        params: { data: 'test' },
+      };
 
-      await expect(middleware({ data: 'test' })).rejects.toThrow(AuthError);
+      const next = async (): Promise<JSONRPCResponse> => ({
+        jsonrpc: '2.0' as const,
+        id: '1',
+        result: { data: 'test' },
+      });
+
+      await expect(middleware(request, next)).rejects.toThrow(AuthError);
     });
 
-    it('should deny access with insufficient roles', async () => {
-      const middleware = createAuthMiddleware(
-        { auth, requiredRoles: ['admin'] },
-        async (params: Record<string, unknown>) => params
-      );
+    it('should deny access with invalid token', async () => {
+      const middleware = createAuthMiddleware(auth);
+      const request: JSONRPCRequest = {
+        jsonrpc: '2.0',
+        id: '1',
+        method: 'test',
+        params: { token: 'invalid-token', data: 'test' },
+      };
 
-      const token = await auth.generateToken('user123', ['user']);
-      await expect(middleware({ token, data: 'test' })).rejects.toThrow(
-        AuthError
-      );
+      const next = async (): Promise<JSONRPCResponse> => ({
+        jsonrpc: '2.0' as const,
+        id: '1',
+        result: { data: 'test' },
+      });
+
+      await expect(middleware(request, next)).rejects.toThrow(AuthError);
     });
   });
 });

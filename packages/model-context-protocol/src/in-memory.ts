@@ -73,7 +73,9 @@ export class InMemoryTransport extends BaseTransport {
    * Handles an incoming message.
    * @param message Message to handle
    */
-  private async handleMessage(message: JSONRPCRequest | JSONRPCResponse): Promise<void> {
+  private async handleMessage(
+    message: JSONRPCRequest | JSONRPCResponse
+  ): Promise<void> {
     const promises = Array.from(this.messageHandlers).map((handler) =>
       handler(message).catch((error: Error) => {
         throw new VError(error, 'Handler error');
@@ -113,7 +115,10 @@ export class InMemoryTransport extends BaseTransport {
    * @param params Method parameters
    * @returns Promise that resolves with the response
    */
-  async request<T>(method: string, params?: Record<string, unknown>): Promise<T> {
+  async request<T>(
+    method: string,
+    params?: Record<string, unknown>
+  ): Promise<T> {
     if (!this.isConnected()) {
       throw new VError('Transport not connected');
     }
@@ -128,7 +133,9 @@ export class InMemoryTransport extends BaseTransport {
     await this.send(request);
 
     return new Promise((resolve, reject) => {
-      const handler: (message: unknown) => Promise<void> = (message: unknown) => {
+      const handler: (message: unknown) => Promise<void> = (
+        message: unknown
+      ) => {
         const response = message as JSONRPCResponse;
         if ('id' in response && response.id === request.id) {
           this.offMessage(handler);

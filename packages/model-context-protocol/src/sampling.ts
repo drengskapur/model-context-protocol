@@ -5,14 +5,11 @@
  */
 
 import { z } from 'zod';
-import { VError } from 'verror';
 import { McpError } from './errors.js';
 import type {
   CreateMessageRequest,
   CreateMessageResult,
-  ImageContent,
   ModelPreferences,
-  Role,
   SamplingMessage,
   TextContent,
 } from './schema.js';
@@ -367,7 +364,7 @@ export class Sampling {
    * @param options Options for the sampling process.
    * @returns A promise that resolves to the created message.
    */
-  async createMessage(
+  createMessage(
     messages: SamplingMessage[],
     options: SamplingOptions
   ): Promise<CreateMessageResult> {

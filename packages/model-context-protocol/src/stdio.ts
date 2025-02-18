@@ -5,7 +5,7 @@
  */
 
 import { VError } from 'verror';
-import { Readable, Writable } from 'node:stream';
+import type { Readable, Writable } from 'node:stream';
 import { BaseTransport } from './transport';
 import type { JSONRPCRequest, JSONRPCResponse } from './schema';
 

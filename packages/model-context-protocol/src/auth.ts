@@ -234,7 +234,10 @@ export class AuthError extends Error {
 }
 
 export const createAuthMiddleware = (auth: Auth) => {
-  return async (request: JSONRPCRequest, next: () => Promise<JSONRPCResponse>) => {
+  return async (
+    request: JSONRPCRequest,
+    next: () => Promise<JSONRPCResponse>
+  ) => {
     // Verify token
     const token = request.params?.token as string;
     if (!token) {

@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Readable, Writable } from 'node:stream';
 import { StdioTransport } from './stdio';
 
+const ALREADY_CONNECTED_REGEX = /already connected/;
+
 describe('StdioTransport', () => {
   let transport: StdioTransport;
   let input: Readable;
@@ -49,7 +51,7 @@ describe('StdioTransport', () => {
 
     it('should prevent double connect', async () => {
       await transport.connect();
-      await expect(transport.connect()).rejects.toThrow(/already connected/);
+      await expect(transport.connect()).rejects.toThrow(ALREADY_CONNECTED_REGEX);
     });
   });
 

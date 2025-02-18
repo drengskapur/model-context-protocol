@@ -64,7 +64,7 @@ interface Channel extends EventTarget {
 export class SseTransport extends BaseTransport {
   private readonly options: Required<SseTransportOptions>;
   private session: Session | null = null;
-  private channel: Channel | null = null;
+  private channel: BetterSseChannel | null = null;
 
   constructor(options: SseTransportOptions) {
     super();
@@ -116,21 +116,19 @@ export class SseTransport extends BaseTransport {
   /**
    * Disconnects from the SSE stream.
    */
-  async disconnect(): Promise<void> {
+  disconnect(): Promise<void> {
     try {
       if (this.channel) {
-        // Cast to Channel interface that includes close method
-        (this.channel as Channel).close();
+        this.channel.close();
         this.channel = null;
       }
       if (this.session) {
-        // No close method in Session type, but it exists at runtime
-        (this.session as any).close();
+        this.session.close();
         this.session = null;
       }
-      this.setConnected(false);
+      return Promise.resolve();
     } catch (error) {
-      throw new VError(error as Error, 'Failed to disconnect SSE transport');
+      return Promise.reject(new VError(error as Error, 'Failed to disconnect SSE transport'));
     }
   }
 
@@ -146,10 +144,9 @@ export class SseTransport extends BaseTransport {
     try {
       // If we have a channel, broadcast to all clients
       if (this.channel) {
-        await (this.channel as any).broadcast(
+        await this.channel.broadcast(
           'message',
           JSON.stringify(message),
-          { data: { id: 'id' in message ? message.id : undefined } }
         );
       } else if (this.session) {
         // Otherwise send to single client
@@ -176,7 +173,7 @@ export class SseTransport extends BaseTransport {
    * Gets the current channel.
    * @returns The current channel or null if not using channels
    */
-  getChannel(): Channel | null {
+  getChannel(): BetterSseChannel | null {
     return this.channel;
   }
 }

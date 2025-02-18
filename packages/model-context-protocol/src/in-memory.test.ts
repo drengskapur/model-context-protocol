@@ -41,7 +41,9 @@ describe('InMemoryTransport', () => {
     });
 
     it('should reject operations when not connected', async () => {
-      await expect(transport1.send({})).rejects.toThrow('Transport not connected');
+      await expect(transport1.send({})).rejects.toThrow(
+        'Transport not connected'
+      );
     });
   });
 

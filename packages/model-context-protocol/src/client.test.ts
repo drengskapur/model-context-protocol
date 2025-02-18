@@ -17,21 +17,20 @@ const PROTOCOL_VERSION_MISMATCH_REGEX = /Protocol version mismatch/;
 
 describe('McpClient', () => {
   let client: McpClient;
-  let transport: InMemoryTransport;
   let clientTransport: InMemoryTransport;
   let serverTransport: InMemoryTransport;
   let server: McpServer;
 
   beforeEach(() => {
+    [clientTransport, serverTransport] = InMemoryTransport.createPair();
+
     client = new McpClient({
       name: 'test-client',
       version: '1.0.0',
       requestTimeout: 1000, // Increased timeout for tests
-    });
-    transport = new InMemoryTransport();
-    [clientTransport, serverTransport] = InMemoryTransport.createPair();
+    }, clientTransport);
 
-    server = new McpServer(serverTransport, {
+    server = new McpServer({
       name: 'test-server',
       version: '1.0.0',
     });
@@ -39,17 +38,17 @@ describe('McpClient', () => {
 
   it('should initialize successfully', async () => {
     // Start the connection
-    const connectPromise = client.connect(transport);
+    const connectPromise = client.connect();
 
     // Wait a tick for the message to be sent
     await Promise.resolve();
 
     // Get the initialization message
-    const messages = transport.getMessages();
+    const messages = clientTransport.getMessages();
     expect(messages).toHaveLength(1);
     expect(messages[0]).toMatchObject({
-      jsonrpc: '2.0',
-      id: 1,
+      jsonrpc: JSONRPC_VERSION,
+      id: expect.any(String),
       method: 'initialize',
       params: {
         protocolVersion: LATEST_PROTOCOL_VERSION,
@@ -62,9 +61,9 @@ describe('McpClient', () => {
     });
 
     // Simulate successful response
-    await transport.simulateIncomingMessage({
-      jsonrpc: '2.0',
-      id: 1,
+    await serverTransport.simulateIncomingMessage({
+      jsonrpc: JSONRPC_VERSION,
+      id: messages[0].id,
       result: {
         protocolVersion: LATEST_PROTOCOL_VERSION,
         serverInfo: {
@@ -80,11 +79,11 @@ describe('McpClient', () => {
 
   it('should handle request cancellation', async () => {
     // First initialize the client
-    const connectPromise = client.connect(transport);
+    const connectPromise = client.connect();
     await Promise.resolve();
-    await transport.simulateIncomingMessage({
-      jsonrpc: '2.0',
-      id: 1,
+    await serverTransport.simulateIncomingMessage({
+      jsonrpc: JSONRPC_VERSION,
+      id: expect.any(String),
       result: {
         protocolVersion: LATEST_PROTOCOL_VERSION,
         serverInfo: {
@@ -99,12 +98,12 @@ describe('McpClient', () => {
     const promise = client.callTool('test', {});
     await Promise.resolve();
 
-    const messages = transport.getMessages();
+    const messages = clientTransport.getMessages();
     const request = messages.at(-1) as JSONRPCRequest;
 
     // Simulate cancellation notification
-    await transport.simulateIncomingMessage({
-      jsonrpc: '2.0',
+    await serverTransport.simulateIncomingMessage({
+      jsonrpc: JSONRPC_VERSION,
       method: 'notifications/cancelled',
       params: {
         requestId: request.id,
@@ -125,8 +124,8 @@ describe('McpClient', () => {
     client.onMessage(messageHandler);
 
     // First initialize the client
-    await transport.connect();
-    const connectPromise = client.connect(transport);
+    await clientTransport.connect();
+    const connectPromise = client.connect();
 
     // Wait for the initialization message to be sent
     await Promise.resolve();
@@ -134,7 +133,7 @@ describe('McpClient', () => {
     // Send the initialization response
     const initResponse: JSONRPCResponse = {
       jsonrpc: JSONRPC_VERSION,
-      id: 1,
+      id: expect.any(String),
       result: {
         protocolVersion: LATEST_PROTOCOL_VERSION,
         serverInfo: {
@@ -147,7 +146,7 @@ describe('McpClient', () => {
 
     // Wait for the message handler to be registered
     await Promise.resolve();
-    await transport.simulateIncomingMessage(initResponse);
+    await serverTransport.simulateIncomingMessage(initResponse);
     await connectPromise;
 
     // Simulate a notification message
@@ -158,7 +157,7 @@ describe('McpClient', () => {
     };
 
     // Send the notification and wait for processing
-    await transport.simulateIncomingMessage(notification);
+    await serverTransport.simulateIncomingMessage(notification);
     await Promise.resolve();
 
     // Verify the handler was called with both messages
@@ -170,13 +169,13 @@ describe('McpClient', () => {
   });
 
   it('should handle initialization error', async () => {
-    const connectPromise = client.connect(transport);
+    const connectPromise = client.connect();
     await Promise.resolve();
 
     // Simulate error response during initialization
-    await transport.simulateIncomingMessage({
-      jsonrpc: '2.0',
-      id: 1,
+    await serverTransport.simulateIncomingMessage({
+      jsonrpc: JSONRPC_VERSION,
+      id: expect.any(String),
       error: {
         code: -32600,
         message: 'Invalid Request',
@@ -188,11 +187,11 @@ describe('McpClient', () => {
 
   it('should handle multiple concurrent requests', async () => {
     // First initialize the client
-    const connectPromise = client.connect(transport);
+    const connectPromise = client.connect();
     await Promise.resolve();
-    await transport.simulateIncomingMessage({
-      jsonrpc: '2.0',
-      id: 1,
+    await serverTransport.simulateIncomingMessage({
+      jsonrpc: JSONRPC_VERSION,
+      id: expect.any(String),
       result: {
         protocolVersion: LATEST_PROTOCOL_VERSION,
         serverInfo: {
@@ -209,19 +208,19 @@ describe('McpClient', () => {
     const promise2 = client.callTool('test2', {});
     await Promise.resolve();
 
-    const messages = transport.getMessages();
+    const messages = clientTransport.getMessages();
     const request1 = messages.at(-2) as JSONRPCRequest;
     const request2 = messages.at(-1) as JSONRPCRequest;
 
     // Simulate responses in reverse order
-    await transport.simulateIncomingMessage({
-      jsonrpc: '2.0',
+    await serverTransport.simulateIncomingMessage({
+      jsonrpc: JSONRPC_VERSION,
       id: request2.id,
       result: { success: true, id: 2 },
     } as JSONRPCResponse);
 
-    await transport.simulateIncomingMessage({
-      jsonrpc: '2.0',
+    await serverTransport.simulateIncomingMessage({
+      jsonrpc: JSONRPC_VERSION,
       id: request1.id,
       result: { success: true, id: 1 },
     } as JSONRPCResponse);
@@ -233,11 +232,11 @@ describe('McpClient', () => {
 
   it('should handle progress notifications', async () => {
     // First initialize the client
-    const connectPromise = client.connect(transport);
+    const connectPromise = client.connect();
     await Promise.resolve();
-    await transport.simulateIncomingMessage({
-      jsonrpc: '2.0',
-      id: 1,
+    await serverTransport.simulateIncomingMessage({
+      jsonrpc: JSONRPC_VERSION,
+      id: expect.any(String),
       result: {
         protocolVersion: LATEST_PROTOCOL_VERSION,
         serverInfo: {
@@ -254,8 +253,8 @@ describe('McpClient', () => {
     client.onProgress(progressToken, progressHandler);
 
     // Simulate progress notification
-    await transport.simulateIncomingMessage({
-      jsonrpc: '2.0',
+    await serverTransport.simulateIncomingMessage({
+      jsonrpc: JSONRPC_VERSION,
       method: 'notifications/progress',
       params: {
         progressToken,
@@ -270,11 +269,11 @@ describe('McpClient', () => {
 
   it('should handle tool listing', async () => {
     // First initialize the client with tools capability
-    const connectPromise = client.connect(transport);
+    const connectPromise = client.connect();
     await Promise.resolve();
-    await transport.simulateIncomingMessage({
-      jsonrpc: '2.0',
-      id: 1,
+    await serverTransport.simulateIncomingMessage({
+      jsonrpc: JSONRPC_VERSION,
+      id: expect.any(String),
       result: {
         protocolVersion: LATEST_PROTOCOL_VERSION,
         serverInfo: {
@@ -294,12 +293,12 @@ describe('McpClient', () => {
     const listPromise = client.listTools();
     await Promise.resolve();
 
-    const messages = transport.getMessages();
+    const messages = clientTransport.getMessages();
     const request = messages.at(-1) as JSONRPCRequest;
     expect(request.method).toBe('tools/list');
 
-    await transport.simulateIncomingMessage({
-      jsonrpc: '2.0',
+    await serverTransport.simulateIncomingMessage({
+      jsonrpc: JSONRPC_VERSION,
       id: request.id,
       result: {
         tools: ['tool1', 'tool2', 'tool3'],
@@ -312,11 +311,11 @@ describe('McpClient', () => {
 
   it('should reject tool listing when not supported', async () => {
     // First initialize the client without tools capability
-    const connectPromise = client.connect(transport);
+    const connectPromise = client.connect();
     await Promise.resolve();
-    await transport.simulateIncomingMessage({
-      jsonrpc: '2.0',
-      id: 1,
+    await serverTransport.simulateIncomingMessage({
+      jsonrpc: JSONRPC_VERSION,
+      id: expect.any(String),
       result: {
         protocolVersion: LATEST_PROTOCOL_VERSION,
         serverInfo: {
@@ -335,11 +334,11 @@ describe('McpClient', () => {
 
   it('should handle tool calls with progress', async () => {
     // First initialize the client
-    const connectPromise = client.connect(transport);
+    const connectPromise = client.connect();
     await Promise.resolve();
-    await transport.simulateIncomingMessage({
-      jsonrpc: '2.0',
-      id: 1,
+    await serverTransport.simulateIncomingMessage({
+      jsonrpc: JSONRPC_VERSION,
+      id: expect.any(String),
       result: {
         protocolVersion: LATEST_PROTOCOL_VERSION,
         serverInfo: {
@@ -355,13 +354,13 @@ describe('McpClient', () => {
     const promise = client.callTool('test', {}, progressHandler);
     await Promise.resolve();
 
-    const messages = transport.getMessages();
+    const messages = clientTransport.getMessages();
     const request = messages.at(-1) as JSONRPCRequest;
     const progressToken = request.params?._meta?.progressToken;
 
     // Simulate progress notification
-    await transport.simulateIncomingMessage({
-      jsonrpc: '2.0',
+    await serverTransport.simulateIncomingMessage({
+      jsonrpc: JSONRPC_VERSION,
       method: 'notifications/progress',
       params: {
         progressToken,
@@ -371,8 +370,8 @@ describe('McpClient', () => {
     } as JSONRPCNotification);
 
     // Simulate successful response
-    await transport.simulateIncomingMessage({
-      jsonrpc: '2.0',
+    await serverTransport.simulateIncomingMessage({
+      jsonrpc: JSONRPC_VERSION,
       id: request.id,
       result: { success: true },
     } as JSONRPCResponse);
@@ -388,13 +387,13 @@ describe('McpClient', () => {
       name: 'test-client',
       version: '1.0.0',
       requestTimeout: 100, // Very short timeout for testing
-    });
+    }, clientTransport);
 
-    const connectPromise = client.connect(transport);
+    const connectPromise = client.connect();
     await Promise.resolve();
-    await transport.simulateIncomingMessage({
-      jsonrpc: '2.0',
-      id: 1,
+    await serverTransport.simulateIncomingMessage({
+      jsonrpc: JSONRPC_VERSION,
+      id: expect.any(String),
       result: {
         protocolVersion: LATEST_PROTOCOL_VERSION,
         serverInfo: {
@@ -417,7 +416,7 @@ describe('McpClient', () => {
     const newClient = new McpClient({
       name: 'test-client',
       version: '1.0.0',
-    });
+    }, clientTransport);
 
     // Don't connect at all
     await expect(newClient.callTool('test', {})).rejects.toThrow(
@@ -426,8 +425,8 @@ describe('McpClient', () => {
   });
 
   it('should reject requests when not initialized', async () => {
-    await transport.connect();
-    client.connect(transport); // Don't await, so initialization isn't complete
+    await clientTransport.connect();
+    client.connect(); // Don't await, so initialization isn't complete
     await Promise.resolve();
 
     await expect(client.callTool('test', {})).rejects.toThrow(
@@ -436,14 +435,14 @@ describe('McpClient', () => {
   });
 
   it('should handle protocol version mismatch', async () => {
-    const connectPromise = client.connect(transport);
+    const connectPromise = client.connect();
     await Promise.resolve();
 
-    await transport.simulateIncomingMessage({
-      jsonrpc: '2.0',
-      id: 1,
+    await serverTransport.simulateIncomingMessage({
+      jsonrpc: '0.1.0', // Different version
+      id: expect.any(String),
       result: {
-        protocolVersion: '0.1.0', // Different version
+        protocolVersion: '1.0.0',
         serverInfo: {
           name: 'test-server',
           version: '1.0.0',
@@ -459,11 +458,11 @@ describe('McpClient', () => {
 
   it('should handle logging level setting', async () => {
     // First initialize the client with logging capability
-    const connectPromise = client.connect(transport);
+    const connectPromise = client.connect();
     await Promise.resolve();
-    await transport.simulateIncomingMessage({
-      jsonrpc: '2.0',
-      id: 1,
+    await serverTransport.simulateIncomingMessage({
+      jsonrpc: JSONRPC_VERSION,
+      id: expect.any(String),
       result: {
         protocolVersion: LATEST_PROTOCOL_VERSION,
         serverInfo: {
@@ -481,13 +480,13 @@ describe('McpClient', () => {
     const setLevelPromise = client.setLoggingLevel('info');
     await Promise.resolve();
 
-    const messages = transport.getMessages();
+    const messages = clientTransport.getMessages();
     const request = messages.at(-1) as JSONRPCRequest;
     expect(request.method).toBe('logging/setLevel');
     expect(request.params).toEqual({ level: 'info' });
 
-    await transport.simulateIncomingMessage({
-      jsonrpc: '2.0',
+    await serverTransport.simulateIncomingMessage({
+      jsonrpc: JSONRPC_VERSION,
       id: request.id,
       result: {},
     } as JSONRPCResponse);
@@ -497,11 +496,11 @@ describe('McpClient', () => {
 
   it('should reject logging when not supported', async () => {
     // First initialize the client without logging capability
-    const connectPromise = client.connect(transport);
+    const connectPromise = client.connect();
     await Promise.resolve();
-    await transport.simulateIncomingMessage({
-      jsonrpc: '2.0',
-      id: 1,
+    await serverTransport.simulateIncomingMessage({
+      jsonrpc: JSONRPC_VERSION,
+      id: expect.any(String),
       result: {
         protocolVersion: LATEST_PROTOCOL_VERSION,
         serverInfo: {
@@ -523,15 +522,15 @@ describe('McpClient', () => {
     const newClient = new McpClient({
       name: 'test-client',
       version: '1.0.0',
-    });
+    }, clientTransport);
 
     // First initialize the client
-    await transport.connect();
-    const connectPromise = newClient.connect(transport);
+    await clientTransport.connect();
+    const connectPromise = newClient.connect();
     await Promise.resolve();
-    await transport.simulateIncomingMessage({
+    await serverTransport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
-      id: 1,
+      id: expect.any(String),
       result: {
         protocolVersion: LATEST_PROTOCOL_VERSION,
         serverInfo: {
@@ -548,7 +547,7 @@ describe('McpClient', () => {
 
     // Disconnect
     await newClient.disconnect();
-    await transport.disconnect();
+    await clientTransport.disconnect();
 
     // Ensure we're fully disconnected
     await Promise.resolve();
@@ -561,33 +560,9 @@ describe('McpClient', () => {
 
   it('should reject double initialization', async () => {
     // First initialize the client
-    const connectPromise = client.connect(transport);
+    const connectPromise = client.connect();
     await Promise.resolve();
-    await transport.simulateIncomingMessage({
-      jsonrpc: '2.0',
-      id: 1,
-      result: {
-        protocolVersion: LATEST_PROTOCOL_VERSION,
-        serverInfo: {
-          name: 'test-server',
-          version: '1.0.0',
-        },
-        capabilities: {},
-      },
-    } as JSONRPCResponse);
-    await connectPromise;
-
-    // Try to initialize again
-    await expect(client.connect(transport)).rejects.toThrow(
-      'Client already initialized'
-    );
-  });
-
-  it('should handle invalid response without id', async () => {
-    // First initialize the client
-    const connectPromise = client.connect(transport);
-    await Promise.resolve();
-    await transport.simulateIncomingMessage({
+    await serverTransport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
       id: 1,
       result: {
@@ -611,7 +586,7 @@ describe('McpClient', () => {
       method: 'test/response',
       params: { success: true },
     };
-    await transport.simulateIncomingMessage(invalidMessage);
+    await clientTransport.simulateIncomingMessage(invalidMessage);
 
     // The promise should still be pending
     const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 100));
@@ -621,9 +596,9 @@ describe('McpClient', () => {
 
   it('should handle invalid response with wrong id', async () => {
     // First initialize the client
-    const connectPromise = client.connect(transport);
+    const connectPromise = client.connect(clientTransport);
     await Promise.resolve();
-    await transport.simulateIncomingMessage({
+    await clientTransport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
       id: 1,
       result: {
@@ -641,11 +616,11 @@ describe('McpClient', () => {
     const promise = client.callTool('test', {});
     await Promise.resolve();
 
-    const messages = transport.getMessages();
+    const messages = clientTransport.getMessages();
     const request = messages.at(-1) as JSONRPCRequest;
 
     // Simulate response with wrong id
-    await transport.simulateIncomingMessage({
+    await clientTransport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
       id: typeof request.id === 'number' ? request.id + 1 : '0',
       result: { success: true },
@@ -659,9 +634,9 @@ describe('McpClient', () => {
 
   it('should handle invalid response with wrong jsonrpc version', async () => {
     // First initialize the client
-    const connectPromise = client.connect(transport);
+    const connectPromise = client.connect(clientTransport);
     await Promise.resolve();
-    await transport.simulateIncomingMessage({
+    await clientTransport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
       id: 1,
       result: {
@@ -679,11 +654,11 @@ describe('McpClient', () => {
     const promise = client.callTool('test', {});
     await Promise.resolve();
 
-    const messages = transport.getMessages();
+    const messages = clientTransport.getMessages();
     const request = messages.at(-1) as JSONRPCRequest;
 
     // Simulate response with wrong jsonrpc version
-    await transport.simulateIncomingMessage({
+    await clientTransport.simulateIncomingMessage({
       jsonrpc: '1.0', // Wrong version
       id: request.id,
       result: { success: true },
@@ -697,9 +672,9 @@ describe('McpClient', () => {
 
   it('should handle invalid response with missing result and error', async () => {
     // First initialize the client
-    const connectPromise = client.connect(transport);
+    const connectPromise = client.connect(clientTransport);
     await Promise.resolve();
-    await transport.simulateIncomingMessage({
+    await clientTransport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
       id: 1,
       result: {
@@ -717,11 +692,11 @@ describe('McpClient', () => {
     const promise = client.callTool('test', {});
     await Promise.resolve();
 
-    const messages = transport.getMessages();
+    const messages = clientTransport.getMessages();
     const request = messages.at(-1) as JSONRPCRequest;
 
     // Simulate response with neither result nor error
-    await transport.simulateIncomingMessage({
+    await clientTransport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
       id: request.id,
     } as unknown as JSONRPCResponse);
@@ -742,9 +717,9 @@ describe('McpClient', () => {
     };
 
     // Initialize the client with capabilities
-    const connectPromise = client.connect(transport);
+    const connectPromise = client.connect(clientTransport);
     await Promise.resolve();
-    await transport.simulateIncomingMessage({
+    await clientTransport.simulateIncomingMessage({
       jsonrpc: '2.0',
       id: 1,
       result: {
@@ -767,9 +742,9 @@ describe('McpClient', () => {
 
   it('should clean up progress handlers after tool call', async () => {
     // First initialize the client
-    const connectPromise = client.connect(transport);
+    const connectPromise = client.connect(clientTransport);
     await Promise.resolve();
-    await transport.simulateIncomingMessage({
+    await clientTransport.simulateIncomingMessage({
       jsonrpc: '2.0',
       id: 1,
       result: {
@@ -787,12 +762,12 @@ describe('McpClient', () => {
     const promise = client.callTool('test', {}, progressHandler);
     await Promise.resolve();
 
-    const messages = transport.getMessages();
+    const messages = clientTransport.getMessages();
     const request = messages.at(-1) as JSONRPCRequest;
     const progressToken = request.params?._meta?.progressToken;
 
     // Simulate successful response
-    await transport.simulateIncomingMessage({
+    await clientTransport.simulateIncomingMessage({
       jsonrpc: '2.0',
       id: request.id,
       result: { success: true },
@@ -801,7 +776,7 @@ describe('McpClient', () => {
     await promise;
 
     // Progress handler should be cleaned up
-    await transport.simulateIncomingMessage({
+    await clientTransport.simulateIncomingMessage({
       jsonrpc: '2.0',
       method: 'notifications/progress',
       params: {
@@ -821,11 +796,11 @@ describe('McpClient', () => {
     });
 
     // First initialize the client
-    await transport.connect();
-    const connectPromise = client.connect(transport);
+    await clientTransport.connect();
+    const connectPromise = client.connect(clientTransport);
 
     // Set up handlers
-    transport.onError(errorHandler);
+    clientTransport.onError(errorHandler);
     client.onMessage(messageHandler);
 
     // Wait for handlers to be registered
@@ -846,7 +821,7 @@ describe('McpClient', () => {
     };
 
     // Send the message and wait for error handling
-    await transport.simulateIncomingMessage(response);
+    await clientTransport.simulateIncomingMessage(response);
     await Promise.resolve();
 
     // The message handler should have been called
@@ -859,7 +834,7 @@ describe('McpClient', () => {
     await connectPromise;
 
     // Clean up
-    transport.offError(errorHandler);
+    clientTransport.offError(errorHandler);
     client.offMessage(messageHandler);
   });
 
@@ -870,7 +845,7 @@ describe('McpClient', () => {
     client.onMessage(handler2);
 
     // First initialize the client
-    const connectPromise = client.connect(transport);
+    const connectPromise = client.connect(clientTransport);
     await Promise.resolve();
 
     const response: JSONRPCResponse = {
@@ -886,7 +861,7 @@ describe('McpClient', () => {
       },
     };
 
-    await transport.simulateIncomingMessage(response);
+    await clientTransport.simulateIncomingMessage(response);
     await connectPromise;
     await Promise.resolve();
 
@@ -903,7 +878,7 @@ describe('McpClient', () => {
       params: { data: 'test' },
     };
 
-    await transport.simulateIncomingMessage(notification);
+    await clientTransport.simulateIncomingMessage(notification);
     await Promise.resolve();
 
     // Only handler2 should receive the notification
@@ -913,9 +888,9 @@ describe('McpClient', () => {
 
   it('should handle transport errors during send', async () => {
     // First initialize the client
-    const connectPromise = client.connect(transport);
+    const connectPromise = client.connect(clientTransport);
     await Promise.resolve();
-    await transport.simulateIncomingMessage({
+    await clientTransport.simulateIncomingMessage({
       jsonrpc: '2.0',
       id: 1,
       result: {
@@ -929,34 +904,34 @@ describe('McpClient', () => {
     } as JSONRPCResponse);
     await connectPromise;
 
-    // Mock transport.send to throw an error
+    // Mock clientTransport.send to throw an error
     const error = new Error('Send failed');
-    const originalSend = transport.send;
-    transport.send = vi.fn().mockRejectedValue(error);
+    const originalSend = clientTransport.send;
+    clientTransport.send = vi.fn().mockRejectedValue(error);
 
     await expect(client.callTool('test', {})).rejects.toThrow('Send failed');
 
     // Restore original send
-    transport.send = originalSend;
+    clientTransport.send = originalSend;
   });
 
   it('should handle transport errors during connect', async () => {
-    // Mock transport.connect to throw an error
+    // Mock clientTransport.connect to throw an error
     const error = new Error('Connect failed');
-    const originalConnect = transport.connect;
-    transport.connect = vi.fn().mockRejectedValue(error);
+    const originalConnect = clientTransport.connect;
+    clientTransport.connect = vi.fn().mockRejectedValue(error);
 
-    await expect(client.connect(transport)).rejects.toThrow('Connect failed');
+    await expect(client.connect(clientTransport)).rejects.toThrow('Connect failed');
 
     // Restore original connect
-    transport.connect = originalConnect;
+    clientTransport.connect = originalConnect;
   });
 
   it('should handle transport errors during disconnect', async () => {
     // First initialize the client
-    const connectPromise = client.connect(transport);
+    const connectPromise = client.connect(clientTransport);
     await Promise.resolve();
-    await transport.simulateIncomingMessage({
+    await clientTransport.simulateIncomingMessage({
       jsonrpc: '2.0',
       id: 1,
       result: {
@@ -970,15 +945,15 @@ describe('McpClient', () => {
     } as JSONRPCResponse);
     await connectPromise;
 
-    // Mock transport.disconnect to throw an error
+    // Mock clientTransport.disconnect to throw an error
     const error = new Error('Disconnect failed');
-    const originalDisconnect = transport.disconnect;
-    transport.disconnect = vi.fn().mockRejectedValue(error);
+    const originalDisconnect = clientTransport.disconnect;
+    clientTransport.disconnect = vi.fn().mockRejectedValue(error);
 
     await expect(client.disconnect()).rejects.toThrow('Disconnect failed');
 
     // Restore original disconnect
-    transport.disconnect = originalDisconnect;
+    clientTransport.disconnect = originalDisconnect;
   });
 
   it('should handle unhandled notification methods', async () => {
@@ -986,9 +961,9 @@ describe('McpClient', () => {
     client.onMessage(messageHandler);
 
     // First initialize the client
-    const connectPromise = client.connect(transport);
+    const connectPromise = client.connect(clientTransport);
     await Promise.resolve();
-    await transport.simulateIncomingMessage({
+    await clientTransport.simulateIncomingMessage({
       jsonrpc: '2.0',
       id: 1,
       result: {
@@ -1009,7 +984,7 @@ describe('McpClient', () => {
       params: { data: 'test' },
     } as JSONRPCNotification;
 
-    await transport.simulateIncomingMessage(notification);
+    await clientTransport.simulateIncomingMessage(notification);
 
     // The message should still be passed to handlers
     expect(messageHandler).toHaveBeenCalledWith(notification);
@@ -1020,10 +995,10 @@ describe('McpClient', () => {
     const progressToken = 'test-progress';
 
     // First initialize the client
-    await transport.connect();
-    const connectPromise = client.connect(transport);
+    await clientTransport.connect();
+    const connectPromise = client.connect(clientTransport);
     await Promise.resolve();
-    await transport.simulateIncomingMessage({
+    await clientTransport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
       id: 1,
       result: {

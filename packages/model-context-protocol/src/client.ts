@@ -7,34 +7,26 @@
 import { EventEmitter } from 'node:events';
 import { VError } from 'verror';
 import type {
-  JSONRPCError,
   JSONRPCMessage,
-  JSONRPCNotification,
   JSONRPCRequest,
   JSONRPCResponse,
-  Result,
-  SamplingMessage,
 } from './schema.js';
-import { BaseTransport } from './base.js';
+import type { McpTransport, MessageHandler } from './transport.js';
+import { InMemoryTransport } from './in-memory.js';
 
 /**
  * Client options for Model Context Protocol.
  */
 export interface ClientOptions {
   /**
-   * Transport to use for communication.
-   */
-  transport: BaseTransport;
-
-  /**
    * Client name for identification
    */
-  name?: string;
+  name: string;
 
   /**
    * Client version
    */
-  version?: string;
+  version: string;
 
   /**
    * Client capabilities
@@ -44,14 +36,14 @@ export interface ClientOptions {
   /**
    * Request timeout in milliseconds
    */
-  timeout?: number;
+  requestTimeout?: number;
 }
 
 /**
  * Client implementation of the Model Context Protocol.
  */
 export class McpClient {
-  private readonly transport: BaseTransport;
+  private readonly transport: McpTransport;
   private readonly capabilities: Record<string, unknown>;
   private readonly events: EventEmitter;
   private readonly name: string;
@@ -60,15 +52,15 @@ export class McpClient {
   private initialized = false;
   private serverCapabilities: Record<string, unknown> | null = null;
 
-  constructor(options: ClientOptions) {
-    this.transport = options.transport;
+  constructor(options: ClientOptions, transport?: McpTransport) {
+    this.transport = transport ?? new InMemoryTransport();
     this.capabilities = options.capabilities ?? {};
-    this.name = options.name ?? 'model-context-protocol';
-    this.version = options.version ?? '0.1.0';
-    this.timeout = options.timeout ?? 30000;
+    this.name = options.name;
+    this.version = options.version;
+    this.timeout = options.requestTimeout ?? 30000;
     this.events = new EventEmitter();
 
-    this.transport.on('message', this.handleMessage.bind(this));
+    this.transport.onMessage(this.handleMessage.bind(this));
   }
 
   /**
@@ -111,76 +103,78 @@ export class McpClient {
   }
 
   /**
-   * Sends a request to the server.
-   * @param method Method name
-   * @param params Method parameters
-   * @returns Promise that resolves with the response
+   * Send a request to the server
    */
-  async request<T>(
-    method: string,
-    params?: Record<string, unknown>
-  ): Promise<T> {
-    if (!this.initialized && method !== 'initialize') {
-      throw new VError('Client not initialized');
-    }
-
-    try {
-      const request: JSONRPCRequest = {
-        jsonrpc: '2.0',
-        id: Math.random().toString(36).slice(2),
-        method,
-        params,
-      };
-
-      return new Promise<T>((resolve, reject) => {
-        const handler = (message: JSONRPCMessage) => {
-          if ('id' in message && message.id === request.id) {
-            this.transport.off('message', handler);
-
-            if ('error' in message) {
-              reject(new VError(message.error.message));
-            } else if ('result' in message) {
-              resolve(message.result as T);
-            }
-          }
-        };
-
-        this.transport.on('message', handler);
-
-        // Send the request after setting up the handler
-        this.transport.send(request).catch(reject);
-
-        // Add timeout
-        setTimeout(() => {
-          this.transport.off('message', handler);
-          reject(new VError('Request timed out'));
-        }, this.timeout);
-      });
-    } catch (error) {
-      throw new VError(error as Error, `Failed to execute request: ${method}`);
-    }
-  }
-
-  /**
-   * Sends a notification to the server.
-   * @param method Method name
-   * @param params Method parameters
-   */
-  async notify(method: string, params?: Record<string, unknown>): Promise<void> {
+  public async request<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T> {
     if (!this.initialized) {
       throw new VError('Client not initialized');
     }
 
-    try {
-      const notification: JSONRPCNotification = {
-        jsonrpc: '2.0',
-        method,
-        params,
-      };
-      await this.transport.send(notification);
-    } catch (error) {
-      throw new VError(error as Error, `Failed to send notification: ${method}`);
+    const request: JSONRPCRequest = {
+      jsonrpc: '2.0',
+      id: Math.random().toString(36).slice(2),
+      method,
+      params,
+    };
+
+    return new Promise((resolve, reject) => {
+      try {
+        const handler: MessageHandler = async (msg: unknown): Promise<void> => {
+          if (!this.isJSONRPCMessage(msg)) {
+            return;
+          }
+          const message = msg as JSONRPCMessage;
+          
+          if ('id' in message && message.id === request.id) {
+            this.transport.offMessage(handler);
+
+            if ('error' in message) {
+              reject(new VError(message.error.message));
+              return;
+            }
+
+            if ('result' in message) {
+              resolve(message.result as T);
+              return;
+            }
+          }
+        };
+
+        this.transport.onMessage(handler);
+
+        // Send the request after setting up the handler
+        this.transport.send(request).catch((err) => {
+          this.transport.offMessage(handler);
+          reject(err);
+        });
+
+        // Add timeout
+        setTimeout(() => {
+          this.transport.offMessage(handler);
+          reject(new VError('Request timed out'));
+        }, this.timeout);
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
+
+  /**
+   * Send a notification to the server
+   */
+  public async notify(method: string, params?: Record<string, unknown>): Promise<void> {
+    if (!this.initialized) {
+      throw new VError('Client not initialized');
     }
+
+    const request: JSONRPCRequest = {
+      jsonrpc: '2.0',
+      id: Math.random().toString(36).slice(2),
+      method,
+      params,
+    };
+
+    await this.transport.send(request);
   }
 
   /**
@@ -292,10 +286,10 @@ export class McpClient {
    * @param name Prompt name
    * @param args Prompt arguments
    */
-  async executePrompt(
+  executePrompt(
     name: string,
     args?: Record<string, unknown>
-  ): Promise<{ messages: SamplingMessage[] }> {
+  ): Promise<{ messages: unknown[] }> {
     if (!this.hasCapability('prompts')) {
       throw new VError('Server does not support prompts');
     }
@@ -305,7 +299,7 @@ export class McpClient {
   /**
    * Lists available resources.
    */
-  async listResources(): Promise<string[]> {
+  listResources(): Promise<string[]> {
     if (!this.hasCapability('resources')) {
       throw new VError('Server does not support resources');
     }
@@ -355,7 +349,7 @@ export class McpClient {
    * Subscribes to message creation events.
    * @param handler Message handler
    */
-  onMessageCreated(handler: (message: SamplingMessage) => void): () => void {
+  onMessageCreated(handler: (message: unknown) => void): () => void {
     this.events.on('messageCreated', handler);
     return () => this.events.off('messageCreated', handler);
   }
@@ -367,14 +361,14 @@ export class McpClient {
    * @param progressHandler Progress handler
    */
   async createMessage(
-    messages: SamplingMessage[],
+    messages: unknown[],
     options: {
       systemPrompt?: string;
       temperature?: number;
       maxTokens?: number;
     } = {},
     progressHandler?: (progress: number, total: number) => void
-  ): Promise<SamplingMessage> {
+  ): Promise<unknown> {
     if (!this.hasCapability('sampling.createMessage')) {
       throw new VError('Server does not support message creation');
     }
@@ -385,7 +379,7 @@ export class McpClient {
     }
 
     try {
-      const result = await this.request<{ message: SamplingMessage }>(
+      const result = await this.request<{ message: unknown }>(
         'sampling/createMessage',
         {
           messages,
@@ -440,38 +434,27 @@ export class McpClient {
    * Handles an incoming message.
    * @param message Incoming message
    */
-  private async handleMessage(message: JSONRPCMessage): Promise<void> {
-    try {
-      // Emit the raw message first
-      this.events.emit('message', message);
-
-      // Handle notifications
-      if ('method' in message) {
-        const notification = message as JSONRPCNotification;
-        
-        if (notification.method === 'notifications/progress') {
-          const { progressToken, progress, total } = notification.params as {
-            progressToken: string;
-            progress: number;
-            total: number;
-          };
-          this.events.emit(`progress:${progressToken}`, progress, total);
-        } else if (notification.method === 'notifications/messageCreated') {
-          const { message: samplingMessage } = notification.params as {
-            message: SamplingMessage;
-          };
-          this.events.emit('messageCreated', samplingMessage);
-        } else if (notification.method === 'notifications/resourceChanged') {
-          const { name, content } = notification.params as {
-            name: string;
-            content: unknown;
-          };
-          this.events.emit(`resource:${name}`, content);
-        }
-      }
-    } catch (error) {
-      this.events.emit('error', new VError(error as Error, 'Failed to handle message'));
+  private async handleMessage(message: unknown): Promise<void> {
+    if (!this.isJSONRPCMessage(message)) {
+      return;
     }
+
+    // Handle the message
+    this.events.emit('message', message);
+
+    if ('method' in message) {
+      // Handle method calls
+      this.events.emit('method', message);
+    }
+  }
+
+  private isJSONRPCMessage(message: unknown): message is JSONRPCMessage {
+    if (typeof message !== 'object' || message === null) {
+      return false;
+    }
+
+    const msg = message as Record<string, unknown>;
+    return typeof msg.jsonrpc === 'string' && msg.jsonrpc === '2.0';
   }
 
   /**

@@ -1,7 +1,7 @@
-import { McpServer } from '../src/server';
 import { McpClient } from '../src/client';
 import { InMemoryTransport } from '../src/in-memory';
 import type { JSONRPCRequest, JSONRPCResponse } from '../src/schema';
+import { McpServer } from '../src/server';
 
 /**
  * Creates a test server with an in-memory transport.
@@ -55,25 +55,6 @@ export async function createConnectedPair() {
   await client.connect(clientTransport);
 
   return { server, client, serverTransport, clientTransport };
-}
-
-/**
- * Waits for a message that matches the predicate.
- * @param transport Transport to wait for message on
- * @param predicate Predicate to match message against
- * @returns Promise that resolves with the matched message
- */
-function waitForMessage<T extends JSONRPCRequest | JSONRPCResponse>(
-  transport: InMemoryTransport,
-  predicate: (message: T) => boolean
-): Promise<T> {
-  return new Promise((resolve) => {
-    transport.onMessage((message) => {
-      if (predicate(message as T)) {
-        resolve(message as T);
-      }
-    });
-  });
 }
 
 /**
