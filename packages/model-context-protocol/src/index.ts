@@ -53,8 +53,9 @@ export { McpServer } from './server.js';
 export { McpClient } from './client.js';
 
 // Export transport layer interfaces and implementations
-export { McpTransport, MessageHandler } from './transport.js';
-export { InMemoryTransport } from './in-memory.js';
+export { type McpTransport, type MessageHandler } from './transports/base.js';
+export { InMemoryTransport } from './transports/in-memory.js';
+export { JsonRpcTransport } from './transports/json-rpc.js';
 
 // Export authorization types and utilities
 export * from './auth.js';
