@@ -128,10 +128,10 @@ describe('SseTransport', () => {
       };
 
       transport.onMessage(handler);
-      expect(transport.messageProcessor._handlers.has(handler)).toBe(true);
+      expect(transport.messageProcessor.hasHandler(handler)).toBe(true);
 
       transport.offMessage(handler);
-      expect(transport.messageProcessor._handlers.has(handler)).toBe(false);
+      expect(transport.messageProcessor.hasHandler(handler)).toBe(false);
     });
 
     it('should handle multiple message handlers', async () => {
@@ -184,10 +184,10 @@ describe('SseTransport', () => {
       };
 
       transport.onError(handler);
-      expect(transport.errorManager._handlers.has(handler)).toBe(true);
+      expect(transport.errorManager.hasHandler(handler)).toBe(true);
 
       transport.offError(handler);
-      expect(transport.errorManager._handlers.has(handler)).toBe(false);
+      expect(transport.errorManager.hasHandler(handler)).toBe(false);
     });
 
     it('should handle multiple error handlers', () => {

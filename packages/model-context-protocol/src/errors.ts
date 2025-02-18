@@ -192,16 +192,6 @@ export class RequestFailedError extends McpError {
 }
 
 /**
- * Error thrown when attempting operations before initialization.
- * The client must successfully initialize before most operations.
- */
-export class ServerNotInitializedError extends McpError {
-  constructor() {
-    super('Server not initialized');
-  }
-}
-
-/**
  * Error thrown when there are transport-level issues.
  * Indicates problems with the underlying communication channel.
  */

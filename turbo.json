@@ -7,11 +7,6 @@
       "outputs": ["dist/**"]
     },
     "lint": {
-      "inputs": ["**/*.{ts,tsx,js,jsx}", ".biome.json"],
-      "outputs": ["node_modules/.cache/biome/**"]
-    },
-    "format": {
-      "inputs": ["**/*.{ts,tsx,js,jsx}", ".biome.json"],
       "outputs": []
     },
     "dev": {
@@ -19,26 +14,15 @@
       "persistent": true
     },
     "test": {
-      "dependsOn": ["^build"],
-      "inputs": ["src/**/*.{ts,tsx}", "test/**/*.{ts,tsx}"],
-      "outputs": ["coverage/**"],
-      "env": ["CI"]
-    },
-    "test:coverage": {
-      "dependsOn": ["test"],
-      "outputs": ["coverage/**"]
-    },
-    "test:watch": {
       "dependsOn": ["build"],
-      "cache": false,
-      "persistent": true
+      "inputs": ["src/**/*.ts", "src/**/*.tsx"],
+      "outputs": []
     },
     "typecheck": {
-      "inputs": ["src/**/*.{ts,tsx}", "test/**/*.{ts,tsx}", "tsconfig.json"],
-      "outputs": ["node_modules/.cache/tsc/**", "*.tsbuildinfo"]
+      "outputs": []
     },
-    "clean": {
-      "cache": false
+    "format": {
+      "outputs": []
     }
   }
 }

@@ -1,64 +1,25 @@
 {
-  "name": "model-context-protocol",
-  "version": "0.1.0-rc.1",
-  "private": false,
-  "description": "Protocol for communication between LLMs and their context, enabling resource access, tool execution, and real-time updates",
-  "author": "Drengskapur",
-  "license": "MIT",
-  "homepage": "https://github.com/drengskapur/model-context-protocol#readme",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/drengskapur/model-context-protocol.git"
-  },
-  "bugs": {
-    "url": "https://github.com/drengskapur/model-context-protocol/issues"
-  },
-  "keywords": [
-    "llm",
-    "ai",
-    "protocol",
-    "json-rpc",
-    "typescript",
-    "context",
-    "agent",
-    "tools",
-    "resources",
-    "prompts",
-    "sse",
-    "stdio"
-  ],
-  "type": "module",
-  "packageManager": "pnpm@10.4.1",
-  "workspaces": [
-    "packages/*"
-  ],
+  "name": "@model-context-protocol/root",
+  "private": true,
   "scripts": {
-    "build": "turbo build",
-    "clean": "turbo clean && rm -rf node_modules",
-    "dev": "turbo dev",
-    "format": "turbo format",
-    "lint": "turbo lint",
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "format": "turbo run format",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
     "prepare": "husky",
-    "test": "turbo test",
-    "test:watch": "turbo test:watch",
-    "typecheck": "turbo typecheck"
+    "preversion": "pnpm run lint && pnpm run test"
   },
   "devDependencies": {
-    "@biomejs/biome": "^1.9.4",
     "@commitlint/cli": "^19.7.1",
     "@commitlint/config-conventional": "^19.7.1",
-    "@types/node": "^22.13.4",
-    "@vitest/coverage-v8": "^3.0.5",
     "cz-conventional-changelog": "^3.3.0",
     "husky": "^9.1.7",
     "lint-staged": "^15.4.3",
-    "tsup": "^8.3.6",
-    "turbo": "^2.4.2",
-    "typescript": "^5.7.3",
-    "ultracite": "^4.1.19",
-    "vite-tsconfig-paths": "^5.1.4",
-    "vitest": "^3.0.5"
+    "turbo": "latest"
   },
+  "packageManager": "pnpm@8.0.0",
   "config": {
     "commitizen": {
       "path": "cz-conventional-changelog"
@@ -69,12 +30,6 @@
       "pnpm typecheck",
       "biome check --write --no-errors-on-unmatched",
       "vitest related --run"
-    ]
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@biomejs/biome",
-      "esbuild"
     ]
   }
 }

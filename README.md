@@ -2,7 +2,7 @@
 
 A type-safe JSON-RPC based protocol for AI model interactions with built-in context management.
 
-[![npm version](https://badge.fury.io/js/%40model-context-protocol%2Fcore.svg)](https://badge.fury.io/js/%40model-context-protocol%2Fcore)
+[![npm version](https://badge.fury.io/js/model-context-protocol.svg)](https://badge.fury.io/js/model-context-protocol)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Features
@@ -16,20 +16,13 @@ A type-safe JSON-RPC based protocol for AI model interactions with built-in cont
 ## Installation
 
 ```bash
-# Using npm
-npm install @model-context-protocol/core
-
-# Using yarn
-yarn add @model-context-protocol/core
-
-# Using pnpm
-pnpm add @model-context-protocol/core
+npm install model-context-protocol
 ```
 
 ## Quick Start
 
 ```typescript
-import { McpServer, McpClient } from '@model-context-protocol/core';
+import { McpServer, McpClient } from 'model-context-protocol';
 
 // Server-side
 const server = new McpServer({
@@ -103,3 +96,43 @@ const auth = new Authorization({
 const token = auth.generateToken('user-123', ['user']);
 await auth.verifyPermission(token, ['admin']); // false
 ```
+
+## Development
+
+```bash
+# Install dependencies
+npm install
+
+# Build
+npm run build
+
+# Test
+npm test
+
+# Lint and format code
+npm run lint
+npm run format
+
+# Type check
+npm run typecheck
+
+# Watch mode for development
+npm run dev
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes
+4. Commit your changes (uses commitlint to enforce conventional commits)
+5. Push to the branch (`git push origin feature/amazing-feature`)
+6. Open a Pull Request
+
+## License
+
+MIT
+
+## About
+
+This server implementation is part of the Model Context Protocol ecosystem, enabling standardized communication between LLM applications and context providers.

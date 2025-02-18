@@ -5,7 +5,34 @@
  */
 
 // Export core protocol schema and types
-export * from './schema.js';
+export type {
+  JSONRPCMessage,
+  JSONRPCRequest,
+  JSONRPCNotification,
+  JSONRPCResponse,
+  JSONRPCError,
+  RequestId,
+  Result,
+  LoggingLevel,
+  ModelPreferences,
+  ProgressToken,
+  Prompt,
+  PromptMessage,
+  PromptReference,
+  Resource,
+  ResourceReference,
+  ResourceTemplate,
+  SamplingMessage,
+  ServerCapabilities,
+  Tool,
+  TextContent,
+  ImageContent,
+} from './schema.js';
+
+export {
+  JSONRPC_VERSION,
+  LATEST_PROTOCOL_VERSION,
+} from './schema.js';
 
 // Export validation schemas for JSON-RPC messages
 export {

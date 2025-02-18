@@ -1,3 +1,9 @@
+/**
+ * @file client.ts
+ * @description Implementation of the Model Context Protocol client.
+ * Provides a high-level interface for interacting with MCP servers.
+ */
+
 import { RequestFailedError, ServerNotInitializedError } from './errors.js';
 import type {
   ClientCapabilities,
@@ -19,41 +25,56 @@ import { JSONRPC_VERSION, LATEST_PROTOCOL_VERSION } from './schema.js';
 import type { McpTransport, MessageHandler } from './transport.js';
 
 /**
- * Client options for initializing a Model Context Protocol client.
+ * Configuration options for initializing an MCP client.
+ * These options control the client's behavior and capabilities.
  */
 export interface McpClientOptions {
   /**
-   * Name of the client for identification purposes.
+   * Name of the client implementation.
+   * Used for identification in logs and debugging.
    */
   name: string;
+
   /**
-   * Version of the client.
+   * Version of the client implementation.
+   * Should follow semantic versioning.
    */
   version: string;
+
   /**
-   * Request timeout in milliseconds.
+   * Timeout in milliseconds for requests.
+   * After this duration, pending requests will fail.
+   * @default 30000 (30 seconds)
    */
   requestTimeout?: number;
+
   /**
-   * Client capabilities.
+   * Capabilities supported by this client implementation.
+   * Used during initialization to negotiate features with the server.
    */
   capabilities?: ClientCapabilities;
 }
 
 /**
- * Pending request data structure.
+ * Internal interface for tracking pending requests.
+ * Used to correlate responses with their originating requests.
  */
 interface PendingRequest {
   /**
-   * Resolve function for the pending request promise.
+   * Promise resolution function for the pending request.
+   * Called when a matching response is received.
    */
   resolve: (value: unknown) => void;
+
   /**
-   * Reject function for the pending request promise.
+   * Promise rejection function for the pending request.
+   * Called when an error occurs or the request times out.
    */
-  reject: (reason: unknown) => void;
+  reject: (error: Error) => void;
+
   /**
-   * Timeout for the pending request.
+   * Timeout handle for the request.
+   * Used to clean up and reject timed-out requests.
    */
   timeout: NodeJS.Timeout;
 }
@@ -80,12 +101,13 @@ interface ExperimentalCapabilities {
      */
     listChanged: boolean;
   };
+  [key: string]: unknown;
 }
 
 /**
  * Server capabilities with experimental features.
  */
-interface ServerCapabilitiesWithExperimental extends ServerCapabilities {
+interface ServerCapabilitiesWithExperimental extends Omit<ServerCapabilities, 'experimental'> {
   /**
    * Experimental server capabilities.
    */
@@ -286,8 +308,10 @@ export class McpClient {
   private handleError(error: Error): void {
     // Pass error to transport error handlers
     if (this.transport) {
-      const errorHandler = (err: Error) => {
-        this.transport?.onError(err);
+      const errorHandler = (_error: Error) => {
+        if (this.transport) {
+          this.transport.onError((err: Error) => undefined);
+        }
       };
       this.transport.onError(errorHandler);
       errorHandler(error);
@@ -301,7 +325,7 @@ export class McpClient {
    */
   private handleMessage = async (message: JSONRPCMessage): Promise<void> => {
     try {
-      if ('id' in message) {
+      if ('id' in message && ('result' in message || 'error' in message)) {
         this.handleResponse(message);
       } else if ('method' in message) {
         this.handleNotification(message);
@@ -571,7 +595,7 @@ export class McpClient {
       throw new RequestFailedError('Server does not support sampling');
     }
 
-    const messageHandler = (message: JSONRPCMessage) => {
+    const messageHandler = (message: JSONRPCMessage): Promise<void> => {
       if (
         'method' in message &&
         message.method === 'notifications/messageCreated' &&
@@ -579,6 +603,7 @@ export class McpClient {
       ) {
         handler(message.params.message as SamplingMessage);
       }
+      return Promise.resolve();
     };
 
     this.onMessage(messageHandler);
@@ -591,12 +616,12 @@ export class McpClient {
    * @param params Method parameters
    * @returns Prepared JSON-RPC request
    */
-  public prepareRequest(method: string, params?: unknown): JSONRPCRequest {
+  private prepareRequest(method: string, params?: unknown): JSONRPCRequest {
     const request: JSONRPCRequest = {
       jsonrpc: JSONRPC_VERSION,
       id: this.nextMessageId++,
       method,
-      params: params ?? null,
+      params: params === null ? undefined : (params as Record<string, unknown> | undefined),
     };
 
     if (this._authToken) {
@@ -758,7 +783,7 @@ export class McpClient {
     const request = this.prepareRequest('resources/subscribe', { name });
     await this.send(request);
 
-    const messageHandler = (message: JSONRPCMessage) => {
+    const messageHandler = (message: JSONRPCMessage): Promise<void> => {
       if (
         'method' in message &&
         message.method === 'notifications/resourceChanged' &&
@@ -766,6 +791,7 @@ export class McpClient {
       ) {
         onChange(message.params.content);
       }
+      return Promise.resolve();
     };
 
     this.onMessage(messageHandler);
@@ -813,7 +839,7 @@ export class McpClient {
       throw new RequestFailedError('Server does not support roots');
     }
 
-    const messageHandler = (message: JSONRPCMessage) => {
+    const messageHandler = (message: JSONRPCMessage): Promise<void> => {
       if (
         'method' in message &&
         message.method === 'notifications/rootsChanged' &&
@@ -821,6 +847,7 @@ export class McpClient {
       ) {
         handler(message.params.roots as string[]);
       }
+      return Promise.resolve();
     };
 
     this.onMessage(messageHandler);

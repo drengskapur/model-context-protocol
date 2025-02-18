@@ -10,9 +10,9 @@ import {
   type Prompt,
   type PromptMessage,
   type PromptReference,
-  type Resource,
+  type Resource as SchemaResource,
   type ResourceReference,
-  type ResourceTemplate,
+  type ResourceTemplate as SchemaResourceTemplate,
   type SamplingMessage,
   type ServerCapabilities,
   type Tool,
@@ -22,8 +22,15 @@ import {
   JSONRPC_VERSION,
   LATEST_PROTOCOL_VERSION,
 } from './schema.js';
-import { type BaseSchema, type ValiError } from 'valibot';
-import { object, parse, string } from 'valibot';
+import {
+  object,
+  string,
+  union,
+  literal,
+  parse,
+  type BaseSchema,
+  ValiError,
+} from 'valibot';
 import {
   InvalidParamsError,
   InvalidRequestError,
@@ -213,33 +220,15 @@ export class PromptManager {
 /**
  * Resource representation.
  */
-export interface Resource {
-  /**
-   * Resource URI.
-   */
-  uri: string;
-  /**
-   * Resource MIME type.
-   */
-  mimeType: string;
-  /**
-   * Resource content.
-   */
+export interface Resource extends SchemaResource {
   content: unknown;
 }
 
 /**
  * Resource template representation.
  */
-export interface ResourceTemplate {
-  /**
-   * Resource template URI.
-   */
-  uriTemplate: string;
-  /**
-   * Resource template MIME type.
-   */
-  mimeType: string;
+export interface ResourceTemplate extends SchemaResourceTemplate {
+  content?: unknown;
 }
 
 /**
@@ -543,16 +532,11 @@ export class CompletionManager {
   ): Promise<string[]> {
     if (ref.type === 'ref/prompt') {
       const handler = this.promptCompletions.get(ref.name);
-      if (handler) {
-        return handler(value);
-      }
-    } else if (ref.type === 'ref/resource') {
+      return handler ? handler(value) : Promise.resolve([]);
+    } else {
       const handler = this.resourceCompletions.get(ref.uriTemplate);
-      if (handler) {
-        return handler(value);
-      }
+      return handler ? handler(value) : Promise.resolve([]);
     }
-    return Promise.resolve([]);
   }
 }
 
@@ -703,68 +687,82 @@ export class Server {
   private async handleMethodCall(
     message: JSONRPCRequest | JSONRPCNotification
   ): Promise<JSONRPCResponse | JSONRPCError | undefined> {
-    if (message.method === 'initialize') {
-      if (!('id' in message)) {
+    try {
+      if (!this.isValidJsonRpcMessage(message)) {
+        throw new InvalidRequestError();
+      }
+
+      if (message.method === 'initialize') {
+        if (!('id' in message)) {
+          return Promise.resolve(
+            this.createErrorResponse(
+              null,
+              new InvalidRequestError('Initialize must be a request')
+            )
+          );
+        }
+        return Promise.resolve(this.handleInitialize(message));
+      }
+
+      if (!this.initialized) {
         return Promise.resolve(
           this.createErrorResponse(
-            null,
-            new InvalidRequestError('Initialize must be a request')
+            'id' in message ? message.id : null,
+            new ServerNotInitializedError()
           )
         );
       }
-      return Promise.resolve(this.handleInitialize(message));
-    }
 
-    if (!this.initialized) {
-      return Promise.resolve(
-        this.createErrorResponse(
+      if (!('id' in message)) {
+        // Handle notification
+        return Promise.resolve(undefined);
+      }
+
+      const request = message as JSONRPCRequest;
+      switch (request.method) {
+        case 'ping':
+          return Promise.resolve(this.handlePing(request));
+        case 'initialize':
+          return this.handleInitialize(request);
+        case 'prompts/list':
+          return Promise.resolve(this.handleListPrompts(request));
+        case 'prompts/get':
+          return this.handleGetPrompt(request);
+        case 'prompts/execute':
+          return this.handleExecutePrompt(request);
+        case 'logging/setLevel':
+          return this.handleSetLoggingLevel(request);
+        case 'tools/list':
+          return Promise.resolve(this.handleListTools(request));
+        case 'resources/list':
+          return Promise.resolve(this.handleListResources(request));
+        case 'resources/templates/list':
+          return Promise.resolve(this.handleListResourceTemplates(request));
+        case 'resources/read':
+          return this.handleReadResource(request);
+        case 'resources/subscribe':
+          return this.handleSubscribeResource(request);
+        case 'resources/unsubscribe':
+          return this.handleUnsubscribeResource(request);
+        case 'roots/list':
+          return Promise.resolve(this.handleListRoots(request));
+        case 'roots/get':
+          return this.handleGetRoot(request);
+        case 'sampling/createMessage':
+          return this.handleCreateMessage(request);
+        case 'completion/complete':
+          return this.handleComplete(request);
+        default:
+          return this.handleToolCall(request);
+      }
+    } catch (error) {
+      if (error instanceof ValiError) {
+        return this.createErrorResponse(
           'id' in message ? message.id : null,
-          new ServerNotInitializedError()
-        )
-      );
-    }
-
-    if (!('id' in message)) {
-      // Handle notification
-      return Promise.resolve(undefined);
-    }
-
-    const request = message as JSONRPCRequest;
-    switch (request.method) {
-      case 'ping':
-        return Promise.resolve(this.handlePing(request));
-      case 'initialize':
-        return this.handleInitialize(request);
-      case 'prompts/list':
-        return Promise.resolve(this.handleListPrompts(request));
-      case 'prompts/get':
-        return this.handleGetPrompt(request);
-      case 'prompts/execute':
-        return this.handleExecutePrompt(request);
-      case 'logging/setLevel':
-        return this.handleSetLoggingLevel(request);
-      case 'tools/list':
-        return Promise.resolve(this.handleListTools(request));
-      case 'resources/list':
-        return Promise.resolve(this.handleListResources(request));
-      case 'resources/templates/list':
-        return Promise.resolve(this.handleListResourceTemplates(request));
-      case 'resources/read':
-        return this.handleReadResource(request);
-      case 'resources/subscribe':
-        return this.handleSubscribeResource(request);
-      case 'resources/unsubscribe':
-        return this.handleUnsubscribeResource(request);
-      case 'roots/list':
-        return Promise.resolve(this.handleListRoots(request));
-      case 'roots/get':
-        return this.handleGetRoot(request);
-      case 'sampling/createMessage':
-        return this.handleCreateMessage(request);
-      case 'completion/complete':
-        return this.handleComplete(request);
-      default:
-        return this.handleToolCall(request);
+          new InvalidParamsError(error.message)
+        );
+      }
+      throw error;
     }
   }
 
@@ -823,9 +821,9 @@ export class Server {
    * @param request JSON-RPC request
    * @returns Promise that resolves with a JSON-RPC response
    */
-  public async handleInitialize(
+  public handleInitialize(
     request: JSONRPCRequest
-  ): Promise<JSONRPCResponse | JSONRPCError> {
+  ): JSONRPCResponse | JSONRPCError {
     if (this.initialized) {
       return this.createErrorResponse(
         request.id,
@@ -909,7 +907,7 @@ export class Server {
    * @param logger Logger name
    * @returns Promise that resolves when the message is sent
    */
-  public async sendLogMessage(
+  public sendLogMessage(
     level: LoggingLevel,
     data: unknown,
     logger?: string
@@ -1166,9 +1164,9 @@ export class Server {
    * @param request JSON-RPC request
    * @returns Promise that resolves with a JSON-RPC response
    */
-  private async handleReadResource(
+  private handleReadResource(
     request: JSONRPCRequest
-  ): Promise<JSONRPCResponse | JSONRPCError> {
+  ): JSONRPCResponse | JSONRPCError {
     const { uri } = request.params as { uri: string };
     const resource = this.resourceManager.getResource(uri);
 
@@ -1389,41 +1387,43 @@ export class Server {
   private async handleComplete(
     request: JSONRPCRequest
   ): Promise<JSONRPCResponse | JSONRPCError> {
-    try {
-      const { ref, argument } = request.params as {
-        ref: PromptReference | ResourceReference;
-        argument: {
-          name: string;
-          value: string;
-        };
-      };
+    const { ref, argument } = parse(
+      object({
+        ref: union([
+          object({
+            type: literal('ref/prompt'),
+            name: string(),
+          }),
+          object({
+            type: literal('ref/resource'),
+            uriTemplate: string(),
+          }),
+        ]),
+        argument: object({
+          name: string(),
+          value: string(),
+        }),
+      }),
+      request.params
+    );
 
-      await validateReference(ref);
-      const completions = await this.completionManager.getCompletions(
-        ref,
-        argument.value
-      );
+    await validateReference(ref);
+    const completions = await this.completionManager.getCompletions(
+      ref,
+      argument.value
+    );
 
-      return {
-        jsonrpc: JSONRPC_VERSION,
-        id: request.id,
-        result: {
-          completion: {
-            values: completions.slice(0, 100),
-            total: completions.length,
-            hasMore: completions.length > 100,
-          },
+    return {
+      jsonrpc: JSONRPC_VERSION,
+      id: request.id,
+      result: {
+        completion: {
+          values: completions.slice(0, 100),
+          total: completions.length,
+          hasMore: completions.length > 100,
         },
-      };
-    } catch (error) {
-      if (error instanceof ValidationError) {
-        return this.createErrorResponse(
-          request.id,
-          new InvalidParamsError(error.message)
-        );
-      }
-      throw error;
-    }
+      },
+    };
   }
 
   /**

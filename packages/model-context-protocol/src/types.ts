@@ -1,3 +1,94 @@
+/**
+ * @file types.ts
+ * @description Common type definitions used throughout the Model Context Protocol.
+ * Provides shared types and type utilities.
+ */
+
+/**
+ * Represents a unique identifier.
+ * Can be either a string or a number.
+ */
+export type Id = string | number;
+
+/**
+ * Represents a version string.
+ * Should follow semantic versioning format.
+ */
+export type Version = string;
+
+/**
+ * Represents a URI string.
+ * Must be a valid URI format.
+ */
+export type Uri = string;
+
+/**
+ * Type for handling asynchronous operations that may fail.
+ * Provides type safety for error handling.
+ */
+export type Result<T, E = Error> = 
+  | { success: true; value: T }
+  | { success: false; error: E };
+
+/**
+ * Type guard for checking if a Result is successful.
+ * @param result Result to check
+ * @returns Type guard assertion
+ */
+export function isSuccess<T, E>(
+  result: Result<T, E>
+): result is { success: true; value: T } {
+  return result.success;
+}
+
+/**
+ * Type guard for checking if a Result is a failure.
+ * @param result Result to check
+ * @returns Type guard assertion
+ */
+export function isFailure<T, E>(
+  result: Result<T, E>
+): result is { success: false; error: E } {
+  return !result.success;
+}
+
+/**
+ * Utility type to make all properties of T optional.
+ */
+export type DeepPartial<T> = {
+  [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P];
+};
+
+/**
+ * Utility type to make all properties of T required.
+ */
+export type DeepRequired<T> = {
+  [P in keyof T]-?: T[P] extends object ? DeepRequired<T[P]> : T[P];
+};
+
+/**
+ * Utility type to make all properties of T readonly.
+ */
+export type DeepReadonly<T> = {
+  readonly [P in keyof T]: T[P] extends object ? DeepReadonly<T[P]> : T[P];
+};
+
+/**
+ * Type for a function that can be used as a predicate.
+ */
+export type Predicate<T> = (value: T) => boolean;
+
+/**
+ * Type for a function that transforms one type to another.
+ */
+export type Transformer<T, U> = (value: T) => U;
+
+/**
+ * Type for a function that validates a value.
+ * Returns a Result indicating success or failure.
+ */
+export type Validator<T> = (value: unknown) => Result<T, Error>;
+
 import type { Readable, Writable } from 'node:stream';
 import {
   intersect,
@@ -255,3 +346,60 @@ export const INVALID_PARAMS = -32602;
 export const INTERNAL_ERROR = -32603;
 export const SERVER_ERROR_START = -32099;
 export const SERVER_ERROR_END = -32000;
+
+/**
+ * Reference to a prompt or resource.
+ */
+export type Reference =
+  | { type: 'ref/prompt'; name: string }
+  | { type: 'ref/resource'; uriTemplate: string };
+
+/**
+ * Represents a message in a conversation.
+ */
+export interface Message {
+  /**
+   * Role of the message sender.
+   */
+  role: string;
+
+  /**
+   * Content of the message.
+   */
+  content: string;
+}
+
+/**
+ * Options for message generation.
+ */
+export interface MessageOptions {
+  /**
+   * Maximum number of tokens to generate.
+   */
+  maxTokens?: number;
+
+  /**
+   * Temperature for controlling randomness.
+   */
+  temperature?: number;
+
+  /**
+   * Stop sequences that will halt generation.
+   */
+  stopSequences?: string[];
+}
+
+/**
+ * Result of a message generation request.
+ */
+export interface MessageResult {
+  /**
+   * Generated message content.
+   */
+  content: string;
+
+  /**
+   * Reason why generation stopped.
+   */
+  stopReason?: string;
+}

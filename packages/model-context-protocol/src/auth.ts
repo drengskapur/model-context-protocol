@@ -37,28 +37,19 @@ export interface AuthProvider {
 }
 
 /**
- * Options for configuring authentication behavior.
+ * Authentication options for Model Context Protocol.
  */
 export interface AuthOptions {
   /**
-   * Provider for handling token operations.
+   * Secret key for signing tokens.
    */
-  provider: AuthProvider;
+  secret?: string;
 
   /**
-   * Optional token expiration time in seconds.
-   * @default 3600 (1 hour)
+   * Token expiration time in seconds.
+   * @default 3600
    */
-  expirationSeconds?: number;
-
-  /**
-   * Whether to automatically refresh tokens.
-   * @default false
-   */
-  autoRefresh?: boolean;
-
-  /** Token secret for signing */
-  secret: string;
+  tokenExpiration?: number;
 }
 
 /**
@@ -76,38 +67,34 @@ export interface AuthToken {
 }
 
 /**
- * Authentication service for the Model Context Protocol.
- * Provides token-based authentication with role-based access control.
+ * Authentication class for Model Context Protocol.
+ * Handles token generation and validation.
  */
 export class Authorization implements AuthProvider {
-  /** Token expiration time in seconds */
-  private readonly tokenExpiration: number;
-  /** Token secret for signing */
-  private readonly secret: string;
+  private readonly options: Required<AuthOptions>;
 
-  /**
-   * Creates a new Authorization instance.
-   * @param options Authentication options
-   */
-  constructor(options: AuthOptions) {
-    this.tokenExpiration = options.expirationSeconds ?? 3600; // 1 hour default
-    this.secret = options.secret;
+  constructor(options: AuthOptions = {}) {
+    this.options = {
+      secret: options.secret ?? 'default-secret',
+      tokenExpiration: options.tokenExpiration ?? 3600,
+    };
   }
 
   /**
    * Generates a new authentication token.
-   * @param subject Subject (user ID) for the token
-   * @param roles Roles to assign to the token
-   * @returns Base64-encoded token string
+   * @param subject Subject identifier
+   * @param roles User roles
+   * @returns Promise that resolves with the token
    */
-  async generateToken(): Promise<string> {
-    const subject = 'default-subject'; // default subject
-    const roles = ['default-role']; // default roles
+  async generateToken(
+    subject: string,
+    roles: string[] = []
+  ): Promise<string> {
     const now = Math.floor(Date.now() / 1000);
     const token: AuthToken = {
       sub: subject,
       iat: now,
-      exp: now + this.tokenExpiration,
+      exp: now + this.options.tokenExpiration,
       roles,
     };
 

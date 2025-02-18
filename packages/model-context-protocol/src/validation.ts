@@ -6,6 +6,7 @@
 
 import { z } from 'zod';
 import { McpError } from './errors.js';
+import { ValiError } from 'valibot';
 
 /**
  * Options for configuring validation behavior.
@@ -365,18 +366,39 @@ export async function validateTool(tool: unknown): Promise<void> {
  * @throws {ValidationError} If the reference is invalid
  */
 export async function validateReference(
-  ref: { type: 'ref/prompt'; name: string } | { type: 'ref/resource'; uriTemplate: string }
+  ref: { type: string; name?: string; uriTemplate?: string }
 ): Promise<void> {
   if (ref.type === 'ref/prompt') {
     if (!ref.name) {
-      throw new ValidationError('Prompt reference must have a name', new Error('Missing name'));
+      throw new ValidationError(
+        'Prompt reference must have a name',
+        new ValiError([{
+          validation: 'required',
+          message: 'Missing name',
+          path: ['name'],
+        }])
+      );
     }
   } else if (ref.type === 'ref/resource') {
     if (!ref.uriTemplate) {
-      throw new ValidationError('Resource reference must have a uriTemplate', new Error('Missing uriTemplate'));
+      throw new ValidationError(
+        'Resource reference must have a uriTemplate',
+        new ValiError([{
+          validation: 'required',
+          message: 'Missing uriTemplate',
+          path: ['uriTemplate'],
+        }])
+      );
     }
   } else {
-    throw new ValidationError('Invalid reference type', new Error('Unknown reference type'));
+    throw new ValidationError(
+      'Invalid reference type',
+      new ValiError([{
+        validation: 'enum',
+        message: 'Unknown reference type',
+        path: ['type'],
+      }])
+    );
   }
 }
 
@@ -397,8 +419,7 @@ export async function validateLoggingLevel(level: unknown): Promise<void> {
 }
 
 /**
- * Error thrown when validation fails.
- * Contains the Zod validation error details.
+ * Custom validation error class.
  */
 export class ValidationError extends McpError {
   readonly errors: z.ZodError;
@@ -408,10 +429,10 @@ export class ValidationError extends McpError {
    * @param message Error message
    * @param errors Zod validation error details
    */
-  constructor(message: string, errors: z.ZodError) {
+  constructor(message: string, public cause?: ValiError) {
     super(-32402, message); // Use custom error code for validation errors
     this.name = 'ValidationError';
-    this.errors = errors;
+    Error.captureStackTrace(this, this.constructor);
   }
 
   /**
@@ -422,7 +443,7 @@ export class ValidationError extends McpError {
     return {
       ...super.toJSON(),
       data: {
-        errors: this.errors.errors,
+        errors: this.cause?.errors,
       },
     };
   }
