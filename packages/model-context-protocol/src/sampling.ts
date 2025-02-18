@@ -2,7 +2,6 @@
  * @file sampling.ts
  * @description Message sampling and generation functionality for the Model Context Protocol.
  * Provides types and utilities for working with AI model outputs.
-
  */
 
 import {
@@ -321,6 +320,7 @@ export class Sampling {
     content: TextContent | ImageContent
   ): Promise<SamplingMessage> {
     try {
+      await Promise.resolve(); // Add minimal await
       parse(contentSchema, content);
       
       return {

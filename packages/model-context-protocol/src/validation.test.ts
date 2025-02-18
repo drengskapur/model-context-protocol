@@ -2,9 +2,6 @@
  * @file validation.test.ts
  * @description Test suite for the Model Context Protocol validation utilities.
  * Contains unit tests for schema validation and error handling.
- * 
- * @copyright 2025 Codeium
- * @license MIT
  */
 
 import { describe, expect, it } from 'vitest';

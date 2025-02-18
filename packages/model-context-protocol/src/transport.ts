@@ -2,7 +2,6 @@
  * @file transport.ts
  * @description Transport layer abstractions for the Model Context Protocol.
  * Defines interfaces and base classes for different transport mechanisms.
-
  */
 
 import { EventEmitter } from 'eventemitter3';

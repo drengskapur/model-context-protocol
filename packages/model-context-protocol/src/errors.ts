@@ -2,10 +2,7 @@
  * @file errors.ts
  * @description Error handling utilities for the Model Context Protocol.
  * Defines custom error types and error handling mechanisms.
-
  */
-
-import { VError } from 'verror';
 
 /**
  * Base error class for MCP errors.

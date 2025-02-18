@@ -2,7 +2,6 @@
  * @file server.ts
  * @description Server implementation for the Model Context Protocol.
  * Provides the core server functionality for handling model requests and responses.
-
  */
 
 import { EventEmitter } from 'eventemitter3';
@@ -69,23 +68,23 @@ export class McpServer {
   private _initialized = false;
 
   constructor(
-    private readonly info: Implementation,
+    private readonly implementation: Implementation,
     private readonly serverCapabilities: ServerCapabilities = {},
     private readonly auth?: Auth
   ) {
     // Register built-in methods
-    this.registerMethod('initialize', async (params: unknown) => this.handleInitialize(params));
+    this.registerMethod('initialize', async (params: unknown) => await this.handleInitialize(params));
     this.registerMethod('ping', async () => ({}));
     
     if (serverCapabilities.logging) {
-      this.registerMethod('logging/setLevel', async (params: unknown) => this.handleSetLoggingLevel(params));
+      this.registerMethod('logging/setLevel', async (params: unknown) => await this.handleSetLoggingLevel(params));
     }
     
     if (serverCapabilities.resources) {
-      this.registerMethod('resources/list', async () => this.handleListResources());
-      this.registerMethod('resources/read', async (params: unknown) => this.handleReadResource(params));
-      this.registerMethod('resources/subscribe', async (params: unknown) => this.handleSubscribeResource(params));
-      this.registerMethod('resources/unsubscribe', async (params: unknown) => this.handleUnsubscribeResource(params));
+      this.registerMethod('resources/list', async () => await this.handleListResources());
+      this.registerMethod('resources/read', async (params: unknown) => await this.handleReadResource(params));
+      this.registerMethod('resources/subscribe', async (params: unknown) => await this.handleSubscribeResource(params));
+      this.registerMethod('resources/unsubscribe', async (params: unknown) => await this.handleUnsubscribeResource(params));
     }
   }
 
@@ -93,14 +92,14 @@ export class McpServer {
    * Get server name
    */
   get name(): string {
-    return this.info.name;
+    return this.implementation.name;
   }
 
   /**
    * Get server version
    */
   get version(): string {
-    return this.info.version;
+    return this.implementation.version;
   }
 
   /**
@@ -149,6 +148,7 @@ export class McpServer {
    * Handle incoming messages
    */
   private async handleMessage(message: unknown): Promise<void> {
+    await Promise.resolve();
     try {
       if (typeof message !== 'object' || message === null || !('jsonrpc' in message)) {
         throw new InvalidRequestError('Invalid message format');
@@ -219,7 +219,7 @@ export class McpServer {
 
     return {
       protocolVersion: LATEST_PROTOCOL_VERSION,
-      serverInfo: this.info,
+      serverInfo: this.implementation,
       capabilities: this.capabilities,
     };
   }
@@ -293,6 +293,7 @@ export class McpServer {
    * Send a notification to all connected clients
    */
   private async sendNotification(method: string, params: Record<string, unknown>): Promise<void> {
+    await Promise.resolve();
     if (!this._transport) {
       return;
     }
@@ -321,6 +322,7 @@ export class McpServer {
   }
 
   public async sendLogMessage(level: LoggingLevel, data: unknown): Promise<void> {
+    await Promise.resolve();
     if (!this._transport || !this._loggingLevel) return;
 
     const levels: LoggingLevel[] = [

@@ -57,7 +57,7 @@ export abstract class JsonRpcTransport implements McpTransport {
    * Sends a message through the transport.
    * @param message Message to send
    */
-  abstract send(message: JSONRPCRequest | JSONRPCResponse): Promise<void>;
+  abstract send(message: unknown): Promise<void>;
 
   /**
    * Connects the transport.
@@ -100,14 +100,14 @@ export abstract class JsonRpcTransport implements McpTransport {
    * Subscribes to incoming messages.
    * @param handler Message handler function
    */
-  onMessage(handler: MessageHandler): void {
+  onMessage(handler: (message: unknown) => Promise<void>): void {
     this.messageHandlers.add(handler);
   }
 
   /**
    * Unsubscribe from message events.
    */
-  offMessage(handler: MessageHandler): void {
+  offMessage(handler: (message: unknown) => Promise<void>): void {
     this.messageHandlers.delete(handler);
   }
 

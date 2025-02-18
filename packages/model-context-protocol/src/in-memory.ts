@@ -112,14 +112,14 @@ export class InMemoryTransport implements McpTransport {
   /**
    * Subscribe to message events.
    */
-  onMessage(handler: MessageHandler): void {
+  onMessage(handler: (message: unknown) => Promise<void>): void {
     this.messageHandlers.add(handler);
   }
 
   /**
    * Unsubscribe from message events.
    */
-  offMessage(handler: MessageHandler): void {
+  offMessage(handler: (message: unknown) => Promise<void>): void {
     this.messageHandlers.delete(handler);
   }
 
@@ -128,7 +128,7 @@ export class InMemoryTransport implements McpTransport {
    * @param message Message to send
    * @throws {TransportError} If the transport is not connected or not paired
    */
-  async send(message: JSONRPCRequest | JSONRPCResponse): Promise<void> {
+  async send(message: unknown): Promise<void> {
     if (!this.isConnected()) {
       throw new TransportError('Transport not connected');
     }
@@ -138,8 +138,8 @@ export class InMemoryTransport implements McpTransport {
     }
 
     try {
-      this.messages.push(message);
-      this.otherTransport.messages.push(message);
+      this.messages.push(message as JSONRPCRequest | JSONRPCResponse);
+      this.otherTransport.messages.push(message as JSONRPCRequest | JSONRPCResponse);
       await this.otherTransport.handleMessage(message);
     } catch (error) {
       throw new TransportError('Failed to send message', error as Error);
@@ -159,7 +159,7 @@ export class InMemoryTransport implements McpTransport {
    * @param message Message to simulate
    * @throws {TransportError} If the message format is invalid
    */
-  async simulateIncomingMessage(message: JSONRPCMessage): Promise<void> {
+  async simulateIncomingMessage(message: unknown): Promise<void> {
     if (
       typeof message !== 'object' ||
       message === null ||

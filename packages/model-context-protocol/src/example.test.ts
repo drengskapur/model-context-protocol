@@ -52,7 +52,6 @@ describe('Model Context Protocol', () => {
     const server = new McpServer({
       name: 'test-server',
       version: '1.0.0',
-      auth,
     });
 
     const client = new McpClient(

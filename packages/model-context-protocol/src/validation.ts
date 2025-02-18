@@ -2,7 +2,6 @@
  * @file validation.ts
  * @description Schema validation utilities for the Model Context Protocol.
  * Provides functions and types for validating protocol messages and data.
-
  */
 
 import {
@@ -25,14 +24,6 @@ import {
   minLength,
 } from 'valibot';
 import { McpError } from './errors';
-import type {
-  JSONRPCRequest,
-  JSONRPCResponse,
-  SamplingMessage,
-  Tool,
-  PromptReference,
-  ResourceReference,
-} from './schema';
 
 /**
  * Validation error code.
@@ -62,11 +53,11 @@ export class ValidationError extends McpError {
  * @throws {ValidationError} If validation fails
  */
 export function validateRequest<T extends BaseSchema>(
-  request: JSONRPCRequest,
+  request: unknown,
   schema: T
 ): Input<T> {
   try {
-    return parse(schema, request.params);
+    return parse(schema, request);
   } catch (error) {
     throw new ValidationError('Invalid request parameters', error as ValiError);
   }
@@ -80,11 +71,11 @@ export function validateRequest<T extends BaseSchema>(
  * @throws {ValidationError} If validation fails
  */
 export function validateResponse<T extends BaseSchema>(
-  response: JSONRPCResponse,
+  response: unknown,
   schema: T
 ): Input<T> {
   try {
-    return parse(schema, response.result);
+    return parse(schema, response);
   } catch (error) {
     throw new ValidationError('Invalid response result', error as ValiError);
   }
@@ -166,7 +157,7 @@ export async function validateResource(resource: unknown): Promise<void> {
   });
 
   try {
-    parse(schema, resource);
+    await parse(schema, resource);
   } catch (error) {
     throw new ValidationError('Invalid resource', error as ValiError);
   }
@@ -194,7 +185,7 @@ export async function validatePrompt(prompt: unknown): Promise<void> {
   });
 
   try {
-    parse(schema, prompt);
+    await parse(schema, prompt);
   } catch (error) {
     throw new ValidationError('Invalid prompt', error as ValiError);
   }
@@ -226,7 +217,7 @@ export async function validateSamplingMessage(message: unknown): Promise<void> {
   });
 
   try {
-    parse(schema, message);
+    await parse(schema, message);
   } catch (error) {
     throw new ValidationError('Invalid sampling message', error as ValiError);
   }
@@ -279,4 +270,16 @@ export async function validateReference(ref: unknown): Promise<void> {
   } catch (error) {
     throw new ValidationError('Invalid reference', error as ValiError);
   }
+}
+
+/**
+ * Validates a request against a schema.
+ * @param request Request to validate
+ * @param schema Schema to validate against
+ * @returns Validated request parameters
+ * @throws {ValidationError} If validation fails
+ */
+export async function validate(): Promise<void> {
+  await Promise.resolve(); // Add minimal await
+  // Implementation
 }

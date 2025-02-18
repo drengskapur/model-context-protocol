@@ -2,9 +2,6 @@
  * @file auth.test.ts
  * @description Test suite for the Model Context Protocol authentication.
  * Contains unit tests for authentication and authorization mechanisms.
- * 
- * @copyright 2025 Codeium
- * @license MIT
  */
 
 import { describe, expect, it } from 'vitest';

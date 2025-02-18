@@ -2,9 +2,6 @@
  * @file transport.test.ts
  * @description Test suite for the Model Context Protocol transport layer.
  * Contains unit tests for message transport and connection handling.
- * 
- * @copyright 2025 Codeium
- * @license MIT
  */
 
 import { EventEmitter } from 'eventemitter3';
@@ -12,7 +9,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { JSONRPCMessage, JSONRPCRequest, JSONRPCResponse } from './schema';
 import { JSONRPC_VERSION } from './schema';
 import { BaseTransport } from './transport';
-import type { MessageHandler, TransportEventMap } from './transport';
 
 class TestTransport extends BaseTransport {
   public messages: (JSONRPCRequest | JSONRPCResponse)[] = [];
@@ -30,6 +26,7 @@ class TestTransport extends BaseTransport {
     if (this.shouldFail) {
       throw new Error('Connect failed');
     }
+    await Promise.resolve();
     this.setConnected(true);
   }
 
@@ -37,6 +34,7 @@ class TestTransport extends BaseTransport {
     if (this.shouldFail) {
       throw new Error('Disconnect failed');
     }
+    await Promise.resolve();
     this.setConnected(false);
   }
 

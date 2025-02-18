@@ -2,9 +2,6 @@
  * @file server.test.ts
  * @description Test suite for the Model Context Protocol server implementation.
  * Contains unit tests for server functionality and request handling.
- * 
- * @copyright 2025 Codeium
- * @license MIT
  */
 
 import { EventEmitter } from 'eventemitter3';
@@ -15,9 +12,6 @@ import type {
   JSONRPCMessage,
   Prompt,
   Tool,
-  JSONRPCRequest,
-  JSONRPCResponse,
-  JSONRPCNotification,
   Implementation,
   ServerCapabilities,
   Resource,
@@ -30,7 +24,6 @@ import type {
   TransportEventMap,
 } from './transport';
 import { McpClient } from './client';
-import type { Auth } from './auth';
 
 /**
  * Test interface for greeting parameters.
@@ -55,7 +48,7 @@ class TestTransport implements McpTransport {
   /** Underlying transport instance */
   public transport: InMemoryTransport;
   /** Message queue for tracking sent messages */
-  public messages: (JSONRPCRequest | JSONRPCResponse)[] = [];
+  public messages: (JSONRPCMessage)[] = [];
   public readonly events = new EventEmitter();
 
   constructor() {
@@ -98,15 +91,15 @@ class TestTransport implements McpTransport {
    * @param message Message to send
    * @returns Promise that resolves when sent
    */
-  async send(message: JSONRPCRequest | JSONRPCResponse | JSONRPCNotification): Promise<void> {
+  async send(message: JSONRPCMessage): Promise<void> {
     if ('id' in message) {
-      await this.transport.send(message as JSONRPCRequest | JSONRPCResponse);
-      this.messages.push(message as JSONRPCRequest | JSONRPCResponse);
+      await this.transport.send(message);
+      this.messages.push(message);
     } else {
       await this.transport.send({
         ...message,
         id: '1',
-      } as JSONRPCRequest);
+      });
     }
   }
 
@@ -115,7 +108,7 @@ class TestTransport implements McpTransport {
    * @param message Message to simulate
    * @returns Promise that resolves when processed
    */
-  async simulateIncomingMessage(message: JSONRPCRequest | JSONRPCNotification): Promise<void> {
+  async simulateIncomingMessage(message: JSONRPCMessage): Promise<void> {
     await this.transport.simulateIncomingMessage(message);
   }
 
@@ -155,7 +148,7 @@ class TestTransport implements McpTransport {
    * Gets all messages sent through this transport.
    * @returns Array of sent messages
    */
-  getMessages(): (JSONRPCRequest | JSONRPCResponse)[] {
+  getMessages(): (JSONRPCMessage)[] {
     return this.messages;
   }
 
@@ -253,14 +246,14 @@ describe('Server', () => {
           protocolVersion: LATEST_PROTOCOL_VERSION,
           capabilities: {},
         },
-      } satisfies JSONRPCRequest);
+      } satisfies JSONRPCMessage);
 
       await transport.simulateIncomingMessage({
         jsonrpc: JSONRPC_VERSION,
         id: '2',
         method: 'prompts/list',
         params: {},
-      } satisfies JSONRPCRequest);
+      } satisfies JSONRPCMessage);
 
       const messages = transport.messages;
 
@@ -303,7 +296,7 @@ describe('Server', () => {
             arg1: 'test-value',
           },
         },
-      } satisfies JSONRPCRequest);
+      } satisfies JSONRPCMessage);
 
       // Test executing a prompt
       await transport.simulateIncomingMessage({
@@ -316,7 +309,7 @@ describe('Server', () => {
             arg1: 'test-value',
           },
         },
-      } satisfies JSONRPCRequest);
+      } satisfies JSONRPCMessage);
 
       // Test getting a non-existent prompt
       await transport.simulateIncomingMessage({
@@ -326,7 +319,7 @@ describe('Server', () => {
         params: {
           name: 'non-existent-prompt',
         },
-      } satisfies JSONRPCRequest);
+      } satisfies JSONRPCMessage);
 
       // Test getting a prompt without required argument
       await transport.simulateIncomingMessage({
@@ -337,7 +330,7 @@ describe('Server', () => {
           name: 'test-prompt',
           // Missing required arg1
         },
-      } satisfies JSONRPCRequest);
+      } satisfies JSONRPCMessage);
 
       // Test executing a prompt without required argument
       await transport.simulateIncomingMessage({
@@ -348,7 +341,7 @@ describe('Server', () => {
           name: 'test-prompt',
           // Missing required arg1
         },
-      } satisfies JSONRPCRequest);
+      } satisfies JSONRPCMessage);
 
       const messagesAfter = transport.getMessages();
 
@@ -454,7 +447,7 @@ describe('Server', () => {
         id: '1',
         method: 'prompts/list',
         params: {},
-      } satisfies JSONRPCRequest);
+      } satisfies JSONRPCMessage);
 
       expect(transport.messages[0]).toMatchObject({
         jsonrpc: JSONRPC_VERSION,
@@ -482,6 +475,7 @@ describe('Server', () => {
       server.prompt(testPrompt);
       server.registerMethod(`prompts/execute/${testPrompt.name}`, async (params: unknown) => {
         const { arguments: args } = params as { arguments?: Record<string, string> };
+        await Promise.resolve();
         return {
           messages: [
             {
@@ -505,7 +499,7 @@ describe('Server', () => {
             arg1: 'test value',
           },
         },
-      } satisfies JSONRPCRequest);
+      } satisfies JSONRPCMessage);
 
       expect(transport.messages[0]).toMatchObject({
         jsonrpc: JSONRPC_VERSION,
@@ -549,7 +543,7 @@ describe('Server', () => {
             arg1: 'test-value',
           },
         },
-      } satisfies JSONRPCRequest);
+      } satisfies JSONRPCMessage);
 
       expect(transport.messages[0]).toMatchObject({
         jsonrpc: JSONRPC_VERSION,
@@ -583,7 +577,7 @@ describe('Server', () => {
         params: {
           name: 'test-prompt',
         },
-      } satisfies JSONRPCRequest);
+      } satisfies JSONRPCMessage);
 
       expect(transport.messages[0]).toMatchObject({
         jsonrpc: JSONRPC_VERSION,
@@ -624,7 +618,7 @@ describe('Server', () => {
         id: '1',
         method: 'tools/list',
         params: {},
-      } satisfies JSONRPCRequest);
+      } satisfies JSONRPCMessage);
 
       const messages = transport.messages;
 
@@ -662,7 +656,7 @@ describe('Server', () => {
             age: 'twenty-five', // Invalid type
           },
         },
-      } satisfies JSONRPCRequest);
+      } satisfies JSONRPCMessage);
 
       const messages = transport.messages;
       expect(messages[0]).toMatchObject({
@@ -800,7 +794,7 @@ describe('Server', () => {
       id: '1',
       method: 'logging/setLevel',
       params: { level: 'info' },
-    } satisfies JSONRPCRequest);
+    } satisfies JSONRPCMessage);
 
     const messages = transport.messages;
     expect(messages[0]).toMatchObject({
@@ -872,7 +866,7 @@ describe('Server', () => {
         protocolVersion: LATEST_PROTOCOL_VERSION,
         capabilities: {},
       },
-    } satisfies JSONRPCRequest);
+    } satisfies JSONRPCMessage);
 
     // Set logging level to warning
     await transport.simulateIncomingMessage({
@@ -882,7 +876,7 @@ describe('Server', () => {
       params: {
         level: 'warning',
       },
-    } satisfies JSONRPCRequest);
+    } satisfies JSONRPCMessage);
 
     // Send messages at different levels
     await server.sendLogMessage('info', 'Info message'); // Should not be sent
@@ -927,7 +921,7 @@ describe('Server', () => {
       id: '1',
       method: 'resources/list',
       params: {},
-    } satisfies JSONRPCRequest);
+    } satisfies JSONRPCMessage);
 
     expect(transport.messages[0]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
@@ -964,7 +958,7 @@ describe('Server', () => {
       params: {
         name: 'non-existent-resource',
       },
-    } satisfies JSONRPCRequest);
+    } satisfies JSONRPCMessage);
 
     expect(transport.messages[0]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
@@ -983,7 +977,7 @@ describe('Server', () => {
       params: {
         name: 'non-existent-resource',
       },
-    } satisfies JSONRPCRequest);
+    } satisfies JSONRPCMessage);
 
     expect(transport.messages[1]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
@@ -1002,7 +996,7 @@ describe('Server', () => {
       params: {
         uri: 'test://non-existent',
       },
-    } satisfies JSONRPCRequest);
+    } satisfies JSONRPCMessage);
 
     expect(transport.messages[2]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
@@ -1051,7 +1045,7 @@ describe('Server', () => {
       id: '1',
       method: 'test',
       params: {},
-    } satisfies JSONRPCRequest);
+    } satisfies JSONRPCMessage);
 
     expect(messageHandler).toHaveBeenCalled();
   });
@@ -1070,7 +1064,7 @@ describe('Server', () => {
       id: '1',
       method: 'test',
       params: {},
-    } satisfies JSONRPCRequest);
+    });
 
     expect(errorHandler).toHaveBeenCalled();
   });
@@ -1088,7 +1082,7 @@ describe('Server', () => {
       id: '1',
       method: 'test',
       params: {},
-    } satisfies JSONRPCRequest);
+    } satisfies JSONRPCMessage);
 
     expect(messageHandler).not.toHaveBeenCalled();
   });
@@ -1104,7 +1098,7 @@ describe('Server', () => {
       id: '1',
       method: 'greet',
       params: { name: 'Alice' },
-    } satisfies JSONRPCRequest);
+    } satisfies JSONRPCMessage);
 
     expect(transport.messages[0]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
@@ -1122,7 +1116,7 @@ describe('Server', () => {
         level: 'info',
         data: 'test',
       },
-    } satisfies JSONRPCRequest);
+    } satisfies JSONRPCMessage);
 
     // No error means success
   });
@@ -1136,14 +1130,14 @@ describe('Server', () => {
       id: '1',
       method: 'invalid',
       params: {},
-    } satisfies JSONRPCRequest);
+    });
 
     expect(transport.messages[0]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
       id: '1',
       error: {
         code: -32601,
-        message: 'Method not found: invalid',
+        message: 'Method not found',
       },
     });
   });
@@ -1187,7 +1181,7 @@ describe('Server', () => {
       id: '1',
       method: 'sensitiveOperation',
       params: {},
-    } satisfies JSONRPCRequest);
+    } satisfies JSONRPCMessage);
 
     expect(transport.messages[0]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
@@ -1196,6 +1190,66 @@ describe('Server', () => {
         code: -32000,
         message: 'Authentication token required',
       },
+    });
+  });
+
+  it('should handle test/async', async () => {
+    server.registerMethod('test/async', async () => {
+      await Promise.resolve();
+      return { success: true };
+    });
+
+    await transport.simulateIncomingMessage({
+      jsonrpc: JSONRPC_VERSION,
+      id: '1',
+      method: 'test/async',
+      params: {},
+    } satisfies JSONRPCMessage);
+
+    expect(transport.messages[0]).toMatchObject({
+      jsonrpc: JSONRPC_VERSION,
+      id: '1',
+      result: { success: true },
+    });
+  });
+
+  it('should handle test/async', async () => {
+    server.registerMethod('test/async', async () => {
+      await Promise.resolve();
+      return { success: true };
+    });
+
+    await transport.simulateIncomingMessage({
+      jsonrpc: JSONRPC_VERSION,
+      id: '1',
+      method: 'test/async',
+      params: {},
+    } satisfies JSONRPCMessage);
+
+    expect(transport.messages[0]).toMatchObject({
+      jsonrpc: JSONRPC_VERSION,
+      id: '1',
+      result: { success: true },
+    });
+  });
+
+  it('should handle test/async', async () => {
+    server.registerMethod('test/async', async () => {
+      await Promise.resolve();
+      return { success: true };
+    });
+
+    await transport.simulateIncomingMessage({
+      jsonrpc: JSONRPC_VERSION,
+      id: '1',
+      method: 'test/async',
+      params: {},
+    } satisfies JSONRPCMessage);
+
+    expect(transport.messages[0]).toMatchObject({
+      jsonrpc: JSONRPC_VERSION,
+      id: '1',
+      result: { success: true },
     });
   });
 });

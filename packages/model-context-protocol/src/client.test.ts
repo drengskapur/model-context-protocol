@@ -2,72 +2,22 @@
  * @file client.test.ts
  * @description Test suite for the Model Context Protocol client implementation.
  * Contains unit tests for client functionality and error handling.
- * 
- * @copyright 2025 Codeium
- * @license MIT
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { McpClient } from './client.js';
 import { InMemoryTransport } from './in-memory.js';
-import type {
-  JSONRPCRequest,
-  JSONRPCResponse,
-  JSONRPCError,
-  JSONRPCNotification,
-  PromptMessage,
+import { 
+  JSONRPC_VERSION, 
+  LATEST_PROTOCOL_VERSION,
+  type JSONRPCRequest,
+  type JSONRPCResponse,
+  type JSONRPCNotification,
+  type JSONRPCMessage
 } from './schema.js';
-import { JSONRPC_VERSION, LATEST_PROTOCOL_VERSION } from './schema.js';
-import { Auth } from './auth.js';
 import { McpServer } from './server.js';
 
 const PROTOCOL_VERSION_MISMATCH_REGEX = /Protocol version mismatch/;
-
-async function createConnectedPair() {
-  const [clientTransport, serverTransport] = InMemoryTransport.createPair();
-
-  const client = new McpClient(
-    {
-      name: 'test-client',
-      version: '1.0.0',
-      requestTimeout: 1000,
-    },
-    clientTransport
-  );
-
-  const server = new McpServer({
-    name: 'test-server',
-    version: '1.0.0',
-  });
-
-  await server.connect(serverTransport);
-
-  // Start client connection
-  const connectPromise = client.connect();
-
-  // Wait for transport connection
-  await Promise.resolve();
-
-  // Simulate server response to initialize request
-  const response: JSONRPCResponse = {
-    jsonrpc: JSONRPC_VERSION,
-    id: clientTransport.getMessages()[0].id,
-    result: {
-      protocolVersion: LATEST_PROTOCOL_VERSION,
-      serverInfo: {
-        name: 'test-server',
-        version: '1.0.0',
-      },
-      capabilities: {},
-    },
-  };
-  await serverTransport.simulateIncomingMessage(response);
-
-  // Wait for initialization to complete
-  await connectPromise;
-
-  return { client, server, clientTransport, serverTransport };
-}
 
 describe('McpClient', () => {
   let client: McpClient;
@@ -179,7 +129,7 @@ describe('McpClient', () => {
         },
         capabilities: {},
       },
-    } satisfies JSONRPCResponse);
+    });
 
     await connectPromise;
   });
@@ -204,7 +154,8 @@ describe('McpClient', () => {
         },
         capabilities: {},
       },
-    } satisfies JSONRPCResponse);
+    });
+
     await connectPromise;
 
     const promise = client.callTool('test', {});
@@ -221,7 +172,7 @@ describe('McpClient', () => {
         requestId: request.id,
         reason: 'Test cancellation',
       },
-    } satisfies JSONRPCNotification);
+    });
 
     // Wait a tick for the cancellation to be processed
     await Promise.resolve();
@@ -312,7 +263,7 @@ describe('McpClient', () => {
         },
         capabilities: {},
       },
-    } as JSONRPCResponse);
+    });
     await connectPromise;
 
     // Make multiple concurrent requests
@@ -329,13 +280,13 @@ describe('McpClient', () => {
       jsonrpc: JSONRPC_VERSION,
       id: request2.id,
       result: { success: true, id: 2 },
-    } as JSONRPCResponse);
+    });
 
     await serverTransport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
       id: request1.id,
       result: { success: true, id: 1 },
-    } as JSONRPCResponse);
+    });
 
     const [result1, result2] = await Promise.all([promise1, promise2]);
     expect(result1).toEqual({ success: true, id: 1 });
@@ -357,7 +308,7 @@ describe('McpClient', () => {
         },
         capabilities: {},
       },
-    } as JSONRPCResponse);
+    });
     await connectPromise;
 
     const progressHandler = vi.fn();
@@ -373,7 +324,7 @@ describe('McpClient', () => {
         progress: 50,
         total: 100,
       },
-    } as JSONRPCNotification);
+    });
 
     expect(progressHandler).toHaveBeenCalledWith(50, 100);
     client.offProgress(progressToken);
@@ -398,7 +349,7 @@ describe('McpClient', () => {
           },
         },
       },
-    } as JSONRPCResponse);
+    });
     await connectPromise;
 
     // Set up the response for tools/list
@@ -415,7 +366,7 @@ describe('McpClient', () => {
       result: {
         tools: ['tool1', 'tool2', 'tool3'],
       },
-    } as JSONRPCResponse);
+    });
 
     const tools = await listPromise;
     expect(tools).toEqual(['tool1', 'tool2', 'tool3']);
@@ -436,7 +387,7 @@ describe('McpClient', () => {
         },
         capabilities: {},
       },
-    } as JSONRPCResponse);
+    });
     await connectPromise;
 
     await expect(client.listTools()).rejects.toThrow(
@@ -459,7 +410,7 @@ describe('McpClient', () => {
         },
         capabilities: {},
       },
-    } as JSONRPCResponse);
+    });
     await connectPromise;
 
     const progressHandler = vi.fn();
@@ -479,14 +430,14 @@ describe('McpClient', () => {
         progress: 75,
         total: 100,
       },
-    } as JSONRPCNotification);
+    });
 
     // Simulate successful response
     await serverTransport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
       id: request.id,
       result: { success: true },
-    } as JSONRPCResponse);
+    });
 
     const result = await promise;
     expect(result).toEqual({ success: true });
@@ -517,7 +468,7 @@ describe('McpClient', () => {
         },
         capabilities: {},
       },
-    } as JSONRPCResponse);
+    });
     await connectPromise;
 
     const promise = client.callTool('test', {});
@@ -567,7 +518,7 @@ describe('McpClient', () => {
         },
         capabilities: {},
       },
-    } as JSONRPCResponse);
+    });
 
     await expect(connectPromise).rejects.toThrow(
       PROTOCOL_VERSION_MISMATCH_REGEX
@@ -591,7 +542,7 @@ describe('McpClient', () => {
           logging: {},
         },
       },
-    } as JSONRPCResponse);
+    });
     await connectPromise;
 
     // Set up the response for logging/setLevel
@@ -607,7 +558,7 @@ describe('McpClient', () => {
       jsonrpc: JSONRPC_VERSION,
       id: request.id,
       result: {},
-    } as JSONRPCResponse);
+    });
 
     await setLevelPromise;
   });
@@ -627,7 +578,7 @@ describe('McpClient', () => {
         },
         capabilities: {},
       },
-    } as JSONRPCResponse);
+    });
     await connectPromise;
 
     await expect(client.setLoggingLevel('info')).rejects.toThrow(
@@ -660,7 +611,7 @@ describe('McpClient', () => {
         },
         capabilities: {},
       },
-    } as JSONRPCResponse);
+    });
     await connectPromise;
 
     // Ensure we're fully connected
@@ -694,7 +645,7 @@ describe('McpClient', () => {
         },
         capabilities: {},
       },
-    } as JSONRPCResponse);
+    });
     await connectPromise;
 
     // Make a request
@@ -730,7 +681,7 @@ describe('McpClient', () => {
         },
         capabilities: {},
       },
-    } as JSONRPCResponse);
+    });
 
     // Make a request
     const promise = client.callTool('test', {});
@@ -744,7 +695,7 @@ describe('McpClient', () => {
       jsonrpc: JSONRPC_VERSION,
       id: 'wrong-id',
       result: { success: true },
-    } as JSONRPCResponse);
+    });
 
     // The promise should still be pending
     const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 100));
@@ -791,7 +742,7 @@ describe('McpClient', () => {
         },
         capabilities: {},
       },
-    } as JSONRPCResponse);
+    });
     await connectPromise;
 
     // Make a request
@@ -806,7 +757,7 @@ describe('McpClient', () => {
       jsonrpc: JSONRPC_VERSION,
       id: request.id,
       result: {} as Record<string, unknown>,
-    } as JSONRPCResponse;
+    };
     await clientTransport.simulateIncomingMessage(invalidResponse);
 
     // The promise should still be pending
@@ -838,7 +789,7 @@ describe('McpClient', () => {
         },
         capabilities,
       },
-    } as JSONRPCResponse);
+    });
     await connectPromise;
 
     expect(client.getServerCapabilities()).toEqual(capabilities);
@@ -863,7 +814,7 @@ describe('McpClient', () => {
         },
         capabilities: {},
       },
-    } as JSONRPCResponse);
+    });
     await connectPromise;
 
     const progressHandler = vi.fn();
@@ -879,7 +830,7 @@ describe('McpClient', () => {
       jsonrpc: '2.0',
       id: request.id,
       result: { success: true },
-    } as JSONRPCResponse);
+    });
 
     await promise;
 
@@ -892,7 +843,7 @@ describe('McpClient', () => {
         progress: 100,
         total: 100,
       },
-    } as JSONRPCNotification);
+    });
 
     expect(progressHandler).not.toHaveBeenCalled();
   });
@@ -999,8 +950,8 @@ describe('McpClient', () => {
     const connectPromise = client.connect();
     await Promise.resolve();
     await clientTransport.simulateIncomingMessage({
-      jsonrpc: '2.0',
-      id: 1,
+      jsonrpc: JSONRPC_VERSION,
+      id: expect.any(String),
       result: {
         protocolVersion: LATEST_PROTOCOL_VERSION,
         serverInfo: {
@@ -1009,7 +960,7 @@ describe('McpClient', () => {
         },
         capabilities: {},
       },
-    } as JSONRPCResponse);
+    });
     await connectPromise;
 
     // Mock clientTransport.send to throw an error
@@ -1040,8 +991,8 @@ describe('McpClient', () => {
     const connectPromise = client.connect();
     await Promise.resolve();
     await clientTransport.simulateIncomingMessage({
-      jsonrpc: '2.0',
-      id: 1,
+      jsonrpc: JSONRPC_VERSION,
+      id: expect.any(String),
       result: {
         protocolVersion: LATEST_PROTOCOL_VERSION,
         serverInfo: {
@@ -1050,7 +1001,7 @@ describe('McpClient', () => {
         },
         capabilities: {},
       },
-    } as JSONRPCResponse);
+    });
     await connectPromise;
 
     // Mock clientTransport.disconnect to throw an error
@@ -1072,8 +1023,8 @@ describe('McpClient', () => {
     const connectPromise = client.connect();
     await Promise.resolve();
     await clientTransport.simulateIncomingMessage({
-      jsonrpc: '2.0',
-      id: 1,
+      jsonrpc: JSONRPC_VERSION,
+      id: expect.any(String),
       result: {
         protocolVersion: LATEST_PROTOCOL_VERSION,
         serverInfo: {
@@ -1082,15 +1033,15 @@ describe('McpClient', () => {
         },
         capabilities: {},
       },
-    } as JSONRPCResponse);
+    });
     await connectPromise;
 
     // Send an unknown notification type
     const notification = {
-      jsonrpc: '2.0',
+      jsonrpc: JSONRPC_VERSION,
       method: 'unknown/notification',
       params: { data: 'test' },
-    } as JSONRPCNotification;
+    };
 
     await clientTransport.simulateIncomingMessage(notification);
 
@@ -1117,7 +1068,7 @@ describe('McpClient', () => {
         },
         capabilities: {},
       },
-    } as JSONRPCResponse);
+    });
     await connectPromise;
 
     // Register the progress handler after initialization
@@ -1182,7 +1133,7 @@ describe('McpClient', () => {
           },
         },
       },
-    } as JSONRPCResponse);
+    });
     await connectPromise;
 
     // Set up the response for prompts/list
@@ -1202,7 +1153,7 @@ describe('McpClient', () => {
           description: 'A test prompt',
         },
       ] as unknown as Record<string, unknown>,
-    } as JSONRPCResponse);
+    });
 
     const prompts = await listPromise;
     expect(prompts).toHaveLength(1);
@@ -1230,7 +1181,7 @@ describe('McpClient', () => {
         capabilities: {},
         _meta: {},
       },
-    } as JSONRPCResponse);
+    });
 
     // Wait for initialization to complete
     await connectPromise;
@@ -1247,7 +1198,7 @@ describe('McpClient', () => {
         code: -32000,
         message: 'Test error',
       },
-    } as JSONRPCError);
+    });
 
     expect(messageHandler).toHaveBeenCalledWith(
       expect.objectContaining({
