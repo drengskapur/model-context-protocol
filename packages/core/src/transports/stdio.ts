@@ -153,11 +153,16 @@ export class StdioTransport implements McpTransport {
     this._errorHandlers.clear();
     this._messageHandlers.clear();
 
+    // Remove event listeners
+    this._stdin.removeListener('data', this._onData);
+    this._stdin.removeListener('error', this._onStreamError);
+
+    // Destroy non-process streams
     if (this._stdin !== process.stdin) {
       this._stdin.destroy();
     }
     if (this._stdout !== process.stdout) {
-      this._stdout.end();
+      this._stdout.destroy();
     }
 
     return Promise.resolve();

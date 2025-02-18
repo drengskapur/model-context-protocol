@@ -128,8 +128,9 @@ describe('StdioTransport', () => {
   });
 
   it('should handle parse errors gracefully', async () => {
-    const handler = vi.fn();
-    transport.onMessage(handler);
+    const errorHandler = vi.fn();
+    transport.onError(errorHandler);
+    transport.onMessage(vi.fn());
     await transport.connect();
 
     input.push('invalid json\n');
@@ -137,7 +138,84 @@ describe('StdioTransport', () => {
     // Wait for error processing
     await new Promise((resolve) => setTimeout(resolve, 50));
 
-    expect(handler).not.toHaveBeenCalled();
+    expect(errorHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining('Error parsing message'),
+      })
+    );
+  });
+
+  it('should handle invalid message schema errors', async () => {
+    const errorHandler = vi.fn();
+    transport.onError(errorHandler);
+    transport.onMessage(vi.fn());
+    await transport.connect();
+
+    input.push('{"jsonrpc":"1.0","method":"test"}\n'); // Wrong version
+
+    // Wait for error processing
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(errorHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining('Error processing message'),
+      })
+    );
+  });
+
+  it('should handle stream errors', async () => {
+    const errorHandler = vi.fn();
+    transport.onError(errorHandler);
+    await transport.connect();
+
+    const error = new Error('Stream error');
+    input.emit('error', error);
+
+    expect(errorHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining('Stream error'),
+      })
+    );
+  });
+
+  it('should handle write errors', async () => {
+    const errorOutput = new Writable({
+      write(_chunk, _encoding, callback) {
+        callback(new Error('Write error'));
+      },
+    });
+    const errorTransport = new StdioTransport(input, errorOutput);
+    await errorTransport.connect();
+
+    await expect(
+      errorTransport.send({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'test',
+      })
+    ).rejects.toThrow('Write error');
+
+    await errorTransport.close();
+  });
+
+  it('should handle message handler errors', async () => {
+    const errorHandler = vi.fn();
+    transport.onError(errorHandler);
+    transport.onMessage(async () => {
+      throw new Error('Handler error');
+    });
+    await transport.connect();
+
+    input.push('{"jsonrpc":"2.0","method":"test"}\n');
+
+    // Wait for error processing
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(errorHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining('Error in message handler'),
+      })
+    );
   });
 
   it('should handle close correctly', async () => {
@@ -154,5 +232,112 @@ describe('StdioTransport', () => {
         params: undefined,
       })
     ).rejects.toThrow('StdioTransport not connected');
+  });
+
+  it('should prevent double connect', async () => {
+    await transport.connect();
+    try {
+      await transport.connect();
+      throw new Error('Expected connect to throw');
+    } catch (error) {
+      expect((error as Error).message).toBe(
+        'StdioTransport already connected! Call close() before connecting again.'
+      );
+    }
+  });
+
+  it('should handle error handler registration', async () => {
+    const handler = vi.fn();
+    transport.onError(handler);
+    transport.offError(handler);
+
+    // Trigger an error
+    await transport.connect();
+    input.push('invalid json\n');
+
+    // Wait for error processing
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('should handle message handler registration', async () => {
+    const handler = vi.fn();
+    transport.onMessage(handler);
+    transport.offMessage(handler);
+
+    await transport.connect();
+    input.push('{"jsonrpc":"2.0","method":"test"}\n');
+
+    // Wait for message processing
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('should send progress notifications', async () => {
+    await transport.connect();
+    await transport.sendProgress('test-token', 50, 100);
+
+    expect(outputData).toHaveLength(1);
+    const message = JSON.parse(outputData[0]);
+    expect(message).toMatchObject({
+      jsonrpc: '2.0',
+      method: 'notifications/progress',
+      params: {
+        progressToken: 'test-token',
+        progress: 50,
+        total: 100,
+      },
+    });
+  });
+
+  it('should send cancellation notifications', async () => {
+    await transport.connect();
+    await transport.cancelRequest(1, 'Test cancellation');
+
+    expect(outputData).toHaveLength(1);
+    const message = JSON.parse(outputData[0]);
+    expect(message).toMatchObject({
+      jsonrpc: '2.0',
+      method: 'notifications/cancelled',
+      params: {
+        requestId: 1,
+        reason: 'Test cancellation',
+      },
+    });
+  });
+
+  it('should handle disconnect', async () => {
+    await transport.connect();
+    await transport.disconnect();
+
+    await expect(
+      transport.send({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'test',
+      })
+    ).rejects.toThrow('StdioTransport not connected');
+  });
+
+  it('should handle close on non-process streams', async () => {
+    const customInput = new Readable({
+      read() {
+        // Empty
+      },
+    });
+    const customOutput = new Writable({
+      write(_chunk, _encoding, callback) {
+        callback();
+      },
+    });
+    const customTransport = new StdioTransport(customInput, customOutput);
+
+    await customTransport.connect();
+    await customTransport.close();
+
+    expect(customInput.destroyed).toBe(true);
+    expect(customOutput.destroyed).toBe(true);
   });
 });

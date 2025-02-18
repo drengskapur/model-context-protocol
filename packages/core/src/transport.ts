@@ -6,6 +6,11 @@ import type { JSONRPCMessage } from './schema.js';
 export type MessageHandler = (message: JSONRPCMessage) => Promise<void>;
 
 /**
+ * Handler for receiving errors from a transport.
+ */
+export type ErrorHandler = (error: Error) => void;
+
+/**
  * Interface for a transport that can send and receive messages.
  */
 export interface McpTransport {
@@ -33,6 +38,16 @@ export interface McpTransport {
    * Unregister a message handler.
    */
   offMessage(handler: MessageHandler): void;
+
+  /**
+   * Register a handler for receiving errors.
+   */
+  onError(handler: ErrorHandler): void;
+
+  /**
+   * Unregister an error handler.
+   */
+  offError(handler: ErrorHandler): void;
 
   /**
    * Close the transport and clean up any resources.

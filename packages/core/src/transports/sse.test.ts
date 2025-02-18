@@ -1,59 +1,32 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { JSONRPCMessage } from '../schema.js';
-import { SseTransport } from './sse.js';
+import { SseTransport, type SseTransportOptions } from './sse.js';
 
-// Mock EventSource globally
-class MockEventSource {
-  onmessage: ((event: MessageEvent) => void) | null = null;
-  onerror: ((event: Event) => void) | null = null;
-  onopen: ((event: Event) => void) | null = null;
+// Mock EventSource class
+class MockEventSource implements EventSource {
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSED = 2;
+
+  readonly CONNECTING = MockEventSource.CONNECTING;
+  readonly OPEN = MockEventSource.OPEN;
+  readonly CLOSED = MockEventSource.CLOSED;
+
   readyState = 0;
   url: string;
-  options?: EventSourceInit;
-  private eventListeners: { [key: string]: ((event: Event) => void)[] } = {};
+  withCredentials = false;
 
-  constructor(url: string, options?: EventSourceInit) {
+  addEventListener = vi.fn();
+  removeEventListener = vi.fn();
+  close = vi.fn();
+  dispatchEvent = vi.fn();
+
+  onerror: ((this: EventSource, ev: Event) => any) | null = null;
+  onmessage: ((this: EventSource, ev: MessageEvent) => any) | null = null;
+  onopen: ((this: EventSource, ev: Event) => any) | null = null;
+
+  constructor(url: string) {
     this.url = url;
-    this.options = options;
-    // Simulate successful connection after a tick
-    setTimeout(() => {
-      this.readyState = 1;
-      this.dispatchEvent(new Event('open'));
-    }, 0);
-  }
-
-  addEventListener(type: string, listener: (event: Event) => void): void {
-    if (!this.eventListeners[type]) {
-      this.eventListeners[type] = [];
-    }
-    this.eventListeners[type].push(listener);
-  }
-
-  removeEventListener(type: string, listener: (event: Event) => void): void {
-    if (!this.eventListeners[type]) {
-      return;
-    }
-    this.eventListeners[type] = this.eventListeners[type].filter(
-      (l) => l !== listener
-    );
-  }
-
-  dispatchEvent(event: Event): void {
-    const listeners = this.eventListeners[event.type] || [];
-    for (const listener of listeners) {
-      listener(event);
-    }
-    if (event.type === 'message' && this.onmessage) {
-      this.onmessage(event as MessageEvent);
-    } else if (event.type === 'error' && this.onerror) {
-      this.onerror(event);
-    } else if (event.type === 'open' && this.onopen) {
-      this.onopen(event);
-    }
-  }
-
-  close() {
-    this.readyState = 2;
   }
 }
 
@@ -65,6 +38,10 @@ class TestSseTransport extends SseTransport {
 }
 
 describe('SseTransport', () => {
+  const defaultOptions: SseTransportOptions = {
+    eventSourceUrl: 'http://test',
+  };
+
   let transport: TestSseTransport;
 
   beforeEach(() => {
@@ -141,5 +118,225 @@ describe('SseTransport', () => {
     const mockEventSource =
       transport.getEventSource() as unknown as MockEventSource;
     expect(mockEventSource.url).toContain('X-Test=test');
+  });
+
+  describe('Message Handler Management', () => {
+    it('should add and remove message handlers', () => {
+      const transport = new SseTransport(defaultOptions);
+      const handler = async () => { /* noop */ };
+
+      transport.onMessage(handler);
+      expect(transport['_messageProcessor']['_handlers'].has(handler)).toBe(true);
+
+      transport.offMessage(handler);
+      expect(transport['_messageProcessor']['_handlers'].has(handler)).toBe(false);
+    });
+
+    it('should handle multiple message handlers', async () => {
+      const transport = new SseTransport(defaultOptions);
+      const handler1 = vi.fn();
+      const handler2 = vi.fn();
+
+      transport.onMessage(handler1);
+      transport.onMessage(handler2);
+
+      const message: JSONRPCMessage = {
+        jsonrpc: '2.0',
+        method: 'test',
+        params: {},
+      };
+
+      await transport['_messageProcessor'].processMessage(JSON.stringify(message));
+
+      expect(handler1).toHaveBeenCalledWith(message);
+      expect(handler2).toHaveBeenCalledWith(message);
+    });
+
+    it('should handle message handler errors', async () => {
+      const transport = new SseTransport(defaultOptions);
+      const error = new Error('Handler error');
+      const errorHandler = vi.fn();
+      const messageHandler = vi.fn().mockRejectedValue(error);
+
+      transport.onError(errorHandler);
+      transport.onMessage(messageHandler);
+
+      const message: JSONRPCMessage = {
+        jsonrpc: '2.0',
+        method: 'test',
+        params: {},
+      };
+
+      await transport['_messageProcessor'].processMessage(JSON.stringify(message));
+
+      expect(messageHandler).toHaveBeenCalledWith(message);
+      expect(errorHandler).toHaveBeenCalledWith(expect.any(Error));
+    });
+  });
+
+  describe('Error Handler Management', () => {
+    it('should add and remove error handlers', () => {
+      const transport = new SseTransport(defaultOptions);
+      const handler = () => { /* noop */ };
+
+      transport.onError(handler);
+      expect(transport['_errorManager']['_handlers'].has(handler)).toBe(true);
+
+      transport.offError(handler);
+      expect(transport['_errorManager']['_handlers'].has(handler)).toBe(false);
+    });
+
+    it('should handle multiple error handlers', () => {
+      const transport = new SseTransport(defaultOptions);
+      const handler1 = vi.fn();
+      const handler2 = vi.fn();
+      const error = new Error('Test error');
+
+      transport.onError(handler1);
+      transport.onError(handler2);
+
+      transport['_errorManager'].handleError(error);
+
+      expect(handler1).toHaveBeenCalledWith(error);
+      expect(handler2).toHaveBeenCalledWith(error);
+    });
+
+    it('should remove specific error handler', () => {
+      const transport = new SseTransport(defaultOptions);
+      const handler1 = vi.fn();
+      const handler2 = vi.fn();
+      const error = new Error('Test error');
+
+      transport.onError(handler1);
+      transport.onError(handler2);
+      transport.offError(handler1);
+
+      transport['_errorManager'].handleError(error);
+
+      expect(handler1).not.toHaveBeenCalled();
+      expect(handler2).toHaveBeenCalledWith(error);
+    });
+  });
+
+  describe('Connection Management', () => {
+    it('should handle connection lifecycle', async () => {
+      const transport = new SseTransport(defaultOptions);
+      
+      // Mock EventSource
+      const mockEventSource = new MockEventSource(defaultOptions.eventSourceUrl);
+      const MockEventSourceClass = vi.fn(() => mockEventSource) as unknown as typeof EventSource;
+      Object.defineProperties(MockEventSourceClass, {
+        CONNECTING: { value: MockEventSource.CONNECTING },
+        OPEN: { value: MockEventSource.OPEN },
+        CLOSED: { value: MockEventSource.CLOSED }
+      });
+
+      transport['_options'].EventSource = MockEventSourceClass;
+
+      await transport.connect();
+      expect(MockEventSourceClass).toHaveBeenCalledWith(defaultOptions.eventSourceUrl);
+      expect(mockEventSource.addEventListener).toHaveBeenCalledWith('message', expect.any(Function));
+      expect(mockEventSource.addEventListener).toHaveBeenCalledWith('error', expect.any(Function));
+
+      await transport.disconnect();
+      expect(mockEventSource.removeEventListener).toHaveBeenCalledWith('message', expect.any(Function));
+      expect(mockEventSource.removeEventListener).toHaveBeenCalledWith('error', expect.any(Function));
+      expect(mockEventSource.close).toHaveBeenCalled();
+    });
+
+    it('should handle connection errors', async () => {
+      const transport = new SseTransport(defaultOptions);
+      const errorHandler = vi.fn();
+      transport.onError(errorHandler);
+
+      // Mock EventSource that throws on construction
+      const error = new Error('Connection failed');
+      const MockEventSourceClass = vi.fn(() => {
+        throw error;
+      }) as unknown as typeof EventSource;
+      Object.defineProperties(MockEventSourceClass, {
+        CONNECTING: { value: MockEventSource.CONNECTING },
+        OPEN: { value: MockEventSource.OPEN },
+        CLOSED: { value: MockEventSource.CLOSED }
+      });
+
+      transport['_options'].EventSource = MockEventSourceClass;
+
+      await expect(transport.connect()).rejects.toThrow('Connection failed');
+      expect(errorHandler).toHaveBeenCalledWith(error);
+    });
+  });
+
+  describe('Message Processing', () => {
+    it('should handle invalid JSON', async () => {
+      const transport = new SseTransport(defaultOptions);
+      const errorHandler = vi.fn();
+      transport.onError(errorHandler);
+
+      // Mock EventSource
+      const mockEventSource = new MockEventSource(defaultOptions.eventSourceUrl);
+      const MockEventSourceClass = vi.fn(() => mockEventSource) as unknown as typeof EventSource;
+      Object.defineProperties(MockEventSourceClass, {
+        CONNECTING: { value: MockEventSource.CONNECTING },
+        OPEN: { value: MockEventSource.OPEN },
+        CLOSED: { value: MockEventSource.CLOSED }
+      });
+
+      transport['_options'].EventSource = MockEventSourceClass;
+
+      await transport.connect();
+
+      // Get the message event handler
+      const messageHandler = mockEventSource.addEventListener.mock.calls.find(
+        call => call[0] === 'message'
+      )?.[1];
+
+      if (!messageHandler) {
+        throw new Error('Message handler not registered');
+      }
+
+      // Simulate receiving invalid JSON
+      messageHandler({ data: 'invalid json' });
+
+      expect(errorHandler).toHaveBeenCalledWith(expect.any(Error));
+    });
+
+    it('should handle valid messages', async () => {
+      const transport = new SseTransport(defaultOptions);
+      const messageHandler = vi.fn();
+      transport.onMessage(messageHandler);
+
+      // Mock EventSource
+      const mockEventSource = new MockEventSource(defaultOptions.eventSourceUrl);
+      const MockEventSourceClass = vi.fn(() => mockEventSource) as unknown as typeof EventSource;
+      Object.defineProperties(MockEventSourceClass, {
+        CONNECTING: { value: MockEventSource.CONNECTING },
+        OPEN: { value: MockEventSource.OPEN },
+        CLOSED: { value: MockEventSource.CLOSED }
+      });
+
+      transport['_options'].EventSource = MockEventSourceClass;
+
+      await transport.connect();
+
+      // Get the message event handler
+      const eventHandler = mockEventSource.addEventListener.mock.calls.find(
+        call => call[0] === 'message'
+      )?.[1];
+
+      if (!eventHandler) {
+        throw new Error('Message handler not registered');
+      }
+
+      // Simulate receiving valid JSON
+      const message: JSONRPCMessage = {
+        jsonrpc: '2.0',
+        method: 'test',
+        params: {},
+      };
+      eventHandler({ data: JSON.stringify(message) });
+
+      expect(messageHandler).toHaveBeenCalledWith(message);
+    });
   });
 });

@@ -39,13 +39,12 @@ export class InMemoryTransport implements McpTransport {
     this._messages.push(message);
 
     // If we're in a linked pair, forward the message
-    if (this._otherTransport) {
-      await Promise.resolve(); // Process in next tick to simulate async behavior
-      await Promise.all(
-        Array.from(this._otherTransport._messageHandlers).map((handler) =>
-          handler(message)
-        )
-      );
+    if (this._otherTransport && this._otherTransport._connected) {
+      // Process in next tick to simulate async behavior
+      await Promise.resolve();
+      for (const handler of this._otherTransport._messageHandlers) {
+        await handler(message);
+      }
     }
   }
 
@@ -110,9 +109,9 @@ export class InMemoryTransport implements McpTransport {
     }
     // Process in next tick to simulate async behavior
     await Promise.resolve();
-    await Promise.all(
-      Array.from(this._messageHandlers).map((handler) => handler(message))
-    );
+    for (const handler of this._messageHandlers) {
+      await handler(message);
+    }
   }
 
   clearMessages(): void {
