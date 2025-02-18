@@ -4,6 +4,8 @@
  * Provides functionality for buffering and batching messages.
  */
 
+import { VError } from 'verror';
+
 /**
  * Configuration options for message buffering.
  */
@@ -181,8 +183,6 @@ export class ReadBuffer {
 /**
  * Serialize a message for transport.
  */
-export function serializeMessage(message: JSONRPCMessage): string {
+export function serializeMessage(message: any): string {
   return `${JSON.stringify(message)}\n`;
 }
-
-import type { JSONRPCMessage } from './schema.js';

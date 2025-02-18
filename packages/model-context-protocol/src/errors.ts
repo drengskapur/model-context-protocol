@@ -1,3 +1,9 @@
+/**
+ * @file errors.ts
+ * @description Error handling utilities for the Model Context Protocol.
+ * Provides custom error classes and error handling functionality.
+ */
+
 import { VError } from 'verror';
 
 /**

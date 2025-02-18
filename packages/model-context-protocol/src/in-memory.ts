@@ -128,16 +128,17 @@ export class InMemoryTransport extends BaseTransport {
     await this.send(request);
 
     return new Promise((resolve, reject) => {
-      const handler: (message: unknown) => Promise<void> = async (message: unknown) => {
+      const handler: (message: unknown) => Promise<void> = (message: unknown) => {
         const response = message as JSONRPCResponse;
         if ('id' in response && response.id === request.id) {
           this.offMessage(handler);
           if ('error' in response) {
-            reject(new VError('Server error', { cause: response.error }));
-          } else if ('result' in response) {
+            reject(response.error);
+          } else {
             resolve(response.result as T);
           }
         }
+        return Promise.resolve();
       };
 
       this.onMessage(handler);

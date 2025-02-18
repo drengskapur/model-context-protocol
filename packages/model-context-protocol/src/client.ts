@@ -1,12 +1,17 @@
-import { EventEmitter } from 'node:events';
+/**
+ * @file client.ts
+ * @description Client implementation for the Model Context Protocol.
+ * Provides functionality for connecting to and communicating with MCP servers.
+ */
+
+import { EventEmitter } from 'events';
 import { VError } from 'verror';
 import type {
+  JSONRPCError,
   JSONRPCRequest,
   JSONRPCResponse,
-  JSONRPCError,
-  Result,
-} from './schema';
-import type { McpTransport } from './transport';
+} from './schema.js';
+import type { McpTransport } from './transport.js';
 
 /**
  * Client options for Model Context Protocol.
@@ -21,9 +26,12 @@ export interface ClientOptions {
    * Client capabilities.
    */
   capabilities?: Record<string, unknown>;
-}
 
-type MessageHandler = (message: unknown) => Promise<void>;
+  /**
+   * Timeout in milliseconds.
+   */
+  timeout?: number;
+}
 
 /**
  * Client implementation of the Model Context Protocol.
@@ -31,8 +39,8 @@ type MessageHandler = (message: unknown) => Promise<void>;
 export class McpClient {
   private readonly transport: McpTransport;
   private readonly capabilities: Record<string, unknown>;
+  private readonly events: EventEmitter;
   private initialized = false;
-  private events: EventEmitter;
 
   constructor(options: ClientOptions) {
     this.transport = options.transport;
@@ -72,7 +80,7 @@ export class McpClient {
    * @param params Method parameters
    * @returns Promise that resolves with the response
    */
-  async request<T extends Result>(
+  async request<T>(
     method: string,
     params?: Record<string, unknown>
   ): Promise<T> {
@@ -93,13 +101,15 @@ export class McpClient {
       return new Promise((resolve, reject) => {
         const handler = (message: unknown) => {
           const rpcMessage = message as JSONRPCResponse | JSONRPCError;
-          
+
           if ('id' in rpcMessage && rpcMessage.id === request.id) {
             this.transport.off('message', handler);
-            
+
             if ('error' in rpcMessage) {
               const errorResponse = rpcMessage as JSONRPCError;
-              reject(new VError('Server error', { cause: errorResponse.error }));
+              reject(
+                new VError('Server error', { cause: errorResponse.error })
+              );
             } else {
               const resultResponse = rpcMessage as JSONRPCResponse;
               resolve(resultResponse.result as T);
@@ -113,7 +123,7 @@ export class McpClient {
         setTimeout(() => {
           this.transport.off('message', handler);
           reject(new VError('Request timed out'));
-        }, 30000);
+        }, options.timeout ?? 30000);
       });
     } catch (error) {
       throw new VError(error as Error, `Failed to execute request: ${method}`);
@@ -125,10 +135,7 @@ export class McpClient {
    * @param method Method name
    * @param params Method parameters
    */
-  async notify(
-    method: string,
-    params?: Record<string, unknown>
-  ): Promise<void> {
+  async notify(method: string, params?: Record<string, unknown>): Promise<void> {
     if (!this.initialized) {
       throw new VError('Client not initialized');
     }
@@ -140,10 +147,7 @@ export class McpClient {
         params,
       });
     } catch (error) {
-      throw new VError(
-        error as Error,
-        `Failed to send notification: ${method}`
-      );
+      throw new VError(error as Error, `Failed to send notification: ${method}`);
     }
   }
 
@@ -174,7 +178,10 @@ export class McpClient {
    */
   private async handleMessage(message: unknown): Promise<void> {
     try {
-      const jsonRpcMessage = message as JSONRPCRequest | JSONRPCResponse | JSONRPCError;
+      const jsonRpcMessage = message as
+        | JSONRPCRequest
+        | JSONRPCResponse
+        | JSONRPCError;
 
       if ('method' in jsonRpcMessage) {
         await this.events.emit('request', jsonRpcMessage);
@@ -186,10 +193,7 @@ export class McpClient {
         }
       }
     } catch (error) {
-      await this.events.emit(
-        'error',
-        new VError('Failed to handle message', { cause: error })
-      );
+      await this.events.emit('error', error);
     }
   }
 }

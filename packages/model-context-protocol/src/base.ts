@@ -1,46 +1,44 @@
+/**
+ * @file base.ts
+ * @description Base transport implementation and interfaces for the Model Context Protocol.
+ * Provides core transport functionality and event handling.
+ */
+
 import EventEmitter from 'eventemitter3';
-import type { JSONRPCRequest, JSONRPCResponse } from './schema';
+import type { JSONRPCMessage, JSONRPCRequest, JSONRPCResponse } from './schema';
 
 /**
- * Handler for incoming messages.
+ * Event handler types for different events
  */
-export type MessageHandler = (
-  message: JSONRPCRequest
-) => Promise<JSONRPCResponse | undefined>;
-
-/**
- * Event types for transport events
- */
-export type TransportEventMap = {
-  message: [message: JSONRPCRequest];
-  error: [error: Error];
-  connect: [];
-  disconnect: [];
+export type EventHandler = {
+  message: (message: JSONRPCMessage) => void;
+  error: (error: Error) => void;
+  connect: () => void;
+  disconnect: () => void;
 };
 
 /**
- * Base transport interface for the Model Context Protocol.
+ * Base interface for transport implementations.
  */
 export interface McpTransport {
   /**
-   * Registers an event handler.
-   * @param event Event name
-   * @param handler Event handler
+   * Event emitter for transport events.
    */
-  on(
-    event: 'message' | 'error' | 'connect' | 'disconnect',
-    handler: (message?: unknown) => void
-  ): void;
+  readonly events: EventEmitter;
 
   /**
-   * Unregisters an event handler.
+   * Subscribe to transport events.
    * @param event Event name
    * @param handler Event handler
    */
-  off(
-    event: 'message' | 'error' | 'connect' | 'disconnect',
-    handler: (message?: unknown) => void
-  ): void;
+  on<K extends keyof EventHandler>(event: K, handler: EventHandler[K]): void;
+
+  /**
+   * Unsubscribe from transport events.
+   * @param event Event name
+   * @param handler Event handler
+   */
+  off<K extends keyof EventHandler>(event: K, handler: EventHandler[K]): void;
 
   /**
    * Sends a request and returns a promise that resolves with the response.
@@ -52,35 +50,10 @@ export interface McpTransport {
 }
 
 /**
- * Base interface for event emitter functionality
- */
-export interface BaseEventEmitter {
-  /**
-   * Adds an event listener
-   * @param event Event name
-   * @param handler Event handler
-   */
-  on<K extends keyof TransportEventMap>(
-    event: K,
-    handler: (...args: TransportEventMap[K]) => void
-  ): void;
-
-  /**
-   * Removes an event listener
-   * @param event Event name
-   * @param handler Event handler
-   */
-  off<K extends keyof TransportEventMap>(
-    event: K,
-    handler: (...args: TransportEventMap[K]) => void
-  ): void;
-}
-
-/**
  * Base class for transport implementations.
  */
 export abstract class BaseTransport implements McpTransport {
-  public readonly events: BaseEventEmitter = new EventEmitter();
+  public readonly events: EventEmitter = new EventEmitter();
   protected connected = false;
 
   /**
@@ -122,9 +95,9 @@ export abstract class BaseTransport implements McpTransport {
    * @param event Event name
    * @param handler Event handler
    */
-  on<K extends keyof TransportEventMap>(
+  on<K extends keyof EventHandler>(
     event: K,
-    handler: (...args: TransportEventMap[K]) => void
+    handler: EventHandler[K]
   ): void {
     (this.events as EventEmitter).on(event, handler);
   }
@@ -134,9 +107,9 @@ export abstract class BaseTransport implements McpTransport {
    * @param event Event name
    * @param handler Event handler
    */
-  off<K extends keyof TransportEventMap>(
+  off<K extends keyof EventHandler>(
     event: K,
-    handler: (...args: TransportEventMap[K]) => void
+    handler: EventHandler[K]
   ): void {
     (this.events as EventEmitter).off(event, handler);
   }

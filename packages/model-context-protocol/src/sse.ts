@@ -5,7 +5,7 @@
  */
 
 import { VError } from 'verror';
-import { Session, Channel, createSession } from 'better-sse';
+import { Session, Channel as BetterSseChannel, createSession } from 'better-sse';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { BaseTransport } from './transport';
 import type { JSONRPCRequest, JSONRPCResponse } from './schema';
@@ -54,6 +54,10 @@ export interface SseTransportOptions {
   headers?: Record<string, string>;
 }
 
+interface Channel extends EventTarget {
+  close(): void;
+}
+
 /**
  * SSE transport implementation using better-sse.
  */
@@ -93,7 +97,7 @@ export class SseTransport extends BaseTransport {
 
       // Join channel if specified
       if (this.options.channel) {
-        this.channel = new Channel();
+        this.channel = new BetterSseChannel();
         this.channel.register(this.session);
       }
 
@@ -115,8 +119,8 @@ export class SseTransport extends BaseTransport {
   async disconnect(): Promise<void> {
     try {
       if (this.channel) {
-        // No close method in Channel type, but it exists at runtime
-        (this.channel as any).close();
+        // Cast to Channel interface that includes close method
+        (this.channel as Channel).close();
         this.channel = null;
       }
       if (this.session) {

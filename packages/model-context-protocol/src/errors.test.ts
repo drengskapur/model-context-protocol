@@ -10,6 +10,9 @@ import {
   AuthError,
   ServerNotInitializedError,
   RequestFailedError,
+  AuthenticationError,
+  TransportError,
+  TimeoutError,
   PARSE_ERROR,
   INVALID_REQUEST,
   METHOD_NOT_FOUND,
@@ -120,6 +123,30 @@ describe('Error classes', () => {
     expect(error.message).toBe('Request timeout');
     expect(error.cause).toBe(cause);
   });
+
+  it('AuthenticationError should have correct code and support cause', () => {
+    const cause = new Error('Authentication failed');
+    const error = new AuthenticationError('Invalid credentials', cause);
+    expect(error.code).toBe(401);
+    expect(error.message).toBe('Invalid credentials');
+    expect(error.cause).toBe(cause);
+  });
+
+  it('TransportError should have correct code and support cause', () => {
+    const cause = new Error('Transport error');
+    const error = new TransportError('Transport failed', cause);
+    expect(error.code).toBe(500);
+    expect(error.message).toBe('Transport failed');
+    expect(error.cause).toBe(cause);
+  });
+
+  it('TimeoutError should have correct code and support cause', () => {
+    const cause = new Error('Timeout error');
+    const error = new TimeoutError('Timeout exceeded', cause);
+    expect(error.code).toBe(504);
+    expect(error.message).toBe('Timeout exceeded');
+    expect(error.cause).toBe(cause);
+  });
 });
 
 describe('Error Handling', () => {
@@ -151,6 +178,9 @@ describe('Error Handling', () => {
       new AuthError('Unauthorized'),
       new ServerNotInitializedError('Not initialized'),
       new RequestFailedError('Request failed'),
+      new AuthenticationError('Invalid credentials'),
+      new TransportError('Transport failed'),
+      new TimeoutError('Timeout exceeded'),
     ];
 
     errors.forEach((error) => {
@@ -170,12 +200,29 @@ describe('Error Handling', () => {
       AuthError: -32401,
       ServerNotInitializedError: -32002,
       RequestFailedError: -32001,
+      AuthenticationError: 401,
+      TransportError: 500,
+      TimeoutError: 504,
     };
 
-    Object.entries(codeMap).forEach(([type, code]) => {
-      const error = new errors[type]('Test error');
+    const errorClasses = {
+      ParseError,
+      InvalidRequestError,
+      MethodNotFoundError,
+      InvalidParamsError,
+      InternalError,
+      AuthError,
+      ServerNotInitializedError,
+      RequestFailedError,
+      AuthenticationError,
+      TransportError,
+      TimeoutError,
+    };
+
+    for (const [type, code] of Object.entries(codeMap)) {
+      const error = new errorClasses[type]('Test error');
       expect(error.toJSON().code).toBe(code);
-    });
+    }
   });
 
   it('should support error chaining with VError', () => {

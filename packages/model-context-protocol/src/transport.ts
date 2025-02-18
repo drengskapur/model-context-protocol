@@ -1,6 +1,7 @@
 /**
  * @file transport.ts
- * @description Transport layer interfaces for the Model Context Protocol.
+ * @description Transport layer interfaces and base implementations for the Model Context Protocol.
+ * Provides core transport functionality for message passing and event handling.
  */
 
 import {
@@ -9,7 +10,7 @@ import {
   JSONRPCRequest,
   JSONRPCResponse,
 } from 'json-rpc-2.0';
-import EventEmitter from 'eventemitter3';
+import { EventEmitter } from 'eventemitter3';
 import type { JSONRPCRequest, JSONRPCResponse } from './schema';
 
 /**
@@ -239,13 +240,13 @@ export class MessageProcessor {
   /** Set of registered message handlers */
   private _handlers = new Set<MessageHandler>();
   /** Error handler function */
-  private _errorHandler: (error: Error) => void;
+  private _errorHandler: ErrorHandler;
 
   /**
    * Creates a new MessageProcessor instance.
    * @param errorHandler Function to call when an error occurs
    */
-  constructor(errorHandler: (error: Error) => void) {
+  constructor(errorHandler: ErrorHandler) {
     this._errorHandler = errorHandler;
   }
 

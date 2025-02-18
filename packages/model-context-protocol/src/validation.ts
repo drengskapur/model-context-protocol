@@ -432,20 +432,11 @@ export async function validateLoggingLevel(level: unknown): Promise<void> {
  * Custom validation error class.
  */
 export class ValidationError extends McpError {
-  readonly errors: z.ZodError;
+  public cause?: ValiError;
 
-  /**
-   * Creates a new ValidationError instance.
-   * @param message Error message
-   * @param errors Zod validation error details
-   */
-  constructor(
-    message: string,
-    public cause?: ValiError
-  ) {
+  constructor(message: string, cause?: ValiError) {
     super(-32402, message); // Use custom error code for validation errors
-    this.name = 'ValidationError';
-    Error.captureStackTrace(this, this.constructor);
+    this.cause = cause;
   }
 
   /**
