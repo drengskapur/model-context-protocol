@@ -68,8 +68,9 @@ export function validateResponse<T extends BaseSchema>(
  * @throws {ValidationError} If validation fails
  */
 export function validateLoggingLevel(level: unknown): string {
+  const schema = enumType(['debug', 'info', 'warning', 'error', 'critical', 'alert', 'emergency', 'notice']);
   try {
-    return parse(enumType(['debug', 'info', 'warn', 'error']), level);
+    return parse(schema, level);
   } catch (error) {
     throw new ValidationError('Invalid logging level', error as ValiError);
   }
@@ -110,19 +111,19 @@ export function validateSamplingOptions(options: unknown): {
  * @returns Validated resource
  * @throws {ValidationError} If validation fails
  */
-export function validateResource(resource: unknown): Promise<void> {
+export async function validateResource(resource: unknown): Promise<void> {
+  const schema = object({
+    uri: string(),
+    name: string(),
+    description: optional(string()),
+    mimeType: optional(string()),
+    size: optional(number([minValue(0)])),
+  });
+  
   try {
-    const schema = object({
-      uri: string(),
-      name: string(),
-      description: optional(string()),
-      mimeType: optional(string()),
-      size: optional(number([minValue(0)])),
-    });
-    parse(schema, resource);
-    return Promise.resolve();
+    await parse(schema, resource);
   } catch (error) {
-    return Promise.reject(new ValidationError('Invalid resource', error as ValiError));
+    throw new ValidationError('Invalid resource', error as ValiError);
   }
 }
 
@@ -132,21 +133,21 @@ export function validateResource(resource: unknown): Promise<void> {
  * @returns Validated prompt
  * @throws {ValidationError} If validation fails
  */
-export function validatePrompt(prompt: unknown): Promise<void> {
-  try {
-    const schema = object({
+export async function validatePrompt(prompt: unknown): Promise<void> {
+  const schema = object({
+    name: string(),
+    description: optional(string()),
+    arguments: optional(array(object({
       name: string(),
       description: optional(string()),
-      arguments: optional(array(object({
-        name: string(),
-        description: optional(string()),
-        required: optional(literal(true)),
-      }))),
-    });
-    parse(schema, prompt);
-    return Promise.resolve();
+      required: optional(literal(true)),
+    }))),
+  });
+  
+  try {
+    await parse(schema, prompt);
   } catch (error) {
-    return Promise.reject(new ValidationError('Invalid prompt', error as ValiError));
+    throw new ValidationError('Invalid prompt', error as ValiError);
   }
 }
 
@@ -156,27 +157,27 @@ export function validatePrompt(prompt: unknown): Promise<void> {
  * @returns Validated message
  * @throws {ValidationError} If validation fails
  */
-export function validateSamplingMessage(message: unknown): Promise<void> {
+export async function validateSamplingMessage(message: unknown): Promise<void> {
+  const schema = object({
+    role: enumType(['user', 'assistant', 'system', 'function', 'tool']),
+    content: union([
+      object({
+        type: literal('text'),
+        text: string(),
+      }),
+      object({
+        type: literal('image'),
+        data: string(),
+        mimeType: string(),
+      }),
+    ]),
+    name: optional(string()),
+  });
+  
   try {
-    const schema = object({
-      role: enumType(['user', 'assistant', 'system', 'function', 'tool']),
-      content: union([
-        object({
-          type: literal('text'),
-          text: string(),
-        }),
-        object({
-          type: literal('image'),
-          data: string(),
-          mimeType: string(),
-        }),
-      ]),
-      name: optional(string()),
-    });
-    parse(schema, message);
-    return Promise.resolve();
+    await parse(schema, message);
   } catch (error) {
-    return Promise.reject(new ValidationError('Invalid sampling message', error as ValiError));
+    throw new ValidationError('Invalid sampling message', error as ValiError);
   }
 }
 
@@ -186,21 +187,21 @@ export function validateSamplingMessage(message: unknown): Promise<void> {
  * @returns Validated tool
  * @throws {ValidationError} If validation fails
  */
-export function validateTool(tool: unknown): Promise<void> {
+export async function validateTool(tool: unknown): Promise<void> {
+  const schema = object({
+    name: string(),
+    description: optional(string()),
+    inputSchema: object({
+      type: literal('object'),
+      properties: optional(object({})),
+      required: optional(array(string())),
+    }),
+  });
+  
   try {
-    const schema = object({
-      name: string(),
-      description: optional(string()),
-      inputSchema: object({
-        type: literal('object'),
-        properties: optional(object({})),
-        required: optional(array(string())),
-      }),
-    });
-    parse(schema, tool);
-    return Promise.resolve();
+    await parse(schema, tool);
   } catch (error) {
-    return Promise.reject(new ValidationError('Invalid tool', error as ValiError));
+    throw new ValidationError('Invalid tool', error as ValiError);
   }
 }
 
@@ -210,21 +211,21 @@ export function validateTool(tool: unknown): Promise<void> {
  * @returns Validated reference
  * @throws {ValidationError} If validation fails
  */
-export function validateReference(ref: unknown): Promise<void> {
+export async function validateReference(ref: unknown): Promise<void> {
+  const schema = union([
+    object({
+      type: literal('ref/prompt'),
+      name: string(),
+    }),
+    object({
+      type: literal('ref/resource'),
+      uri: string(),
+    }),
+  ]);
+  
   try {
-    const schema = union([
-      object({
-        type: literal('ref/prompt'),
-        name: string(),
-      }),
-      object({
-        type: literal('ref/resource'),
-        uri: string(),
-      }),
-    ]);
-    parse(schema, ref);
-    return Promise.resolve();
+    await parse(schema, ref);
   } catch (error) {
-    return Promise.reject(new ValidationError('Invalid reference', error as ValiError));
+    throw new ValidationError('Invalid reference', error as ValiError);
   }
 }
