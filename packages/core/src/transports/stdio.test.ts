@@ -201,7 +201,7 @@ describe('StdioTransport', () => {
   it('should handle message handler errors', async () => {
     const errorHandler = vi.fn();
     transport.onError(errorHandler);
-    transport.onMessage(async () => {
+    transport.onMessage(() => {
       throw new Error('Handler error');
     });
     await transport.connect();

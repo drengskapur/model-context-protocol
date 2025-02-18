@@ -20,7 +20,7 @@ import {
   type PromptReference,
   type Tool,
 } from './schema.js';
-import { type BaseSchema, ValiError } from 'valibot';
+import { type BaseSchema, type BaseIssue, ValiError } from 'valibot';
 import { object, parse, string } from 'valibot';
 import {
   InvalidParamsError,
@@ -378,12 +378,10 @@ export class Server {
     this.tools.delete(name);
 
     if (this.transport && this.initialized) {
-      this.transport
-        .send({
-          jsonrpc: JSONRPC_VERSION,
-          method: 'notifications/tools/list_changed',
-        })
-        .catch(() => {});
+      this.transport.send({
+        jsonrpc: JSONRPC_VERSION,
+        method: 'notifications/tools/list_changed',
+      });
     }
   }
 
@@ -526,7 +524,7 @@ export class Server {
     }
 
     try {
-      const params = parse(tool.schema, request.params);
+      const params = parse(tool.schema as BaseSchema<unknown, unknown, BaseIssue<unknown>>, request.params);
       const result = await tool.handler(params);
       return {
         jsonrpc: JSONRPC_VERSION,
@@ -629,7 +627,7 @@ export class Server {
     }
   }
 
-  public async sendLogMessage(
+  public sendLogMessage(
     level: LoggingLevel,
     data: unknown,
     logger?: string
@@ -657,7 +655,7 @@ export class Server {
       this.loggingLevel &&
       levels.indexOf(level) >= levels.indexOf(this.loggingLevel)
     ) {
-      await this.transport.send({
+      return this.transport.send({
         jsonrpc: JSONRPC_VERSION,
         method: 'notifications/message',
         params: {
@@ -690,28 +688,24 @@ export class Server {
     await validatePrompt(prompt);
     this.prompts.registerPrompt(prompt, executor);
     if (this.transport && this.initialized) {
-      this.transport
-        .send({
-          jsonrpc: JSONRPC_VERSION,
-          method: 'notifications/prompts/list_changed',
-        })
-        .catch(() => {});
+      this.transport.send({
+        jsonrpc: JSONRPC_VERSION,
+        method: 'notifications/prompts/list_changed',
+      });
     }
   }
 
   public removePrompt(name: string): void {
     this.prompts.unregisterPrompt(name);
     if (this.transport && this.initialized) {
-      this.transport
-        .send({
-          jsonrpc: JSONRPC_VERSION,
-          method: 'notifications/prompts/list_changed',
-        })
-        .catch(() => {});
+      this.transport.send({
+        jsonrpc: JSONRPC_VERSION,
+        method: 'notifications/prompts/list_changed',
+      });
     }
   }
 
-  private async handlePing(request: JSONRPCRequest): Promise<JSONRPCResponse> {
+  private handlePing(request: JSONRPCRequest): JSONRPCResponse {
     return {
       jsonrpc: JSONRPC_VERSION,
       id: request.id,
@@ -719,9 +713,7 @@ export class Server {
     };
   }
 
-  private async handleListPrompts(
-    request: JSONRPCRequest
-  ): Promise<JSONRPCResponse> {
+  private handleListPrompts(request: JSONRPCRequest): JSONRPCResponse {
     return {
       jsonrpc: JSONRPC_VERSION,
       id: request.id,
@@ -803,9 +795,7 @@ export class Server {
     }
   }
 
-  private async handleListTools(
-    request: JSONRPCRequest
-  ): Promise<JSONRPCResponse> {
+  private handleListTools(request: JSONRPCRequest): JSONRPCResponse {
     return {
       jsonrpc: JSONRPC_VERSION,
       id: request.id,
@@ -815,9 +805,7 @@ export class Server {
     };
   }
 
-  private async handleListResources(
-    request: JSONRPCRequest
-  ): Promise<JSONRPCResponse> {
+  private handleListResources(request: JSONRPCRequest): JSONRPCResponse {
     return {
       jsonrpc: JSONRPC_VERSION,
       id: request.id,
@@ -827,9 +815,7 @@ export class Server {
     };
   }
 
-  private async handleListResourceTemplates(
-    request: JSONRPCRequest
-  ): Promise<JSONRPCResponse> {
+  private handleListResourceTemplates(request: JSONRPCRequest): JSONRPCResponse {
     return {
       jsonrpc: JSONRPC_VERSION,
       id: request.id,
@@ -890,16 +876,14 @@ export class Server {
 
     const onChange = (content: unknown) => {
       if (this.transport) {
-        this.transport
-          .send({
-            jsonrpc: JSONRPC_VERSION,
-            method: 'notifications/resources/updated',
-            params: {
-              uri,
-              content,
-            },
-          })
-          .catch(() => {});
+        this.transport.send({
+          jsonrpc: JSONRPC_VERSION,
+          method: 'notifications/resources/updated',
+          params: {
+            uri,
+            content,
+          },
+        });
       }
     };
 
@@ -939,9 +923,7 @@ export class Server {
     };
   }
 
-  private async handleListRoots(
-    request: JSONRPCRequest
-  ): Promise<JSONRPCResponse> {
+  private handleListRoots(request: JSONRPCRequest): JSONRPCResponse {
     return {
       jsonrpc: JSONRPC_VERSION,
       id: request.id,
@@ -1073,11 +1055,15 @@ export class Server {
     }
   }
 
-  private async generatePromptMessages(
+  private generatePromptMessages(
     prompt: Prompt,
     args?: Record<string, string>
-  ): Promise<PromptMessage[]> {
-    // Implementation can be added here
+  ): PromptMessage[] {
+    // This is a placeholder implementation
+    // In a real implementation, you would:
+    // 1. Template the prompt using the arguments
+    // 2. Generate any dynamic content
+    // 3. Format everything as PromptMessages
     return [];
   }
 }
@@ -1116,8 +1102,11 @@ export class McpServer {
 }
 
 export class ValidationError extends Error {
-  constructor(public readonly message: string) {
+  readonly message: string;
+
+  constructor(message: string) {
     super(message);
     this.name = 'ValidationError';
+    this.message = message;
   }
 }
