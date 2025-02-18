@@ -1,13 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
-  validateResource,
+  ValidationError,
+  validateLoggingLevel,
   validatePrompt,
+  validateReference,
+  validateResource,
   validateSamplingMessage,
   validateTool,
-  validateReference,
-  validateLoggingLevel,
-  ValidationError,
-} from './validation';
+} from './validation.js';
 
 describe('Validation', () => {
   describe('Resource Validation', () => {

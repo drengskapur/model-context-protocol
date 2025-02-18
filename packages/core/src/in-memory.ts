@@ -3,10 +3,10 @@ import type { McpTransport, MessageHandler } from './transport.js';
 
 export class InMemoryTransport implements McpTransport {
   private _connected = false;
-  private _messageHandlers = new Set<MessageHandler>();
-  private _errorHandlers = new Set<(error: Error) => void>();
-  private _otherTransport: InMemoryTransport | null = null;
   private _messages: JSONRPCMessage[] = [];
+  private _messageHandlers = new Set<MessageHandler>();
+  public _errorHandlers = new Set<(error: Error) => void>();
+  private _otherTransport: InMemoryTransport | null = null;
 
   static createLinkedPair(): [InMemoryTransport, InMemoryTransport] {
     const transport1 = new InMemoryTransport();
@@ -103,18 +103,22 @@ export class InMemoryTransport implements McpTransport {
     return this._messages;
   }
 
-  simulateIncomingMessage(message: JSONRPCMessage): void {
+  async simulateIncomingMessage(message: JSONRPCMessage): Promise<void> {
     if (!this._connected) {
       throw new Error('Transport not connected');
     }
     // Process in next tick to simulate async behavior
-    Promise.resolve();
+    await Promise.resolve();
     for (const handler of this._messageHandlers) {
-      handler(message);
+      await handler(message);
     }
   }
 
   clearMessages(): void {
     this._messages = [];
+  }
+
+  get errorHandlers(): Set<(error: Error) => void> {
+    return this._errorHandlers;
   }
 }

@@ -7,21 +7,23 @@ class TestTransport implements McpTransport {
   private messageHandlers = new Set<MessageHandler>();
   private errorHandlers = new Set<(error: Error) => void>();
 
-  async connect(): Promise<void> {
+  connect(): Promise<void> {
     this.connected = true;
+    return Promise.resolve();
   }
 
-  async disconnect(): Promise<void> {
+  disconnect(): Promise<void> {
     this.connected = false;
     this.messageHandlers.clear();
     this.errorHandlers.clear();
+    return Promise.resolve();
   }
 
   isConnected(): boolean {
     return this.connected;
   }
 
-  async send(message: JSONRPCMessage): Promise<void> {
+  async send(_message: JSONRPCMessage): Promise<void> {
     if (!this.connected) {
       throw new Error('Transport not connected');
     }
@@ -58,7 +60,7 @@ class TestTransport implements McpTransport {
     return this.errorHandlers;
   }
 
-  async simulateError(error: Error): Promise<void> {
+  simulateError(error: Error): void {
     for (const handler of this.errorHandlers) {
       handler(error);
     }
@@ -207,7 +209,7 @@ describe('McpTransport', () => {
       await transport.connect();
 
       const error = new Error('Handler error');
-      const handler: MessageHandler = async () => {
+      const handler: MessageHandler = () => {
         throw error;
       };
       let caughtError: Error | null = null;

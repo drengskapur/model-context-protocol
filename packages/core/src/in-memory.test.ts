@@ -109,7 +109,7 @@ describe('InMemoryTransport', () => {
       expect(handler2).toHaveBeenCalledTimes(2);
     });
 
-    it('should handle error handlers', async () => {
+    it('should handle error handlers', () => {
       const handler1 = vi.fn();
       const handler2 = vi.fn();
 
@@ -117,7 +117,7 @@ describe('InMemoryTransport', () => {
       transport.onError(handler2);
 
       const error = new Error('Test error');
-      for (const handler of transport['_errorHandlers']) {
+      for (const handler of transport.errorHandlers) {
         handler.call(transport, error);
       }
 
@@ -125,7 +125,7 @@ describe('InMemoryTransport', () => {
       expect(handler2).toHaveBeenCalledWith(error);
 
       transport.offError(handler1);
-      for (const handler of transport['_errorHandlers']) {
+      for (const handler of transport.errorHandlers) {
         handler.call(transport, error);
       }
 

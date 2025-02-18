@@ -134,7 +134,9 @@ export class PromptManager {
   }
 
   private notifySubscribers(): void {
-    this.subscribers.forEach((subscriber) => subscriber());
+    for (const subscriber of this.subscribers) {
+      subscriber();
+    }
   }
 }
 
@@ -207,7 +209,12 @@ export class ResourceManager {
   }
 
   private notifyResourceUpdated(uri: string, content: unknown): void {
-    this.subscribers.get(uri)?.forEach((subscriber) => subscriber(content));
+    const subscribers = this.subscribers.get(uri);
+    if (subscribers) {
+      for (const subscriber of subscribers) {
+        subscriber(content);
+      }
+    }
   }
 
   private notifyResourceListChanged(): void {
@@ -249,7 +256,9 @@ export class RootManager {
 
   private notifySubscribers(): void {
     const roots = this.listRoots();
-    this.subscribers.forEach((subscriber) => subscriber(roots));
+    for (const subscriber of this.subscribers) {
+      subscriber(roots);
+    }
   }
 }
 
@@ -265,7 +274,9 @@ export class SamplingManager {
   }
 
   notifyMessageCreated(message: SamplingMessage): void {
-    this.messageHandlers.forEach((handler) => handler(message));
+    for (const handler of this.messageHandlers) {
+      handler(message);
+    }
   }
 }
 
@@ -321,7 +332,7 @@ export class Server {
   private tools = new Map<
     string,
     {
-      schema: BaseSchema<unknown, unknown, unknown>;
+      schema: BaseSchema<unknown, unknown, BaseIssue<unknown>>;
       handler: (params: unknown) => Promise<unknown>;
     }
   >();
@@ -336,7 +347,7 @@ export class Server {
     this.options = options;
   }
 
-  public async tool<T extends BaseSchema<unknown, unknown, unknown>>(
+  public async tool<T extends BaseSchema<unknown, unknown, BaseIssue<unknown>>>(
     name: string,
     schema: T,
     handler: (params: unknown) => Promise<unknown>
@@ -455,16 +466,48 @@ export class Server {
       );
     }
 
-    if (message.method === 'logging/setLevel' && 'id' in message) {
-      return this.handleSetLoggingLevel(message);
-    }
-
     if (!('id' in message)) {
       // Handle notification
       return Promise.resolve(undefined);
     }
 
-    return this.handleToolCall(message as JSONRPCRequest);
+    const request = message as JSONRPCRequest;
+    switch (request.method) {
+      case 'ping':
+        return this.handlePing(request);
+      case 'initialize':
+        return this.handleInitialize(request);
+      case 'prompts/list':
+        return this.handleListPrompts(request);
+      case 'prompts/get':
+        return this.handleGetPrompt(request);
+      case 'prompts/execute':
+        return this.handleExecutePrompt(request);
+      case 'logging/setLevel':
+        return this.handleSetLoggingLevel(request);
+      case 'tools/list':
+        return this.handleListTools(request);
+      case 'resources/list':
+        return this.handleListResources(request);
+      case 'resources/templates/list':
+        return this.handleListResourceTemplates(request);
+      case 'resources/read':
+        return this.handleReadResource(request);
+      case 'resources/subscribe':
+        return this.handleSubscribeResource(request);
+      case 'resources/unsubscribe':
+        return this.handleUnsubscribeResource(request);
+      case 'roots/list':
+        return this.handleListRoots(request);
+      case 'roots/get':
+        return this.handleGetRoot(request);
+      case 'sampling/createMessage':
+        return this.handleCreateMessage(request);
+      case 'completion/complete':
+        return this.handleComplete(request);
+      default:
+        return this.handleToolCall(request);
+    }
   }
 
   private async handleToolCall(
@@ -1028,157 +1071,6 @@ export class Server {
       }
       throw error;
     }
-  }
-
-  private async handleRequest(request: JSONRPCRequest): Promise<void> {
-    if (!this.transport) {
-      return;
-    }
-
-    let response: JSONRPCResponse | JSONRPCError;
-
-    try {
-      switch (request.method) {
-        case 'ping':
-          response = await this.handlePing(request);
-          break;
-        case 'initialize':
-          response = await this.handleInitialize(request);
-          break;
-        case 'prompts/list':
-          response = await this.handleListPrompts(request);
-          break;
-        case 'prompts/get':
-          response = await this.handleGetPrompt(request);
-          break;
-        case 'prompts/execute':
-          response = await this.handleExecutePrompt(request);
-          break;
-        case 'logging/setLevel':
-          response = await this.handleSetLoggingLevel(request);
-          break;
-        case 'tools/list':
-          response = await this.handleListTools(request);
-          break;
-        case 'resources/list':
-          response = await this.handleListResources(request);
-          break;
-        case 'resources/templates/list':
-          response = await this.handleListResourceTemplates(request);
-          break;
-        case 'resources/read':
-          response = await this.handleReadResource(request);
-          break;
-        case 'resources/subscribe':
-          response = await this.handleSubscribeResource(request);
-          break;
-        case 'resources/unsubscribe':
-          response = await this.handleUnsubscribeResource(request);
-          break;
-        case 'roots/list':
-          response = await this.handleListRoots(request);
-          break;
-        case 'roots/get':
-          response = await this.handleGetRoot(request);
-          break;
-        case 'sampling/createMessage':
-          response = await this.handleCreateMessage(request);
-          break;
-        case 'completion/complete':
-          response = await this.handleComplete(request);
-          break;
-        default:
-          response = await this.handleToolCall(request);
-      }
-    } catch (error) {
-      response = {
-        jsonrpc: JSONRPC_VERSION,
-        id: request.id,
-        error: {
-          code: -32603,
-          message: error instanceof Error ? error.message : 'Internal error',
-        },
-      };
-    }
-
-    await this.transport.send(response);
-  }
-
-  public promptCompletion(
-    promptName: string,
-    handler: (value: string) => Promise<string[]>
-  ): void {
-    this.completion.registerPromptCompletion(promptName, handler);
-  }
-
-  public resourceCompletion(
-    uriTemplate: string,
-    handler: (value: string) => Promise<string[]>
-  ): void {
-    this.completion.registerResourceCompletion(uriTemplate, handler);
-  }
-
-  public async resource(resource: Resource, content: unknown): Promise<void> {
-    await validateResource(resource);
-    this.resources.registerResource(resource, content);
-    if (this.transport && this.initialized) {
-      this.transport
-        .send({
-          jsonrpc: JSONRPC_VERSION,
-          method: 'notifications/resources/list_changed',
-        })
-        .catch(() => {});
-    }
-  }
-
-  public resourceTemplate(template: ResourceTemplate): void {
-    this.resources.registerTemplate(template);
-    if (this.transport) {
-      this.transport
-        .send({
-          jsonrpc: JSONRPC_VERSION,
-          method: 'notifications/resources/list_changed',
-        })
-        .catch(() => {});
-    }
-  }
-
-  public addRoot(root: string): void {
-    this.roots.addRoot(root);
-    if (this.transport) {
-      this.transport
-        .send({
-          jsonrpc: JSONRPC_VERSION,
-          method: 'notifications/rootsChanged',
-          params: {
-            roots: this.roots.listRoots(),
-          },
-        })
-        .catch(() => {});
-    }
-  }
-
-  public removeRoot(root: string): void {
-    this.roots.removeRoot(root);
-    if (this.transport) {
-      this.transport
-        .send({
-          jsonrpc: JSONRPC_VERSION,
-          method: 'notifications/rootsChanged',
-          params: {
-            roots: this.roots.listRoots(),
-          },
-        })
-        .catch(() => {});
-    }
-  }
-
-  // Add public methods for sampling
-  public onMessageCreated(
-    handler: (message: SamplingMessage) => void
-  ): () => void {
-    this.sampling.subscribe(handler);
-    return () => this.sampling.unsubscribe(handler);
   }
 
   private async generatePromptMessages(

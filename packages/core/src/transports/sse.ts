@@ -131,8 +131,8 @@ export interface SseTransportOptions {
 export class SseTransport implements McpTransport {
   protected _eventSource: EventSource | null = null;
   private readonly _options: Required<SseTransportOptions>;
+  public readonly messageProcessor: MessageProcessor;
   private readonly _errorManager: ErrorManager;
-  private readonly _messageProcessor: MessageProcessor;
 
   constructor(options: SseTransportOptions) {
     this._options = {
@@ -142,13 +142,13 @@ export class SseTransport implements McpTransport {
     };
 
     this._errorManager = new ErrorManager();
-    this._messageProcessor = new MessageProcessor((error) =>
+    this.messageProcessor = new MessageProcessor((error) =>
       this._errorManager.handleError(error)
     );
   }
 
   private _onMessage = (event: MessageEvent) => {
-    this._messageProcessor.processMessage(event.data).catch((error) => {
+    this.messageProcessor.processMessage(event.data).catch((error) => {
       this._errorManager.handleError(error);
     });
   };
@@ -211,7 +211,7 @@ export class SseTransport implements McpTransport {
       this._eventSource.close();
       this._eventSource = null;
     }
-    this._messageProcessor.clear();
+    this.messageProcessor.clear();
     this._errorManager.clear();
     return Promise.resolve();
   }
@@ -225,11 +225,11 @@ export class SseTransport implements McpTransport {
   }
 
   public onMessage(handler: MessageHandler): void {
-    this._messageProcessor.addHandler(handler);
+    this.messageProcessor.addHandler(handler);
   }
 
   public offMessage(handler: MessageHandler): void {
-    this._messageProcessor.removeHandler(handler);
+    this.messageProcessor.removeHandler(handler);
   }
 
   public onError(handler: (error: Error) => void): void {

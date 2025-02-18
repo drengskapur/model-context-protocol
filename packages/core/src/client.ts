@@ -1,8 +1,4 @@
-import {
-  McpError,
-  RequestFailedError,
-  ServerNotInitializedError,
-} from './errors.js';
+import { RequestFailedError, ServerNotInitializedError } from './errors.js';
 import type {
   ClientCapabilities,
   InitializeResult,
@@ -12,16 +8,15 @@ import type {
   JSONRPCRequest,
   JSONRPCResponse,
   LoggingLevel,
-  ProgressToken,
-  ServerCapabilities,
-  SamplingMessage,
   ModelPreferences,
+  ProgressToken,
   Prompt,
   PromptMessage,
+  SamplingMessage,
+  ServerCapabilities,
 } from './schema.js';
 import { JSONRPC_VERSION, LATEST_PROTOCOL_VERSION } from './schema.js';
-import type { McpTransport } from './transport.js';
-import type { MessageHandler } from './transport.js';
+import type { McpTransport, MessageHandler } from './transport.js';
 
 export interface McpClientOptions {
   name: string;
@@ -116,19 +111,18 @@ export class McpClient {
   }
 
   private handleResponse(response: JSONRPCResponse | JSONRPCError): void {
-    const id = response.id;
-    const pendingRequest = this.pendingRequests.get(id);
-    if (!pendingRequest) {
+    const request = this.pendingRequests.get(response.id);
+    if (!request) {
       return;
     }
 
-    clearTimeout(pendingRequest.timeout);
-    this.pendingRequests.delete(id);
+    clearTimeout(request.timeout);
+    this.pendingRequests.delete(response.id);
 
     if ('error' in response) {
-      pendingRequest.reject(McpError.fromJSON(response.error));
+      request.reject(new RequestFailedError(response.error.message));
     } else {
-      pendingRequest.resolve(response.result);
+      request.resolve(response.result);
     }
   }
 
@@ -140,6 +134,43 @@ export class McpClient {
     const handler = this.progressHandlers.get(params.progressToken);
     if (handler) {
       handler(params.progress, params.total);
+    }
+  }
+
+  private handleNotification(notification: JSONRPCNotification): void {
+    if (
+      notification.method === 'notifications/progress' &&
+      'params' in notification
+    ) {
+      const params = notification.params as {
+        progressToken: ProgressToken;
+        progress: number;
+        total?: number;
+      };
+      this.handleProgressNotification(params);
+    } else if (
+      notification.method === 'notifications/cancelled' &&
+      notification.params
+    ) {
+      const { requestId, reason } = notification.params as {
+        requestId: string | number;
+        reason?: string;
+      };
+      const pendingRequest = this.pendingRequests.get(requestId);
+      if (pendingRequest) {
+        clearTimeout(pendingRequest.timeout);
+        this.pendingRequests.delete(requestId);
+        pendingRequest.reject(
+          new RequestFailedError(
+            `Request cancelled: ${reason || 'No reason provided'}`
+          )
+        );
+      }
+    }
+
+    // Notify all message handlers
+    for (const handler of this.messageHandlers) {
+      handler(notification);
     }
   }
 
@@ -157,45 +188,10 @@ export class McpClient {
 
   private handleMessage = async (message: JSONRPCMessage): Promise<void> => {
     try {
-      // Handle responses
-      if ('id' in message && message.id !== null) {
-        this.handleResponse(message as JSONRPCResponse | JSONRPCError);
-      }
-
-      // Handle notifications
-      if ('method' in message && !('id' in message)) {
-        const notification = message as JSONRPCNotification;
-        if (
-          notification.method === 'notifications/progress' &&
-          notification.params
-        ) {
-          const params = notification.params as {
-            progressToken: ProgressToken;
-            progress: number;
-            total?: number;
-          };
-          if (typeof params.progress === 'number' && params.progressToken) {
-            this.handleProgressNotification(params);
-          }
-        } else if (
-          notification.method === 'notifications/cancelled' &&
-          notification.params
-        ) {
-          const { requestId, reason } = notification.params as {
-            requestId: string | number;
-            reason?: string;
-          };
-          const pendingRequest = this.pendingRequests.get(requestId);
-          if (pendingRequest) {
-            clearTimeout(pendingRequest.timeout);
-            this.pendingRequests.delete(requestId);
-            pendingRequest.reject(
-              new RequestFailedError(
-                `Request cancelled: ${reason || 'No reason provided'}`
-              )
-            );
-          }
-        }
+      if ('id' in message) {
+        this.handleResponse(message);
+      } else if ('method' in message) {
+        this.handleNotification(message);
       }
 
       // Pass to other handlers
@@ -417,10 +413,7 @@ export class McpClient {
     return () => this.offMessage(messageHandler);
   }
 
-  private prepareRequest(
-    method: string,
-    params?: unknown
-  ): JSONRPCRequest {
+  private prepareRequest(method: string, params?: unknown): JSONRPCRequest {
     const request: JSONRPCRequest = {
       jsonrpc: JSONRPC_VERSION,
       id: this.nextMessageId++,
@@ -431,7 +424,9 @@ export class McpClient {
     if (this._authToken) {
       request.params = {
         token: this._authToken,
-        ...(typeof request.params === 'object' ? request.params : { data: request.params }),
+        ...(typeof request.params === 'object'
+          ? request.params
+          : { data: request.params }),
       };
     }
 
@@ -563,10 +558,9 @@ export class McpClient {
 
     return async () => {
       this.offMessage(messageHandler);
-      const unsubscribeRequest = this.prepareRequest(
-        'resources/unsubscribe',
-        { name }
-      );
+      const unsubscribeRequest = this.prepareRequest('resources/unsubscribe', {
+        name,
+      });
       await this.send(unsubscribeRequest);
     };
   }

@@ -128,14 +128,10 @@ describe('SseTransport', () => {
       };
 
       transport.onMessage(handler);
-      expect(transport['_messageProcessor']['_handlers'].has(handler)).toBe(
-        true
-      );
+      expect(transport.messageProcessor._handlers.has(handler)).toBe(true);
 
       transport.offMessage(handler);
-      expect(transport['_messageProcessor']['_handlers'].has(handler)).toBe(
-        false
-      );
+      expect(transport.messageProcessor._handlers.has(handler)).toBe(false);
     });
 
     it('should handle multiple message handlers', async () => {
@@ -152,9 +148,7 @@ describe('SseTransport', () => {
         params: {},
       };
 
-      await transport['_messageProcessor'].processMessage(
-        JSON.stringify(message)
-      );
+      await transport.messageProcessor.processMessage(JSON.stringify(message));
 
       expect(handler1).toHaveBeenCalledWith(message);
       expect(handler2).toHaveBeenCalledWith(message);
@@ -175,9 +169,7 @@ describe('SseTransport', () => {
         params: {},
       };
 
-      await transport['_messageProcessor'].processMessage(
-        JSON.stringify(message)
-      );
+      await transport.messageProcessor.processMessage(JSON.stringify(message));
 
       expect(messageHandler).toHaveBeenCalledWith(message);
       expect(errorHandler).toHaveBeenCalledWith(expect.any(Error));
@@ -192,10 +184,10 @@ describe('SseTransport', () => {
       };
 
       transport.onError(handler);
-      expect(transport['_errorManager']['_handlers'].has(handler)).toBe(true);
+      expect(transport.errorManager._handlers.has(handler)).toBe(true);
 
       transport.offError(handler);
-      expect(transport['_errorManager']['_handlers'].has(handler)).toBe(false);
+      expect(transport.errorManager._handlers.has(handler)).toBe(false);
     });
 
     it('should handle multiple error handlers', () => {
@@ -207,7 +199,7 @@ describe('SseTransport', () => {
       transport.onError(handler1);
       transport.onError(handler2);
 
-      transport['_errorManager'].handleError(error);
+      transport.errorManager.handleError(error);
 
       expect(handler1).toHaveBeenCalledWith(error);
       expect(handler2).toHaveBeenCalledWith(error);
@@ -223,7 +215,7 @@ describe('SseTransport', () => {
       transport.onError(handler2);
       transport.offError(handler1);
 
-      transport['_errorManager'].handleError(error);
+      transport.errorManager.handleError(error);
 
       expect(handler1).not.toHaveBeenCalled();
       expect(handler2).toHaveBeenCalledWith(error);
@@ -247,7 +239,7 @@ describe('SseTransport', () => {
         CLOSED: { value: MockEventSource.CLOSED },
       });
 
-      transport['_options'].EventSource = MockEventSourceClass;
+      transport['_options']['EventSource'] = MockEventSourceClass;
 
       await transport.connect();
       expect(MockEventSourceClass).toHaveBeenCalledWith(
@@ -290,7 +282,7 @@ describe('SseTransport', () => {
         CLOSED: { value: MockEventSource.CLOSED },
       });
 
-      transport['_options'].EventSource = MockEventSourceClass;
+      transport['_options']['EventSource'] = MockEventSourceClass;
 
       await expect(transport.connect()).rejects.toThrow('Connection failed');
       expect(errorHandler).toHaveBeenCalledWith(error);
@@ -316,7 +308,7 @@ describe('SseTransport', () => {
         CLOSED: { value: MockEventSource.CLOSED },
       });
 
-      transport['_options'].EventSource = MockEventSourceClass;
+      transport['_options']['EventSource'] = MockEventSourceClass;
 
       await transport.connect();
 
@@ -353,7 +345,7 @@ describe('SseTransport', () => {
         CLOSED: { value: MockEventSource.CLOSED },
       });
 
-      transport['_options'].EventSource = MockEventSourceClass;
+      transport['_options']['EventSource'] = MockEventSourceClass;
 
       await transport.connect();
 

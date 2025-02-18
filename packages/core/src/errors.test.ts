@@ -1,13 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
-  McpError,
-  ParseError,
-  InvalidRequestError,
-  MethodNotFoundError,
   InvalidParamsError,
-  ServerNotInitializedError,
+  InvalidRequestError,
+  McpError,
+  MethodNotFoundError,
+  ParseError,
   RequestFailedError,
-} from './errors';
+  ServerNotInitializedError,
+} from './errors.js';
 
 describe('Error Handling', () => {
   describe('McpError', () => {

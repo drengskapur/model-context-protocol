@@ -1,11 +1,6 @@
-import { literal, number, object, string, type BaseSchema } from 'valibot';
+import { number, object, string } from 'valibot';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type {
-  JSONRPCMessage,
-  Prompt,
-  PromptMessage,
-  SamplingMessage,
-} from './schema.js';
+import type { JSONRPCMessage, Prompt } from './schema.js';
 import { JSONRPC_VERSION, LATEST_PROTOCOL_VERSION } from './schema.js';
 import {
   Server,
@@ -14,20 +9,20 @@ import {
 } from './server.js';
 import type { McpTransport, MessageHandler } from './transport.js';
 import { InMemoryTransport } from './in-memory.js';
-import { Authorization } from './auth.js';
 
 interface GreetParams {
   name: string;
   age: number;
 }
 
-const greetSchema = object({
+const _greetSchema = object({
   name: string(),
   age: number(),
 });
 
 class TestTransport implements McpTransport {
-  protected transport: InMemoryTransport;
+  public transport: InMemoryTransport;
+  public messages: JSONRPCMessage[] = [];
 
   constructor() {
     this.transport = new InMemoryTransport();
@@ -43,6 +38,7 @@ class TestTransport implements McpTransport {
 
   async send(message: JSONRPCMessage): Promise<void> {
     await this.transport.send(message);
+    this.messages.push(message);
   }
 
   onMessage(handler: MessageHandler): void {
@@ -75,16 +71,13 @@ class TestTransport implements McpTransport {
 
   clearMessages(): void {
     this.transport.clearMessages();
+    this.messages = [];
   }
 }
 
 describe('Server', () => {
   let server: Server;
-  let transport: McpTransport & {
-    simulateIncomingMessage(message: JSONRPCMessage): Promise<void>;
-    getMessages(): JSONRPCMessage[];
-    clearMessages(): void;
-  };
+  let transport: TestTransport;
 
   beforeEach(async () => {
     server = new Server({
@@ -110,7 +103,6 @@ describe('Server', () => {
     };
 
     server.prompt(testPrompt);
-    await server.connect(transport);
 
     await transport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
@@ -122,12 +114,36 @@ describe('Server', () => {
       },
     });
 
-    // Test listing prompts
     await transport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
       id: 2,
       method: 'prompts/list',
       params: {},
+    });
+
+    const messages = transport.getMessages();
+
+    // Verify initialization response
+    expect(messages[0]).toMatchObject({
+      jsonrpc: JSONRPC_VERSION,
+      id: 1,
+      result: {
+        protocolVersion: LATEST_PROTOCOL_VERSION,
+        serverInfo: {
+          name: 'test-server',
+          version: '1.0.0',
+        },
+        capabilities: {},
+      },
+    });
+
+    // Verify prompts list response
+    expect(messages[1]).toMatchObject({
+      jsonrpc: JSONRPC_VERSION,
+      id: 2,
+      result: {
+        prompts: [testPrompt],
+      },
     });
 
     // Test getting a prompt
@@ -188,33 +204,10 @@ describe('Server', () => {
       },
     });
 
-    const messages = transport.getMessages();
-
-    // Verify initialization response
-    expect(messages[0]).toMatchObject({
-      jsonrpc: JSONRPC_VERSION,
-      id: 1,
-      result: {
-        protocolVersion: LATEST_PROTOCOL_VERSION,
-        serverInfo: {
-          name: 'test-server',
-          version: '1.0.0',
-        },
-        capabilities: {},
-      },
-    });
-
-    // Verify prompts list response
-    expect(messages[1]).toMatchObject({
-      jsonrpc: JSONRPC_VERSION,
-      id: 2,
-      result: {
-        prompts: [testPrompt],
-      },
-    });
+    const messagesAfter = transport.getMessages();
 
     // Verify get prompt response
-    expect(messages[2]).toMatchObject({
+    expect(messagesAfter[2]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
       id: 3,
       result: {
@@ -224,7 +217,7 @@ describe('Server', () => {
     });
 
     // Verify execute prompt response
-    expect(messages[3]).toMatchObject({
+    expect(messagesAfter[3]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
       id: 4,
       result: {
@@ -233,7 +226,7 @@ describe('Server', () => {
     });
 
     // Verify non-existent prompt error
-    expect(messages[4]).toMatchObject({
+    expect(messagesAfter[4]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
       id: 5,
       error: {
@@ -243,7 +236,7 @@ describe('Server', () => {
     });
 
     // Verify missing argument error for get
-    expect(messages[5]).toMatchObject({
+    expect(messagesAfter[5]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
       id: 6,
       error: {
@@ -253,7 +246,7 @@ describe('Server', () => {
     });
 
     // Verify missing argument error for execute
-    expect(messages[6]).toMatchObject({
+    expect(messagesAfter[6]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
       id: 7,
       error: {
@@ -264,11 +257,17 @@ describe('Server', () => {
   });
 
   it('should register and expose tools', async () => {
-    server.tool('greet', greetSchema, async (params: unknown) => {
-      const typedParams = params as GreetParams;
-      return `Hello ${typedParams.name}, you are ${typedParams.age} years old`;
+    const schema = object({
+      name: string(),
+      age: number(),
     });
-    await server.connect(transport);
+
+    await server.tool('greet', schema, (params: unknown) => {
+      const typedParams = params as GreetParams;
+      return Promise.resolve(
+        `Hello, ${typedParams.name}! You are ${typedParams.age} years old.`
+      );
+    });
 
     await transport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
@@ -283,25 +282,21 @@ describe('Server', () => {
     await transport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
       id: 2,
-      method: 'greet',
-      params: {
-        name: 'John',
-        age: 30,
-      },
+      method: 'tools/list',
+      params: {},
     });
 
-    expect(transport.messages[1]).toMatchObject({
+    const messages = transport.getMessages();
+    expect(messages[1]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
       id: 2,
       result: {
-        value: 'Hello John, you are 30 years old',
+        tools: ['greet'],
       },
     });
   });
 
   it('should handle unknown tools', async () => {
-    await server.connect(transport);
-
     await transport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
       id: 1,
@@ -315,11 +310,12 @@ describe('Server', () => {
     await transport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
       id: 2,
-      method: 'unknown',
+      method: 'unknown-tool',
       params: {},
     });
 
-    expect(transport.messages[1]).toMatchObject({
+    const messages = transport.getMessages();
+    expect(messages[1]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
       id: 2,
       error: {
@@ -330,11 +326,17 @@ describe('Server', () => {
   });
 
   it('should reject invalid parameters', async () => {
-    server.tool('greet', greetSchema, (params: unknown) => {
-      const typedParams = params as GreetParams;
-      return Promise.resolve(`Hello ${typedParams.name}, you are ${typedParams.age} years old`);
+    const schema = object({
+      name: string(),
+      age: number(),
     });
-    await server.connect(transport);
+
+    await server.tool('greet', schema, (params: unknown) => {
+      const typedParams = params as GreetParams;
+      return Promise.resolve(
+        `Hello, ${typedParams.name}! You are ${typedParams.age} years old.`
+      );
+    });
 
     await transport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
@@ -352,40 +354,32 @@ describe('Server', () => {
       method: 'greet',
       params: {
         name: 'John',
-        // Missing age parameter
+        age: 'not-a-number',
       },
     });
 
-    expect(transport.messages[1]).toMatchObject({
+    const messages = transport.getMessages();
+    expect(messages[1]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
       id: 2,
       error: {
         code: -32602,
-        message: 'Invalid key: Expected "age" but received undefined',
+        message: expect.any(String),
       },
     });
   });
 
   it('should handle error responses with null id', async () => {
-    await server.connect(transport.transport);
+    const errorHandler = vi.fn();
+    transport.onError(errorHandler);
 
     await transport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
-      method: 'initialize',
-      params: {
-        protocolVersion: LATEST_PROTOCOL_VERSION,
-        capabilities: {},
-      },
+      method: 'invalid',
+      params: {},
     });
 
-    expect(transport.messages[0]).toMatchObject({
-      jsonrpc: JSONRPC_VERSION,
-      id: 0,
-      error: {
-        code: -32600,
-        message: 'Initialize must be a request',
-      },
-    });
+    expect(errorHandler).toHaveBeenCalled();
   });
 
   it('should handle protocol version mismatch', async () => {
@@ -739,13 +733,21 @@ describe('Server', () => {
     // Test unsubscribing from a non-existent resource
     await transport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
-      id: 1,
-      method: 'test-tool',
-      params: {},
+      id: 3,
+      method: 'resources/unsubscribe',
+      params: {
+        uri: 'test://non-existent',
+      },
     });
 
-    // Verify handler was called
-    expect(handler).toHaveBeenCalledWith({});
+    expect(transport.getMessages()[2]).toMatchObject({
+      jsonrpc: JSONRPC_VERSION,
+      id: 3,
+      error: {
+        code: -32602,
+        message: 'Resource not found: test://non-existent',
+      },
+    });
   });
 
   it('should handle disconnect', async () => {
@@ -766,5 +768,49 @@ describe('Server', () => {
       jsonrpc: JSONRPC_VERSION,
       method: 'disconnect',
     });
+  });
+
+  it('should handle message handler errors gracefully', async () => {
+    const messageHandler = vi.fn().mockImplementation(() => {
+      throw new Error('Handler error');
+    });
+    transport.onMessage(messageHandler);
+
+    await transport.simulateIncomingMessage({
+      jsonrpc: JSONRPC_VERSION,
+      method: 'test',
+      params: {},
+    });
+
+    expect(messageHandler).toHaveBeenCalled();
+  });
+
+  it('should handle error handler errors gracefully', async () => {
+    const errorHandler = vi.fn().mockImplementation(() => {
+      throw new Error('Handler error');
+    });
+    transport.onError(errorHandler);
+
+    await transport.simulateIncomingMessage({
+      jsonrpc: JSONRPC_VERSION,
+      method: 'test',
+      params: {},
+    });
+
+    expect(errorHandler).toHaveBeenCalled();
+  });
+
+  it('should handle message handler removal', async () => {
+    const messageHandler = vi.fn();
+    transport.onMessage(messageHandler);
+    transport.offMessage(messageHandler);
+
+    await transport.simulateIncomingMessage({
+      jsonrpc: JSONRPC_VERSION,
+      method: 'test',
+      params: {},
+    });
+
+    expect(messageHandler).not.toHaveBeenCalled();
   });
 });

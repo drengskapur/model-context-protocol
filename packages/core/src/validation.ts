@@ -141,16 +141,13 @@ export const loggingLevelSchema = z.enum([
 export class ValidationError extends McpError {
   readonly errors: z.ZodError;
 
-  constructor(
-    message: string,
-    errors: z.ZodError
-  ) {
-    super(-32402, message); // Use custom error code for validation errors
+  constructor(message: string, errors: z.ZodError) {
+    super(-32402, message);
     this.name = 'ValidationError';
     this.errors = errors;
   }
 
-  toJSON() {
+  toJSON(): object {
     return {
       ...super.toJSON(),
       errors: this.errors.errors,

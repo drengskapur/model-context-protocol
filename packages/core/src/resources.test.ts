@@ -10,12 +10,14 @@ describe('Resource Management', () => {
 
   beforeEach(async () => {
     transport = new InMemoryTransport();
+    await transport.connect();
     server = new Server({
       name: 'test-server',
       version: '1.0.0',
       capabilities: {
         resources: {
           listChanged: true,
+          subscribe: true,
         },
       },
     });
@@ -31,6 +33,9 @@ describe('Resource Management', () => {
         capabilities: {},
       },
     });
+
+    // Clear any initialization messages
+    transport.clearMessages();
   });
 
   it('should list resources', async () => {
@@ -48,7 +53,8 @@ describe('Resource Management', () => {
       params: {},
     });
 
-    expect(transport.getMessages()[1]).toMatchObject({
+    const messages = transport.getMessages();
+    expect(messages[1]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
       id: 2,
       result: {
@@ -71,7 +77,8 @@ describe('Resource Management', () => {
       params: {},
     });
 
-    expect(transport.getMessages()[1]).toMatchObject({
+    const messages = transport.getMessages();
+    expect(messages[1]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
       id: 2,
       result: {
@@ -95,7 +102,8 @@ describe('Resource Management', () => {
       params: { uri: resource.uri },
     });
 
-    expect(transport.getMessages()[1]).toMatchObject({
+    const messages = transport.getMessages();
+    expect(messages[1]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
       id: 2,
       result: {
@@ -126,7 +134,8 @@ describe('Resource Management', () => {
       params: { uri: resource.uri },
     });
 
-    expect(transport.getMessages()[1]).toMatchObject({
+    const messages = transport.getMessages();
+    expect(messages[1]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
       id: 2,
       result: {},
@@ -136,12 +145,12 @@ describe('Resource Management', () => {
     const newContent = 'updated content';
     server.resource({ ...resource, content: newContent }, newContent);
 
-    expect(transport.getMessages()[2]).toMatchObject({
+    expect(messages[2]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
       method: 'notifications/resources/list_changed',
     });
 
-    expect(transport.getMessages()[3]).toMatchObject({
+    expect(messages[3]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
       method: 'notifications/resources/updated',
       params: {
@@ -159,7 +168,8 @@ describe('Resource Management', () => {
     };
 
     server.resource(resource, resource.content);
-    expect(transport.getMessages()[0]).toMatchObject({
+    const messages = transport.getMessages();
+    expect(messages[0]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
       method: 'notifications/resources/list_changed',
     });
@@ -174,7 +184,8 @@ describe('Resource Management', () => {
       params: { uri: 'test://non-existent' },
     });
 
-    expect(transport.getMessages()[0]).toMatchObject({
+    const messages = transport.getMessages();
+    expect(messages[0]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
       id: 2,
       error: {
@@ -191,7 +202,7 @@ describe('Resource Management', () => {
       params: { uri: 'test://non-existent' },
     });
 
-    expect(transport.getMessages()[1]).toMatchObject({
+    expect(messages[1]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
       id: 3,
       error: {

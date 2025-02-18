@@ -57,26 +57,24 @@ describe('Authorization', () => {
       expect(verified.roles).toEqual(roles);
     });
 
-    it('should reject an invalid token', async () => {
+    it('should reject an invalid token', () => {
       const invalidToken = 'invalid-token';
-      await expect(auth.verifyToken(invalidToken)).rejects.toThrow(
-        AuthorizationError
-      );
+      expect(() => auth.verifyToken(invalidToken)).toThrow(AuthorizationError);
     });
 
-    it('should reject an expired token', async () => {
-      const subject = 'test-user';
-      const roles = ['user'];
+    it('should reject an expired token', () => {
       const now = Math.floor(Date.now() / 1000);
       const expiredToken = {
-        sub: subject,
+        sub: 'test-user',
         iat: now - 7200,
         exp: now - 3600,
-        roles,
+        roles: ['user'],
       };
-      const token = Buffer.from(JSON.stringify(expiredToken)).toString('base64');
+      const token = Buffer.from(JSON.stringify(expiredToken)).toString(
+        'base64'
+      );
 
-      await expect(auth.verifyToken(token)).rejects.toThrow('Token expired');
+      expect(() => auth.verifyToken(token)).toThrow('Token expired');
     });
   });
 
