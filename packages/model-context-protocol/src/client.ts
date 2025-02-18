@@ -129,7 +129,7 @@ export class McpClient {
   /**
    * Send a request to the server
    */
-  public async request<T>(
+  async request<T>(
     method: string,
     params?: Record<string, unknown>
   ): Promise<T> {
@@ -191,7 +191,7 @@ export class McpClient {
   /**
    * Send a notification to the server
    */
-  public async notify(
+  async notify(
     method: string,
     params?: Record<string, unknown>
   ): Promise<void> {

@@ -41,7 +41,7 @@ export class SseTransport extends BaseTransport {
   /**
    * Connects to the SSE stream.
    */
-  public async connect(): Promise<void> {
+  async connect(): Promise<void> {
     if (this._connected) {
       throw new VError('Transport already connected');
     }
@@ -82,7 +82,7 @@ export class SseTransport extends BaseTransport {
   /**
    * Disconnects from the SSE stream.
    */
-  public async disconnect(): Promise<void> {
+  disconnect(): Promise<void> {
     if (!this._connected) {
       throw new VError('Transport not connected');
     }
@@ -100,7 +100,7 @@ export class SseTransport extends BaseTransport {
    * Sends a message through the transport.
    * @param message Message to send
    */
-  public async send(message: JSONRPCMessage): Promise<void> {
+  async send(message: JSONRPCMessage): Promise<void> {
     if (!this._connected) {
       throw new VError('Transport not connected');
     }
@@ -127,8 +127,8 @@ export class SseTransport extends BaseTransport {
     for (const handler of this.errorHandlers) {
       try {
         handler(error);
-      } catch (err) {
-        console.error('Error in error handler:', err);
+      } catch (_err) {
+        // Silently ignore error handler failures
       }
     }
     this.events.emit('error', error);

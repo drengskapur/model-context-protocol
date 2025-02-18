@@ -36,10 +36,7 @@ class TestTransport extends JsonRpcTransport {
     return Promise.resolve();
   }
 
-  simulateIncomingMessage(
-    message: JSONRPCMessage,
-    shouldFail = false
-  ): void {
+  simulateIncomingMessage(message: JSONRPCMessage, shouldFail = false): void {
     if (shouldFail) {
       throw new Error('Message handling failed');
     }

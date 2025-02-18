@@ -15,6 +15,9 @@ import type {
   TransportEventMap,
 } from './transport';
 
+const SERVER_SUPPORT_ERROR_PATTERN = /server does not support/i;
+const PROTOCOL_VERSION_ERROR_PATTERN = /unsupported protocol version/i;
+
 /**
  * Test transport implementation for simulating message handling.
  */
@@ -720,7 +723,7 @@ describe('McpServer', () => {
             },
           },
         })
-      ).rejects.toThrow(/unsupported protocol version/i);
+      ).rejects.toThrow(PROTOCOL_VERSION_ERROR_PATTERN);
     });
   });
 
@@ -797,7 +800,7 @@ describe('McpServer', () => {
       // This should throw because resource notifications are not supported
       await expect(
         customServer.notify('resource/updated', { uri: 'test://resource' })
-      ).rejects.toThrow(/server does not support/i);
+      ).rejects.toThrow(SERVER_SUPPORT_ERROR_PATTERN);
     });
   });
 

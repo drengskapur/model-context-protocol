@@ -1,10 +1,3 @@
-/**
- * @file transport.ts
- * @description Transport layer abstractions for the Model Context Protocol.
- * Defines interfaces and base classes for different transport mechanisms.
- */
-
-import { EventEmitter } from 'events';
 import { JSONRPCClient, JSONRPCServer } from 'json-rpc-2.0';
 import { VError } from 'verror';
 import { TypedEventEmitter } from './json-rpc';
@@ -13,13 +6,14 @@ import type {
   JSONRPCRequest,
   JSONRPCResponse,
 } from './json-rpc.js';
+import { JSONRPC_VERSION } from './schema';
 
 /**
  * Event types for transport events
  */
 export type TransportEventMap = {
-  message: (message: JSONRPCMessage) => void;
-  error: (error: Error) => void;
+  message: (message: unknown) => void;
+  error: (error: unknown) => void;
   connect: () => void;
   disconnect: () => void;
 };
@@ -135,7 +129,7 @@ export abstract class BaseTransport implements McpTransport {
     this._events = new TypedEventEmitter();
   }
 
-  public get events(): TypedEventEmitter<TransportEventMap> {
+  get events(): TypedEventEmitter<TransportEventMap> {
     return this._events;
   }
 
@@ -154,23 +148,23 @@ export abstract class BaseTransport implements McpTransport {
     }
   }
 
-  public abstract connect(): Promise<void>;
-  public abstract disconnect(): Promise<void>;
-  public abstract send(message: JSONRPCMessage): Promise<void>;
+  abstract connect(): Promise<void>;
+  abstract disconnect(): Promise<void>;
+  abstract send(message: JSONRPCMessage): Promise<void>;
 
-  public onMessage(handler: TransportMessageHandler): void {
+  onMessage(handler: TransportMessageHandler): void {
     this.messageHandlers.add(handler);
   }
 
-  public onError(handler: TransportErrorHandler): void {
+  onError(handler: TransportErrorHandler): void {
     this.errorHandlers.add(handler);
   }
 
-  public offMessage(handler: TransportMessageHandler): void {
+  offMessage(handler: TransportMessageHandler): void {
     this.messageHandlers.delete(handler);
   }
 
-  public offError(handler: TransportErrorHandler): void {
+  offError(handler: TransportErrorHandler): void {
     this.errorHandlers.delete(handler);
   }
 
@@ -199,16 +193,26 @@ export abstract class BaseTransport implements McpTransport {
     }
 
     const msg = message as Record<string, unknown>;
-    return (
-      'jsonrpc' in msg &&
-      typeof msg.jsonrpc === 'string' &&
-      'id' in msg &&
-      (typeof msg.id === 'string' ||
-        typeof msg.id === 'number' ||
-        msg.id === null) &&
-      'method' in msg &&
-      typeof msg.method === 'string'
-    );
+    if (msg.jsonrpc !== JSONRPC_VERSION) {
+      return false;
+    }
+
+    // Check for request
+    if ('method' in msg && 'id' in msg) {
+      return typeof msg.method === 'string';
+    }
+
+    // Check for notification
+    if ('method' in msg && !('id' in msg)) {
+      return typeof msg.method === 'string';
+    }
+
+    // Check for response or error
+    if ('id' in msg) {
+      return 'result' in msg || 'error' in msg;
+    }
+
+    return false;
   }
 
   public on<K extends keyof TransportEventMap>(

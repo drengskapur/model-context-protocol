@@ -27,10 +27,10 @@ function createRequest(
 }
 
 class TestTransport extends BaseTransport {
-  public messages: (JSONRPCRequest | JSONRPCResponse)[] = [];
-  public shouldFail = false;
+  messages: (JSONRPCRequest | JSONRPCResponse)[] = [];
+  shouldFail = false;
 
-  public setConnected(state: boolean): void {
+  setConnected(state: boolean): void {
     super.setConnected(state);
   }
 
@@ -72,15 +72,15 @@ class TestTransport extends BaseTransport {
     return {} as T;
   }
 
-  public async simulateMessage(message: JSONRPCMessage): Promise<void> {
+  async simulateMessage(message: JSONRPCMessage): Promise<void> {
     await this.handleMessage(message);
   }
 
-  public handleError(error: Error): void {
+  handleError(error: Error): void {
     this.events.emit('error', error);
   }
 
-  public simulateError(error: Error): void {
+  simulateError(error: Error): void {
     this.handleError(error);
   }
 }

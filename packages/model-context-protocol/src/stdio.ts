@@ -4,10 +4,9 @@
  * Provides a transport that uses process stdin/stdout for communication.
  */
 
+import { type Interface, createInterface } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
-import { createInterface, type Interface } from 'node:readline';
 import { VError } from 'verror';
-import type { JSONRPCMessage } from './json-rpc';
 import { BaseTransport } from './transport';
 
 /**
@@ -184,8 +183,8 @@ export class StdioTransport extends BaseTransport {
     for (const handler of this.errorHandlers) {
       try {
         handler(error);
-      } catch (err) {
-        console.error('Error in error handler:', err);
+      } catch (_err) {
+        // Silently ignore error handler failures
       }
     }
     this.events.emit('error', error);

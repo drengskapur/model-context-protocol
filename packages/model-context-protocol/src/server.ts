@@ -25,13 +25,13 @@ import {
   type JSONRPCResponse,
   JSONRPC_VERSION,
   LATEST_PROTOCOL_VERSION,
-  SUPPORTED_PROTOCOL_VERSIONS,
   type LoggingLevel,
   type Prompt,
   type PromptMessage,
   type ReadResourceResult,
   type Resource,
   type Result,
+  SUPPORTED_PROTOCOL_VERSIONS,
   type ServerCapabilities,
   type Tool,
 } from './schema';
@@ -142,7 +142,7 @@ export class McpServer {
   /**
    * Register a method handler
    */
-  public registerMethod(
+  registerMethod(
     name: string,
     handler: (params: unknown) => Promise<unknown>,
     roles?: string[]
@@ -263,7 +263,7 @@ export class McpServer {
   /**
    * Connect to a transport
    */
-  public async connect(transport: McpTransport): Promise<void> {
+  async connect(transport: McpTransport): Promise<void> {
     this._transport = transport;
     transport.onMessage(this.handleMessage.bind(this));
     await transport.connect();
@@ -412,7 +412,7 @@ export class McpServer {
   /**
    * Register a tool
    */
-  public registerTool(tool: Tool): void {
+  registerTool(tool: Tool): void {
     if (this._tools.has(tool.name)) {
       throw new VError(`Tool already registered: ${tool.name}`);
     }
@@ -422,7 +422,7 @@ export class McpServer {
   /**
    * Register a prompt
    */
-  public registerPrompt(prompt: Prompt): void {
+  registerPrompt(prompt: Prompt): void {
     if (this._prompts.has(prompt.name)) {
       throw new VError(`Prompt already registered: ${prompt.name}`);
     }
@@ -432,21 +432,21 @@ export class McpServer {
   /**
    * Send a prompt message to all connected clients
    */
-  public async sendPrompt(message: PromptMessage): Promise<void> {
+  async sendPrompt(message: PromptMessage): Promise<void> {
     await this.sendNotification('prompt', { message });
   }
 
   /**
    * Update a resource and notify subscribers
    */
-  public async updateResource(resource: Resource): Promise<void> {
+  async updateResource(resource: Resource): Promise<void> {
     this._resources.set(resource.uri, resource);
     if (this._resourceSubscriptions.has(resource.uri)) {
       await this.sendNotification('resource/updated', { resource });
     }
   }
 
-  public sendLogMessage(
+  sendLogMessage(
     level: LoggingLevel,
     message: string,
     details?: Record<string, unknown>
@@ -478,11 +478,11 @@ export class McpServer {
     }
   }
 
-  public prompt(prompt: Prompt): void {
+  prompt(prompt: Prompt): void {
     this._prompts.set(prompt.name, prompt);
   }
 
-  public tool(
+  tool(
     name: string,
     _schema: unknown,
     handler: (params: unknown) => Promise<unknown>
@@ -498,7 +498,7 @@ export class McpServer {
     this.registerMethod(`tools/call/${name}`, handler);
   }
 
-  public resource(resource: Resource): void {
+  resource(resource: Resource): void {
     this._resources.set(resource.uri, resource);
 
     if (this._transport && this.capabilities.resources?.listChanged) {
@@ -519,7 +519,7 @@ export class McpServer {
     }
   }
 
-  public async disconnect(): Promise<void> {
+  async disconnect(): Promise<void> {
     if (this._transport) {
       await this._transport.disconnect();
       this._transport = null;
@@ -530,9 +530,9 @@ export class McpServer {
     this._resourceSubscriptions.clear();
   }
 
-  public async readResource(
+  async readResource(
     id: string,
-    options: {
+    _options: {
       subscribe?: boolean;
       listChanged?: boolean;
       find?: boolean;
@@ -557,7 +557,7 @@ export class McpServer {
     }
   }
 
-  public getLoggingLevel(): LoggingLevel {
+  getLoggingLevel(): LoggingLevel {
     return this._loggingLevel ?? 'Info';
   }
 }

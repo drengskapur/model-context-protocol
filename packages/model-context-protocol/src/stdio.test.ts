@@ -41,11 +41,11 @@ import { StdioTransport } from './stdio';
 
 // Mock stream implementation for testing
 class MockStream extends EventEmitter {
-  public writtenData: string[] = [];
-  public encoding: BufferEncoding = 'utf8';
-  public destroyed = false;
-  public readable = true;
-  public writable = true;
+  writtenData: string[] = [];
+  encoding: BufferEncoding = 'utf8';
+  destroyed = false;
+  readable = true;
+  writable = true;
 
   // Minimal implementation needed for tests
   setEncoding(encoding: BufferEncoding): this {
@@ -182,7 +182,7 @@ describe('StdioTransport', () => {
         params: {},
       };
 
-      inputStream.simulateData(JSON.stringify(message) + '\n');
+      inputStream.simulateData(`${JSON.stringify(message)}\n`);
       await new Promise((resolve) => setTimeout(resolve, 0));
 
       expect(onMessage).toHaveBeenCalledWith(message);
@@ -207,7 +207,7 @@ describe('StdioTransport', () => {
         },
       ];
 
-      const data = messages.map((msg) => JSON.stringify(msg)).join('\n') + '\n';
+      const data = `${messages.map((msg) => JSON.stringify(msg)).join('\n')}\n`;
       inputStream.simulateData(data);
       await new Promise((resolve) => setTimeout(resolve, 0));
 

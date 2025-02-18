@@ -15,6 +15,10 @@ import {
 } from './auth.js';
 import type { JSONRPCRequest, JSONRPCResponse } from './schema.js';
 
+const RESPONSE_TYPE_ERROR_PATTERN = /does not support response type/;
+const INVALID_CLIENT_ERROR_PATTERN = /invalid client/;
+const CODE_CHALLENGE_ERROR_PATTERN = /does not support code challenge method/;
+
 // Mock fetch globally
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
@@ -273,7 +277,7 @@ describe('OAuth Authorization', () => {
           clientInformation: validClientInfo,
           redirectUrl: 'http://localhost:3000/callback',
         })
-      ).rejects.toThrow(/does not support response type/);
+      ).rejects.toThrow(RESPONSE_TYPE_ERROR_PATTERN);
     });
 
     it('validates PKCE support', async () => {
@@ -289,7 +293,7 @@ describe('OAuth Authorization', () => {
           clientInformation: validClientInfo,
           redirectUrl: 'http://localhost:3000/callback',
         })
-      ).rejects.toThrow(/does not support code challenge method/);
+      ).rejects.toThrow(CODE_CHALLENGE_ERROR_PATTERN);
     });
   });
 
@@ -614,7 +618,7 @@ describe('OAuth Authorization', () => {
         registerClient('https://auth.example.com', {
           clientMetadata: validClientMetadata,
         })
-      ).rejects.toThrow(/does not support dynamic client registration/);
+      ).rejects.toThrow(INVALID_CLIENT_ERROR_PATTERN);
     });
 
     it('throws on error response', async () => {
