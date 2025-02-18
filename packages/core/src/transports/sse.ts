@@ -136,9 +136,9 @@ export class SseTransport implements McpTransport {
 
   constructor(options: SseTransportOptions) {
     this._options = {
-      eventSourceHeaders: {},
-      EventSource: globalThis.EventSource,
-      ...options,
+      eventSourceUrl: options.eventSourceUrl,
+      eventSourceHeaders: options.eventSourceHeaders ?? {},
+      EventSource: options.EventSource ?? globalThis.EventSource,
     };
 
     this._errorManager = new ErrorManager();

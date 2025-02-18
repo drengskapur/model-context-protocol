@@ -3,7 +3,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryTransport } from './in-memory.js';
 import type { JSONRPCMessage, Prompt } from './schema.js';
 import { JSONRPC_VERSION, LATEST_PROTOCOL_VERSION } from './schema.js';
-import { McpServer, Server, type Resource as ServerResource } from './server.js';
+import {
+  McpServer,
+  Server,
+  type Resource as ServerResource,
+} from './server.js';
 import type { McpTransport, MessageHandler } from './transport.js';
 
 interface GreetParams {

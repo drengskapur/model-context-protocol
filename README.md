@@ -1,90 +1,141 @@
-# Model Context Protocol (MCP)
+# Model Context Protocol
 
-A protocol for communication between Large Language Models (LLMs) and their context. MCP enables LLMs to:
-- Access and manipulate resources in their environment
-- Call tools and functions
-- Manage prompts and completions
-- Handle real-time updates through subscriptions
+A type-safe JSON-RPC based protocol for AI model interactions with built-in context management.
 
-## Protocol Version
+[![npm version](https://badge.fury.io/js/%40model-context-protocol%2Fcore.svg)](https://badge.fury.io/js/%40model-context-protocol%2Fcore)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-This package implements:
-- Protocol Version: `2024-11-05`
-- JSON-RPC Version: `2.0`
+## Features
+
+- 🔒 **Type-safe**: Built with TypeScript and runtime validation using Valibot
+- 🔄 **Context-aware**: Built-in support for managing conversation context
+- 🛠️ **Extensible**: Plugin architecture for custom tools and capabilities
+- 🚀 **Transport agnostic**: Works with any transport layer (WebSocket, SSE, etc.)
+- 📦 **Zero dependencies**: Core package has minimal dependencies
 
 ## Installation
 
 ```bash
-npm install model-context-protocol
+# Using npm
+npm install @model-context-protocol/core
+
+# Using yarn
+yarn add @model-context-protocol/core
+
+# Using pnpm
+pnpm add @model-context-protocol/core
 ```
 
-## Usage
+## Quick Start
 
 ```typescript
-import { McpClient, McpServer, InMemoryTransport } from 'model-context-protocol';
+import { McpServer, McpClient } from '@model-context-protocol/core';
 
-// Create a client
-const client = new McpClient({
-  name: "example-client",
-  version: "1.0.0"
-});
-
-// Create a server
+// Server-side
 const server = new McpServer({
-  name: "example-server",
-  version: "1.0.0"
+  name: 'my-server',
+  version: '1.0.0'
 });
 
-// Connect using any transport (e.g., InMemory, SSE, STDIO)
-const transport = new InMemoryTransport();
+server.tool('greet', {
+  name: string(),
+  age: number()
+}, async (params) => {
+  return `Hello ${params.name}, you are ${params.age} years old!`;
+});
+
+// Client-side
+const client = new McpClient();
 await client.connect(transport);
+
+const response = await client.invoke('greet', {
+  name: 'Alice',
+  age: 25
+});
+console.log(response); // "Hello Alice, you are 25 years old!"
 ```
 
-## Features
+## Core Concepts
 
-- **Transport Agnostic**: Supports multiple transport mechanisms (SSE, STDIO, InMemory)
-- **Type-Safe**: Built with TypeScript for excellent type safety and IDE support
-- **Extensible**: Easy to add new capabilities and custom message types
-- **Real-time**: Support for subscriptions and real-time updates
-- **Versioned**: Clear protocol versioning for compatibility
-- **Quality Assurance**: Enforced code quality through Husky git hooks and lint-staged
+### Tools
 
-## Development
+Tools are the primary way to extend the server's capabilities. Each tool:
+- Has a unique name
+- Defines its input schema using Valibot
+- Returns a Promise with the result
+- Can be async and perform external operations
+
+```typescript
+server.tool('summarize', {
+  text: string(),
+  maxLength: optional(number())
+}, async (params) => {
+  // Implement text summarization
+  return summary;
+});
+```
+
+### Resources
+
+Resources represent persistent data that can be:
+- Listed
+- Read
+- Subscribed to for changes
+- Updated through templates
+
+```typescript
+server.resource({
+  uri: 'conversations/123',
+  mimeType: 'application/json',
+  content: { messages: [] }
+});
+```
+
+### Authentication
+
+Built-in JWT-like token authentication with role-based access control:
+
+```typescript
+const auth = new Authorization({
+  tokenExpiration: 3600 // 1 hour
+});
+
+const token = auth.generateToken('user-123', ['user']);
+await auth.verifyPermission(token, ['admin']); // false
+```
+
+## Contributing
+
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+
+### Development
 
 ```bash
 # Install dependencies
 pnpm install
 
+# Run tests
+pnpm test
+
 # Build
 pnpm build
 
-# Test
-pnpm test
-
-# Lint and format code
+# Lint
 pnpm lint
-pnpm format
-
-# Type check
-pnpm typecheck
-
-# Watch mode for development
-pnpm dev
 ```
 
-## Contributing
+### Project Structure
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Commit your changes (uses commitlint to enforce conventional commits)
-5. Push to the branch (`git push origin feature/amazing-feature`)
-6. Open a Pull Request
+```
+packages/
+  core/           # Core protocol implementation
+    src/          # Source code
+    test/         # Tests
+    package.json  # Package config
+  examples/       # Example implementations
+docs/            # Documentation
+```
 
 ## License
 
-MIT
-
-## About
-
-This server implementation is part of the Model Context Protocol ecosystem, enabling standardized communication between LLM applications and context providers.
+MIT 

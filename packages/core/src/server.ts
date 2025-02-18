@@ -19,8 +19,9 @@ import {
   type ResourceReference,
   type PromptReference,
   type Tool,
+  type ProgressToken,
 } from './schema.js';
-import { type BaseSchema, type BaseIssue, ValiError } from 'valibot';
+import { type BaseSchema, ValiError } from 'valibot';
 import { object, parse, string } from 'valibot';
 import {
   InvalidParamsError,
@@ -30,7 +31,7 @@ import {
   ParseError,
   ServerNotInitializedError,
 } from './errors.js';
-import type { McpTransport } from './transport';
+import type { McpTransport } from './transport.js';
 import { Authorization, type AuthOptions } from './auth.js';
 import {
   validateResource,
@@ -39,27 +40,60 @@ import {
   validateTool,
   validateReference,
   validateLoggingLevel,
+  ValidationError,
 } from './validation.js';
 
 const initializeParamsSchema = object({
   protocolVersion: string(),
 });
 
+/**
+ * Server options.
+ */
 export interface ServerOptions {
+  /**
+   * Server name.
+   */
   name: string;
+  /**
+   * Server version.
+   */
   version: string;
+  /**
+   * Server capabilities.
+   */
   capabilities?: ServerCapabilities;
+  /**
+   * Authentication options.
+   */
   auth?: AuthOptions;
 }
 
+/**
+ * Manages prompts.
+ */
 export class PromptManager {
+  /**
+   * Map of registered prompts.
+   */
   private prompts = new Map<string, Prompt>();
+  /**
+   * Map of prompt executors.
+   */
   private executors = new Map<
     string,
     (args?: Record<string, string>) => Promise<PromptMessage[]>
   >();
+  /**
+   * Set of prompt subscribers.
+   */
   private subscribers = new Set<() => void>();
 
+  /**
+   * Registers a new prompt.
+   * @param prompt Prompt to register
+   * @param executor Executor function for the prompt
+   */
   registerPrompt(
     prompt: Prompt,
     executor?: (args?: Record<string, string>) => Promise<PromptMessage[]>
@@ -71,20 +105,39 @@ export class PromptManager {
     this.notifySubscribers();
   }
 
+  /**
+   * Unregisters a prompt.
+   * @param name Name of the prompt to unregister
+   */
   unregisterPrompt(name: string): void {
     this.prompts.delete(name);
     this.executors.delete(name);
     this.notifySubscribers();
   }
 
+  /**
+   * Gets a prompt by name.
+   * @param name Name of the prompt to get
+   * @returns Prompt instance or undefined if not found
+   */
   getPrompt(name: string): Prompt | undefined {
     return this.prompts.get(name);
   }
 
+  /**
+   * Lists all registered prompts.
+   * @returns Array of prompt instances
+   */
   listPrompts(): Prompt[] {
     return Array.from(this.prompts.values());
   }
 
+  /**
+   * Validates prompt arguments.
+   * @param prompt Prompt to validate
+   * @param args Argument values
+   * @returns Error message or null if valid
+   */
   validateArguments(
     prompt: Prompt,
     args?: Record<string, string>
@@ -103,6 +156,12 @@ export class PromptManager {
     return null;
   }
 
+  /**
+   * Executes a prompt.
+   * @param name Name of the prompt to execute
+   * @param args Argument values
+   * @returns Promise that resolves with prompt messages
+   */
   async executePrompt(
     name: string,
     args?: Record<string, string>
@@ -125,14 +184,25 @@ export class PromptManager {
     return executor(args);
   }
 
+  /**
+   * Subscribes to prompt changes.
+   * @param onChange Callback function
+   */
   subscribe(onChange: () => void): void {
     this.subscribers.add(onChange);
   }
 
+  /**
+   * Unsubscribes from prompt changes.
+   * @param onChange Callback function
+   */
   unsubscribe(onChange: () => void): void {
     this.subscribers.delete(onChange);
   }
 
+  /**
+   * Notifies prompt subscribers.
+   */
   private notifySubscribers(): void {
     for (const subscriber of this.subscribers) {
       subscriber();
@@ -140,60 +210,133 @@ export class PromptManager {
   }
 }
 
+/**
+ * Resource representation.
+ */
 export interface Resource {
+  /**
+   * Resource URI.
+   */
   uri: string;
+  /**
+   * Resource MIME type.
+   */
   mimeType: string;
+  /**
+   * Resource content.
+   */
   content: unknown;
 }
 
+/**
+ * Resource template representation.
+ */
 export interface ResourceTemplate {
+  /**
+   * Resource template URI.
+   */
   uriTemplate: string;
+  /**
+   * Resource template MIME type.
+   */
   mimeType: string;
 }
 
+/**
+ * Manages resources.
+ */
 export class ResourceManager {
+  /**
+   * Map of registered resources.
+   */
   private resources = new Map<string, Resource>();
+  /**
+   * Map of registered resource templates.
+   */
   private templates = new Map<string, ResourceTemplate>();
+  /**
+   * Map of resource subscribers.
+   */
   private subscribers = new Map<string, Set<(content: unknown) => void>>();
 
+  /**
+   * Registers a new resource.
+   * @param resource Resource to register
+   * @param content Initial content for the resource
+   */
   registerResource(resource: Resource, content: unknown): void {
     this.resources.set(resource.uri, resource);
     this.notifyResourceListChanged();
     this.notifyResourceUpdated(resource.uri, content);
   }
 
+  /**
+   * Registers a new resource template.
+   * @param template Resource template to register
+   */
   registerTemplate(template: ResourceTemplate): void {
     this.templates.set(template.uriTemplate, template);
     this.notifyResourceListChanged();
   }
 
+  /**
+   * Unregisters a resource.
+   * @param uri URI of the resource to unregister
+   */
   unregisterResource(uri: string): void {
     this.resources.delete(uri);
     this.subscribers.delete(uri);
     this.notifyResourceListChanged();
   }
 
+  /**
+   * Unregisters a resource template.
+   * @param uriTemplate URI template of the resource to unregister
+   */
   unregisterTemplate(uriTemplate: string): void {
     this.templates.delete(uriTemplate);
     this.notifyResourceListChanged();
   }
 
+  /**
+   * Gets a resource by URI.
+   * @param uri URI of the resource to get
+   * @returns Resource instance or undefined if not found
+   */
   getResource(uri: string): Resource | undefined {
     return this.resources.get(uri);
   }
 
+  /**
+   * Gets a resource template by URI template.
+   * @param uriTemplate URI template of the resource to get
+   * @returns Resource template instance or undefined if not found
+   */
   getTemplate(uriTemplate: string): ResourceTemplate | undefined {
     return this.templates.get(uriTemplate);
   }
 
+  /**
+   * Lists all registered resources.
+   * @returns Array of resource instances
+   */
   listResources(): Resource[] {
     return Array.from(this.resources.values());
   }
 
+  /**
+   * Lists all registered resource templates.
+   * @returns Array of resource template instances
+   */
   listTemplates(): ResourceTemplate[] {
     return Array.from(this.templates.values());
   }
 
+  /**
+   * Subscribes to resource changes.
+   * @param uri URI of the resource to subscribe to
+   * @param onChange Callback function
+   */
   subscribe(uri: string, onChange: (content: unknown) => void): void {
     if (!this.subscribers.has(uri)) {
       this.subscribers.set(uri, new Set());
@@ -201,6 +344,11 @@ export class ResourceManager {
     this.subscribers.get(uri)?.add(onChange);
   }
 
+  /**
+   * Unsubscribes from resource changes.
+   * @param uri URI of the resource to unsubscribe from
+   * @param onChange Callback function
+   */
   unsubscribe(uri: string, onChange: (content: unknown) => void): void {
     this.subscribers.get(uri)?.delete(onChange);
     if (this.subscribers.get(uri)?.size === 0) {
@@ -208,6 +356,11 @@ export class ResourceManager {
     }
   }
 
+  /**
+   * Notifies resource subscribers.
+   * @param uri URI of the resource that changed
+   * @param content New content for the resource
+   */
   private notifyResourceUpdated(uri: string, content: unknown): void {
     const subscribers = this.subscribers.get(uri);
     if (subscribers) {
@@ -217,15 +370,31 @@ export class ResourceManager {
     }
   }
 
+  /**
+   * Notifies resource list subscribers.
+   */
   private notifyResourceListChanged(): void {
     // This will be handled by the server to send notifications
   }
 }
 
+/**
+ * Manages roots.
+ */
 export class RootManager {
+  /**
+   * Set of registered roots.
+   */
   private roots = new Set<string>();
+  /**
+   * Set of root subscribers.
+   */
   private subscribers = new Set<(roots: string[]) => void>();
 
+  /**
+   * Adds a new root.
+   * @param root Root to add
+   */
   addRoot(root: string): void {
     if (this.roots.has(root)) {
       return;
@@ -234,6 +403,10 @@ export class RootManager {
     this.notifySubscribers();
   }
 
+  /**
+   * Removes a root.
+   * @param root Root to remove
+   */
   removeRoot(root: string): void {
     if (!this.roots.has(root)) {
       return;
@@ -242,18 +415,33 @@ export class RootManager {
     this.notifySubscribers();
   }
 
+  /**
+   * Lists all registered roots.
+   * @returns Array of root URIs
+   */
   listRoots(): string[] {
     return Array.from(this.roots);
   }
 
+  /**
+   * Subscribes to root changes.
+   * @param handler Callback function
+   */
   subscribe(handler: (roots: string[]) => void): void {
     this.subscribers.add(handler);
   }
 
+  /**
+   * Unsubscribes from root changes.
+   * @param handler Callback function
+   */
   unsubscribe(handler: (roots: string[]) => void): void {
     this.subscribers.delete(handler);
   }
 
+  /**
+   * Notifies root subscribers.
+   */
   private notifySubscribers(): void {
     const roots = this.listRoots();
     for (const subscriber of this.subscribers) {
@@ -262,17 +450,35 @@ export class RootManager {
   }
 }
 
+/**
+ * Manages sampling messages.
+ */
 export class SamplingManager {
+  /**
+   * Set of message handlers.
+   */
   private messageHandlers = new Set<(message: SamplingMessage) => void>();
 
+  /**
+   * Subscribes to sampling messages.
+   * @param handler Callback function
+   */
   subscribe(handler: (message: SamplingMessage) => void): void {
     this.messageHandlers.add(handler);
   }
 
+  /**
+   * Unsubscribes from sampling messages.
+   * @param handler Callback function
+   */
   unsubscribe(handler: (message: SamplingMessage) => void): void {
     this.messageHandlers.delete(handler);
   }
 
+  /**
+   * Notifies message handlers.
+   * @param message Sampling message
+   */
   notifyMessageCreated(message: SamplingMessage): void {
     for (const handler of this.messageHandlers) {
       handler(message);
@@ -280,16 +486,30 @@ export class SamplingManager {
   }
 }
 
+/**
+ * Manages completions.
+ */
 export class CompletionManager {
+  /**
+   * Map of prompt completions.
+   */
   private promptCompletions = new Map<
     string,
     (value: string) => Promise<string[]>
   >();
+  /**
+   * Map of resource completions.
+   */
   private resourceCompletions = new Map<
     string,
     (value: string) => Promise<string[]>
   >();
 
+  /**
+   * Registers a new prompt completion.
+   * @param promptName Name of the prompt
+   * @param handler Completion handler function
+   */
   registerPromptCompletion(
     promptName: string,
     handler: (value: string) => Promise<string[]>
@@ -297,6 +517,11 @@ export class CompletionManager {
     this.promptCompletions.set(promptName, handler);
   }
 
+  /**
+   * Registers a new resource completion.
+   * @param uriTemplate URI template of the resource
+   * @param handler Completion handler function
+   */
   registerResourceCompletion(
     uriTemplate: string,
     handler: (value: string) => Promise<string[]>
@@ -304,6 +529,12 @@ export class CompletionManager {
     this.resourceCompletions.set(uriTemplate, handler);
   }
 
+  /**
+   * Gets completions for a prompt or resource.
+   * @param ref Reference to the prompt or resource
+   * @param value Value to complete
+   * @returns Promise that resolves with completion values
+   */
   async getCompletions(
     ref:
       | { type: 'ref/prompt'; name: string }
@@ -325,6 +556,10 @@ export class CompletionManager {
   }
 }
 
+/**
+ * Server implementation of the Model Context Protocol.
+ * Provides a framework for handling JSON-RPC requests and managing resources.
+ */
 export class Server {
   private readonly options: ServerOptions;
   private transport: McpTransport | null = null;
@@ -332,22 +567,34 @@ export class Server {
   private tools = new Map<
     string,
     {
-      schema: BaseSchema<unknown, unknown, BaseIssue<unknown>>;
+      schema: BaseSchema;
       handler: (params: unknown) => Promise<unknown>;
     }
   >();
-  private prompts = new PromptManager();
+  private promptManager = new PromptManager();
   private loggingLevel: LoggingLevel | null = null;
-  private resources = new ResourceManager();
-  private roots = new RootManager();
-  private sampling = new SamplingManager();
-  private completion = new CompletionManager();
+  private resourceManager = new ResourceManager();
+  private rootManager = new RootManager();
+  private samplingManager = new SamplingManager();
+  private completionManager = new CompletionManager();
 
   constructor(options: ServerOptions) {
-    this.options = options;
+    this.options = {
+      capabilities: {},
+      auth: undefined,
+      ...options,
+    };
   }
 
-  public async tool<T extends BaseSchema<unknown, unknown, BaseIssue<unknown>>>(
+  /**
+   * Registers a new tool with the server.
+   * @param name Unique name for the tool
+   * @param schema Valibot schema for validating tool parameters
+   * @param handler Function to execute when the tool is called
+   * @returns Promise that resolves when the tool is registered
+   * @throws {Error} If a tool with the same name already exists
+   */
+  public async tool<T extends BaseSchema>(
     name: string,
     schema: T,
     handler: (params: unknown) => Promise<unknown>
@@ -374,6 +621,10 @@ export class Server {
     }
   }
 
+  /**
+   * Removes a tool from the server.
+   * @param name Name of the tool to remove
+   */
   public removeTool(name: string): void {
     this.tools.delete(name);
 
@@ -385,12 +636,21 @@ export class Server {
     }
   }
 
+  /**
+   * Connects the server to a transport.
+   * @param transport Transport instance to connect to
+   * @returns Promise that resolves when connected
+   */
   public connect(transport: McpTransport): Promise<void> {
     this.transport = transport;
     transport.onMessage(this.handleTransportMessage);
     return Promise.resolve();
   }
 
+  /**
+   * Handles a transport message.
+   * @param message JSON-RPC message
+   */
   private handleTransportMessage = async (
     message: JSONRPCMessage
   ): Promise<void> => {
@@ -417,6 +677,11 @@ export class Server {
     }
   };
 
+  /**
+   * Handles a JSON-RPC message.
+   * @param message JSON-RPC message
+   * @returns Promise that resolves with a JSON-RPC response
+   */
   public handleMessage(
     message: JSONRPCMessage
   ): Promise<JSONRPCResponse | JSONRPCError | undefined> {
@@ -436,11 +701,21 @@ export class Server {
     return this.handleMethodCall(methodMessage);
   }
 
+  /**
+   * Checks if a message is a valid JSON-RPC message.
+   * @param message JSON-RPC message
+   * @returns True if the message is valid, false otherwise
+   */
   private isValidJsonRpcMessage(message: JSONRPCMessage): boolean {
     return 'jsonrpc' in message && message.jsonrpc === '2.0';
   }
 
-  private handleMethodCall(
+  /**
+   * Handles a method call.
+   * @param message JSON-RPC request or notification
+   * @returns Promise that resolves with a JSON-RPC response
+   */
+  private async handleMethodCall(
     message: JSONRPCRequest | JSONRPCNotification
   ): Promise<JSONRPCResponse | JSONRPCError | undefined> {
     if (message.method === 'initialize') {
@@ -472,11 +747,11 @@ export class Server {
     const request = message as JSONRPCRequest;
     switch (request.method) {
       case 'ping':
-        return this.handlePing(request);
+        return Promise.resolve(this.handlePing(request));
       case 'initialize':
         return this.handleInitialize(request);
       case 'prompts/list':
-        return this.handleListPrompts(request);
+        return Promise.resolve(this.handleListPrompts(request));
       case 'prompts/get':
         return this.handleGetPrompt(request);
       case 'prompts/execute':
@@ -484,11 +759,11 @@ export class Server {
       case 'logging/setLevel':
         return this.handleSetLoggingLevel(request);
       case 'tools/list':
-        return this.handleListTools(request);
+        return Promise.resolve(this.handleListTools(request));
       case 'resources/list':
-        return this.handleListResources(request);
+        return Promise.resolve(this.handleListResources(request));
       case 'resources/templates/list':
-        return this.handleListResourceTemplates(request);
+        return Promise.resolve(this.handleListResourceTemplates(request));
       case 'resources/read':
         return this.handleReadResource(request);
       case 'resources/subscribe':
@@ -496,7 +771,7 @@ export class Server {
       case 'resources/unsubscribe':
         return this.handleUnsubscribeResource(request);
       case 'roots/list':
-        return this.handleListRoots(request);
+        return Promise.resolve(this.handleListRoots(request));
       case 'roots/get':
         return this.handleGetRoot(request);
       case 'sampling/createMessage':
@@ -508,6 +783,11 @@ export class Server {
     }
   }
 
+  /**
+   * Handles a tool call.
+   * @param request JSON-RPC request
+   * @returns Promise that resolves with a JSON-RPC response
+   */
   private async handleToolCall(
     request: JSONRPCRequest
   ): Promise<JSONRPCResponse | JSONRPCError> {
@@ -524,7 +804,7 @@ export class Server {
     }
 
     try {
-      const params = parse(tool.schema as BaseSchema<unknown, unknown, BaseIssue<unknown>>, request.params);
+      const params = parse(tool.schema, request.params);
       const result = await tool.handler(params);
       return {
         jsonrpc: JSONRPC_VERSION,
@@ -553,6 +833,11 @@ export class Server {
     }
   }
 
+  /**
+   * Handles an initialize request.
+   * @param request JSON-RPC request
+   * @returns Promise that resolves with a JSON-RPC response
+   */
   public async handleInitialize(
     request: JSONRPCRequest
   ): Promise<JSONRPCResponse | JSONRPCError> {
@@ -597,6 +882,11 @@ export class Server {
     }
   }
 
+  /**
+   * Handles a set logging level request.
+   * @param request JSON-RPC request
+   * @returns Promise that resolves with a JSON-RPC response
+   */
   private async handleSetLoggingLevel(
     request: JSONRPCRequest
   ): Promise<JSONRPCResponse | JSONRPCError> {
@@ -627,7 +917,14 @@ export class Server {
     }
   }
 
-  public sendLogMessage(
+  /**
+   * Sends a log message.
+   * @param level Log level
+   * @param data Log data
+   * @param logger Logger name
+   * @returns Promise that resolves when the message is sent
+   */
+  public async sendLogMessage(
     level: LoggingLevel,
     data: unknown,
     logger?: string
@@ -637,7 +934,7 @@ export class Server {
       !this.transport ||
       !this.initialized
     ) {
-      return;
+      return Promise.resolve();
     }
 
     // Only send if the current level is set and the message level is equal or higher priority
@@ -665,8 +962,15 @@ export class Server {
         },
       });
     }
+    return Promise.resolve();
   }
 
+  /**
+   * Creates an error response.
+   * @param id Request ID
+   * @param error Error instance
+   * @returns JSON-RPC error response
+   */
   private createErrorResponse(
     id: RequestId | null,
     error: McpError
@@ -681,12 +985,18 @@ export class Server {
     };
   }
 
+  /**
+   * Registers a new prompt.
+   * @param prompt Prompt to register
+   * @param executor Executor function for the prompt
+   * @returns Promise that resolves when the prompt is registered
+   */
   public async prompt(
     prompt: Prompt,
     executor?: (args?: Record<string, string>) => Promise<PromptMessage[]>
   ): Promise<void> {
     await validatePrompt(prompt);
-    this.prompts.registerPrompt(prompt, executor);
+    this.promptManager.registerPrompt(prompt, executor);
     if (this.transport && this.initialized) {
       this.transport.send({
         jsonrpc: JSONRPC_VERSION,
@@ -695,8 +1005,12 @@ export class Server {
     }
   }
 
+  /**
+   * Removes a prompt.
+   * @param name Name of the prompt to remove
+   */
   public removePrompt(name: string): void {
-    this.prompts.unregisterPrompt(name);
+    this.promptManager.unregisterPrompt(name);
     if (this.transport && this.initialized) {
       this.transport.send({
         jsonrpc: JSONRPC_VERSION,
@@ -705,6 +1019,11 @@ export class Server {
     }
   }
 
+  /**
+   * Handles a ping request.
+   * @param request JSON-RPC request
+   * @returns JSON-RPC response
+   */
   private handlePing(request: JSONRPCRequest): JSONRPCResponse {
     return {
       jsonrpc: JSONRPC_VERSION,
@@ -713,16 +1032,26 @@ export class Server {
     };
   }
 
+  /**
+   * Handles a list prompts request.
+   * @param request JSON-RPC request
+   * @returns JSON-RPC response
+   */
   private handleListPrompts(request: JSONRPCRequest): JSONRPCResponse {
     return {
       jsonrpc: JSONRPC_VERSION,
       id: request.id,
       result: {
-        prompts: this.prompts.listPrompts(),
+        prompts: this.promptManager.listPrompts(),
       },
     };
   }
 
+  /**
+   * Handles a get prompt request.
+   * @param request JSON-RPC request
+   * @returns Promise that resolves with a JSON-RPC response
+   */
   private async handleGetPrompt(
     request: JSONRPCRequest
   ): Promise<JSONRPCResponse | JSONRPCError> {
@@ -731,7 +1060,7 @@ export class Server {
       arguments?: Record<string, string>;
     };
 
-    const prompt = this.prompts.getPrompt(name);
+    const prompt = this.promptManager.getPrompt(name);
     if (!prompt) {
       return {
         jsonrpc: JSONRPC_VERSION,
@@ -743,7 +1072,7 @@ export class Server {
       };
     }
 
-    const validationError = this.prompts.validateArguments(prompt, args);
+    const validationError = this.promptManager.validateArguments(prompt, args);
     if (validationError) {
       return {
         jsonrpc: JSONRPC_VERSION,
@@ -765,6 +1094,11 @@ export class Server {
     };
   }
 
+  /**
+   * Handles an execute prompt request.
+   * @param request JSON-RPC request
+   * @returns Promise that resolves with a JSON-RPC response
+   */
   private async handleExecutePrompt(
     request: JSONRPCRequest
   ): Promise<JSONRPCResponse | JSONRPCError> {
@@ -774,7 +1108,7 @@ export class Server {
     };
 
     try {
-      const messages = await this.prompts.executePrompt(name, args);
+      const messages = await this.promptManager.executePrompt(name, args);
 
       return {
         jsonrpc: JSONRPC_VERSION,
@@ -795,6 +1129,11 @@ export class Server {
     }
   }
 
+  /**
+   * Handles a list tools request.
+   * @param request JSON-RPC request
+   * @returns JSON-RPC response
+   */
   private handleListTools(request: JSONRPCRequest): JSONRPCResponse {
     return {
       jsonrpc: JSONRPC_VERSION,
@@ -805,31 +1144,48 @@ export class Server {
     };
   }
 
+  /**
+   * Handles a list resources request.
+   * @param request JSON-RPC request
+   * @returns JSON-RPC response
+   */
   private handleListResources(request: JSONRPCRequest): JSONRPCResponse {
     return {
       jsonrpc: JSONRPC_VERSION,
       id: request.id,
       result: {
-        resources: this.resources.listResources(),
+        resources: this.resourceManager.listResources(),
       },
     };
   }
 
-  private handleListResourceTemplates(request: JSONRPCRequest): JSONRPCResponse {
+  /**
+   * Handles a list resource templates request.
+   * @param request JSON-RPC request
+   * @returns JSON-RPC response
+   */
+  private handleListResourceTemplates(
+    request: JSONRPCRequest
+  ): JSONRPCResponse {
     return {
       jsonrpc: JSONRPC_VERSION,
       id: request.id,
       result: {
-        resourceTemplates: this.resources.listTemplates(),
+        resourceTemplates: this.resourceManager.listTemplates(),
       },
     };
   }
 
+  /**
+   * Handles a read resource request.
+   * @param request JSON-RPC request
+   * @returns Promise that resolves with a JSON-RPC response
+   */
   private async handleReadResource(
     request: JSONRPCRequest
   ): Promise<JSONRPCResponse | JSONRPCError> {
     const { uri } = request.params as { uri: string };
-    const resource = this.resources.getResource(uri);
+    const resource = this.resourceManager.getResource(uri);
 
     if (!resource) {
       return {
@@ -857,11 +1213,16 @@ export class Server {
     };
   }
 
+  /**
+   * Handles a subscribe resource request.
+   * @param request JSON-RPC request
+   * @returns Promise that resolves with a JSON-RPC response
+   */
   private async handleSubscribeResource(
     request: JSONRPCRequest
   ): Promise<JSONRPCResponse | JSONRPCError> {
     const { uri } = request.params as { uri: string };
-    const resource = this.resources.getResource(uri);
+    const resource = this.resourceManager.getResource(uri);
 
     if (!resource) {
       return {
@@ -887,7 +1248,7 @@ export class Server {
       }
     };
 
-    this.resources.subscribe(uri, onChange);
+    this.resourceManager.subscribe(uri, onChange);
 
     return {
       jsonrpc: JSONRPC_VERSION,
@@ -896,11 +1257,16 @@ export class Server {
     };
   }
 
+  /**
+   * Handles an unsubscribe resource request.
+   * @param request JSON-RPC request
+   * @returns Promise that resolves with a JSON-RPC response
+   */
   private async handleUnsubscribeResource(
     request: JSONRPCRequest
   ): Promise<JSONRPCResponse | JSONRPCError> {
     const { uri } = request.params as { uri: string };
-    const resource = this.resources.getResource(uri);
+    const resource = this.resourceManager.getResource(uri);
 
     if (!resource) {
       return {
@@ -923,21 +1289,31 @@ export class Server {
     };
   }
 
+  /**
+   * Handles a list roots request.
+   * @param request JSON-RPC request
+   * @returns JSON-RPC response
+   */
   private handleListRoots(request: JSONRPCRequest): JSONRPCResponse {
     return {
       jsonrpc: JSONRPC_VERSION,
       id: request.id,
       result: {
-        roots: this.roots.listRoots(),
+        roots: this.rootManager.listRoots(),
       },
     };
   }
 
+  /**
+   * Handles a get root request.
+   * @param request JSON-RPC request
+   * @returns Promise that resolves with a JSON-RPC response
+   */
   private async handleGetRoot(
     request: JSONRPCRequest
   ): Promise<JSONRPCResponse | JSONRPCError> {
     const { uri } = request.params as { uri: string };
-    const roots = this.roots.listRoots();
+    const roots = this.rootManager.listRoots();
     const root = roots.find((r) => r === uri);
 
     if (!root) {
@@ -963,6 +1339,11 @@ export class Server {
     };
   }
 
+  /**
+   * Handles a create message request.
+   * @param request JSON-RPC request
+   * @returns Promise that resolves with a JSON-RPC response
+   */
   private async handleCreateMessage(
     request: JSONRPCRequest
   ): Promise<JSONRPCResponse | JSONRPCError> {
@@ -992,7 +1373,7 @@ export class Server {
         },
       };
 
-      this.sampling.notifyMessageCreated(message);
+      this.samplingManager.notifyMessageCreated(message);
 
       return {
         jsonrpc: JSONRPC_VERSION,
@@ -1010,11 +1391,16 @@ export class Server {
       }
       return this.createErrorResponse(
         request.id,
-        new McpError(error instanceof Error ? error.message : 'Unknown error')
+        new McpError(error instanceof Error ? error.message : String(error))
       );
     }
   }
 
+  /**
+   * Handles a complete request.
+   * @param request JSON-RPC request
+   * @returns Promise that resolves with a JSON-RPC response
+   */
   private async handleComplete(
     request: JSONRPCRequest
   ): Promise<JSONRPCResponse | JSONRPCError> {
@@ -1028,7 +1414,7 @@ export class Server {
       };
 
       await validateReference(ref);
-      const completions = await this.completion.getCompletions(
+      const completions = await this.completionManager.getCompletions(
         ref,
         argument.value
       );
@@ -1055,6 +1441,12 @@ export class Server {
     }
   }
 
+  /**
+   * Generates prompt messages.
+   * @param prompt Prompt instance
+   * @param args Argument values
+   * @returns Array of prompt messages
+   */
   private generatePromptMessages(
     prompt: Prompt,
     args?: Record<string, string>
@@ -1064,24 +1456,125 @@ export class Server {
     // 1. Template the prompt using the arguments
     // 2. Generate any dynamic content
     // 3. Format everything as PromptMessages
-    return [];
+    return [{
+      role: 'assistant',
+      content: {
+        type: 'text',
+        text: `Generated message for prompt ${prompt.name}${args ? ` with args ${JSON.stringify(args)}` : ''}`
+      }
+    }];
+  }
+
+  public async sendProgress(
+    token: ProgressToken,
+    progress: number,
+    total?: number
+  ): Promise<void> {
+    if (!this.transport || !this.initialized) {
+      return Promise.resolve();
+    }
+
+    return this.transport.send({
+      jsonrpc: JSONRPC_VERSION,
+      method: 'notifications/progress',
+      params: {
+        progressToken: token,
+        progress,
+        total,
+      },
+    });
+  }
+
+  public async cancelRequest(
+    requestId: string | number,
+    reason?: string
+  ): Promise<void> {
+    if (!this.transport || !this.initialized) {
+      return Promise.resolve();
+    }
+
+    return this.transport.send({
+      jsonrpc: JSONRPC_VERSION,
+      method: 'notifications/cancelled',
+      params: {
+        requestId,
+        reason,
+      },
+    });
+  }
+
+  /**
+   * Registers a new resource.
+   * @param resource Resource to register
+   * @param content Initial content for the resource
+   */
+  public resource(resource: Resource, content: unknown): void {
+    this.resourceManager.registerResource(resource, content);
+    if (this.transport && this.initialized) {
+      this.transport.send({
+        jsonrpc: JSONRPC_VERSION,
+        method: 'notifications/resources/list_changed',
+      });
+    }
+  }
+
+  /**
+   * Registers a new resource template.
+   * @param template Resource template to register
+   */
+  public resourceTemplate(template: ResourceTemplate): void {
+    this.resourceManager.registerTemplate(template);
+    if (this.transport && this.initialized) {
+      this.transport.send({
+        jsonrpc: JSONRPC_VERSION,
+        method: 'notifications/resources/list_changed',
+      });
+    }
   }
 }
 
+/**
+ * Server options.
+ */
 export interface McpServerOptions {
+  /**
+   * Server name.
+   */
   name: string;
+  /**
+   * Server version.
+   */
   version: string;
+  /**
+   * Server capabilities.
+   */
   capabilities?: ServerCapabilities;
 }
 
+/**
+ * MCP server implementation.
+ */
 export class McpServer {
+  /**
+   * Server instance.
+   */
   private server: Server;
 
+  /**
+   * Creates a new McpServer instance.
+   * @param options Server configuration options
+   */
   constructor(options: McpServerOptions) {
     this.server = new Server(options);
   }
 
-  public tool<T extends BaseSchema<unknown, unknown, unknown>>(
+  /**
+   * Registers a new tool.
+   * @param name Unique name for the tool
+   * @param schema Valibot schema for validating tool parameters
+   * @param handler Function to execute when the tool is called
+   */
+  public tool<T extends BaseSchema>(
     name: string,
     schema: T,
     handler: (params: unknown) => Promise<unknown>
@@ -1089,24 +1582,23 @@ export class McpServer {
     this.server.tool(name, schema, handler);
   }
 
+  /**
+   * Connects the server to a transport.
+   * @param transport Transport instance to connect to
+   * @returns Promise that resolves when connected
+   */
   public connect(transport: McpTransport): Promise<void> {
     return this.server.connect(transport);
   }
 
+  /**
+   * Disconnects the server from its transport.
+   * @returns Promise that resolves when disconnected
+   */
   public async disconnect(): Promise<void> {
     await this.server.handleMessage({
       jsonrpc: JSONRPC_VERSION,
       method: 'disconnect',
     });
-  }
-}
-
-export class ValidationError extends Error {
-  readonly message: string;
-
-  constructor(message: string) {
-    super(message);
-    this.name = 'ValidationError';
-    this.message = message;
   }
 }

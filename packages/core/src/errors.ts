@@ -1,10 +1,19 @@
 /**
- * Base error class for MCP errors.
+ * Base error class for Model Context Protocol errors.
+ * All MCP errors extend from this class.
  */
 export class McpError extends Error {
+  /** Error code */
   readonly code: number;
+  /** Optional error data */
   readonly data?: unknown;
 
+  /**
+   * Creates a new McpError instance.
+   * @param messageOrCode Error message or code
+   * @param messageOrData Error message or data
+   * @param data Additional error data
+   */
   constructor(
     messageOrCode: string | number,
     messageOrData?: string | unknown,
@@ -33,7 +42,8 @@ export class McpError extends Error {
   }
 
   /**
-   * Convert the error to a JSON-RPC error object.
+   * Converts the error to a JSON-RPC error object.
+   * @returns JSON-RPC error object
    */
   toJSON() {
     const result: { code: number; message: string; data?: unknown } = {
@@ -47,7 +57,9 @@ export class McpError extends Error {
   }
 
   /**
-   * Create an error from a JSON-RPC error object.
+   * Creates an McpError instance from a JSON-RPC error object.
+   * @param error JSON-RPC error object
+   * @returns McpError instance
    */
   static fromJSON(error: { code: number; message: string; data?: unknown }) {
     return new McpError(error.code, error.message, error.data);
@@ -68,9 +80,13 @@ export const SERVER_NOT_INITIALIZED = -32002;
 export const REQUEST_FAILED = -32003;
 
 /**
- * Parse error indicates that the JSON sent is not a valid JSON-RPC object.
+ * Error thrown when a JSON-RPC parse error occurs.
  */
 export class ParseError extends McpError {
+  /**
+   * Creates a new ParseError instance.
+   * @param message Error message
+   */
   constructor(message = 'Parse error') {
     super(PARSE_ERROR, message);
     this.name = 'ParseError';
@@ -79,9 +95,13 @@ export class ParseError extends McpError {
 }
 
 /**
- * Invalid request error indicates that the JSON sent is not a valid Request object.
+ * Error thrown when an invalid JSON-RPC request is received.
  */
 export class InvalidRequestError extends McpError {
+  /**
+   * Creates a new InvalidRequestError instance.
+   * @param message Error message
+   */
   constructor(message = 'Invalid request') {
     super(INVALID_REQUEST, message);
     this.name = 'InvalidRequestError';
@@ -90,9 +110,13 @@ export class InvalidRequestError extends McpError {
 }
 
 /**
- * Method not found error indicates that the method does not exist / is not available.
+ * Error thrown when a requested method is not found.
  */
 export class MethodNotFoundError extends McpError {
+  /**
+   * Creates a new MethodNotFoundError instance.
+   * @param message Error message
+   */
   constructor(message = 'Method not found') {
     super(METHOD_NOT_FOUND, message);
     this.name = 'MethodNotFoundError';
@@ -101,9 +125,13 @@ export class MethodNotFoundError extends McpError {
 }
 
 /**
- * Invalid params error indicates that invalid method parameters were sent.
+ * Error thrown when invalid parameters are provided.
  */
 export class InvalidParamsError extends McpError {
+  /**
+   * Creates a new InvalidParamsError instance.
+   * @param message Error message
+   */
   constructor(message = 'Invalid params') {
     super(INVALID_PARAMS, message);
     this.name = 'InvalidParamsError';
@@ -112,9 +140,14 @@ export class InvalidParamsError extends McpError {
 }
 
 /**
- * Internal error indicates that an internal JSON-RPC error occurred.
+ * Error thrown when an internal JSON-RPC error occurs.
  */
 export class InternalError extends McpError {
+  /**
+   * Creates a new InternalError instance.
+   * @param message Error message
+   * @param data Additional error data
+   */
   constructor(message = 'Internal error', data?: unknown) {
     super(INTERNAL_ERROR, message, data);
     this.name = 'InternalError';
@@ -123,9 +156,13 @@ export class InternalError extends McpError {
 }
 
 /**
- * Server not initialized error indicates that the server has not been initialized.
+ * Error thrown when the server is not initialized.
  */
 export class ServerNotInitializedError extends McpError {
+  /**
+   * Creates a new ServerNotInitializedError instance.
+   * @param message Error message
+   */
   constructor(message = 'Server not initialized') {
     super(SERVER_NOT_INITIALIZED, message);
     this.name = 'ServerNotInitializedError';
@@ -134,9 +171,13 @@ export class ServerNotInitializedError extends McpError {
 }
 
 /**
- * Request failed error indicates that a request failed for some reason.
+ * Error thrown when a request fails.
  */
 export class RequestFailedError extends McpError {
+  /**
+   * Creates a new RequestFailedError instance.
+   * @param message Error message
+   */
   constructor(message = 'Request failed') {
     super(REQUEST_FAILED, message);
     this.name = 'RequestFailedError';
