@@ -1,31 +1,15 @@
 import { EventEmitter } from 'eventemitter3';
-import { number, object, string } from 'valibot';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Auth } from './auth';
-import { InMemoryTransport } from './in-memory';
+import type { JSONRPCMessage } from './jsonrpc';
 import { JSONRPC_VERSION, LATEST_PROTOCOL_VERSION } from './schema';
-import type {
-  Implementation,
-  JSONRPCMessage,
-  ServerCapabilities,
-  Tool,
-} from './schema';
+import type { Implementation, ServerCapabilities, Tool } from './schema';
 import { McpServer } from './server';
 import type {
   McpTransport,
   MessageHandler,
   TransportEventMap,
 } from './transport';
-
-interface GreetParams {
-  name: string;
-  age: number;
-}
-
-const _greetSchema = {
-  name: 'string',
-  age: 'number',
-};
 
 /**
  * Test transport implementation for simulating message handling.
@@ -37,26 +21,25 @@ class TestTransport
   private _connected = false;
   private _handler: MessageHandler | undefined;
 
-  constructor() {
-    super();
-  }
-
   get connected(): boolean {
     return this._connected;
   }
 
-  async connect(): Promise<void> {
+  connect(): Promise<void> {
     this._connected = true;
+    return Promise.resolve();
   }
 
-  async disconnect(): Promise<void> {
+  disconnect(): Promise<void> {
     this._connected = false;
+    return Promise.resolve();
   }
 
-  async send(message: JSONRPCMessage): Promise<void> {
+  send(_message: JSONRPCMessage): Promise<void> {
     if (!this._connected) {
       throw new Error('Transport not connected');
     }
+    return Promise.resolve();
   }
 
   onMessage(handler: MessageHandler): void {
@@ -88,7 +71,12 @@ describe('McpServer', () => {
 
     const capabilities: ServerCapabilities = {
       protocolVersion: LATEST_PROTOCOL_VERSION,
-      implementations: [implementation],
+      implementations: [
+        {
+          name: 'test-server',
+          version: '1.0.0',
+        },
+      ],
       tools: [],
     };
 
@@ -114,21 +102,17 @@ describe('McpServer', () => {
      * Verifies protocol version negotiation and capability exchange.
      */
     it('should handle initialization correctly', async () => {
-      const testPrompt: any = {
+      const testPrompt = {
         name: 'test-prompt',
         description: 'A test prompt',
-        arguments: [
-          {
-            name: 'name',
-            type: 'string',
-            required: true,
+        parameters: {
+          type: 'object',
+          properties: {
+            name: { type: 'string' },
+            age: { type: 'number' },
           },
-          {
-            name: 'age',
-            type: 'number',
-            required: true,
-          },
-        ],
+          required: ['name', 'age'],
+        },
       };
 
       server.registerMethod('prompts/get', (_params: unknown) => testPrompt);
@@ -221,10 +205,10 @@ describe('McpServer', () => {
    * Tests resource operations.
    */
   it('should handle resource operations', async () => {
-    const resource: any = {
+    const resource = {
       uri: 'test-resource',
       mimeType: 'text/plain',
-      name: 'Test Resource',
+      content: 'Hello, World!',
     };
 
     server.registerResource(resource);

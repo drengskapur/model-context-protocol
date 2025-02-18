@@ -519,91 +519,99 @@ export class McpClient {
   }
 
   /**
-   * Handles a notification message.
+   * Handle a notification from the server
    * @param notification Notification to handle
    */
-  private handleNotification(notification: JSONRPCNotification): Promise<void> {
+  private handleNotification(notification: JSONRPCNotification): void {
     try {
-      switch (notification.method) {
-        case 'notifications/cancelled': {
-          const params = notification.params as unknown as CancellationParams;
-          if (!params?.requestId) {
-            throw new VError(
-              'Invalid cancellation notification: missing requestId'
-            );
-          }
-          const pendingRequest = this._pendingRequests.get(params.requestId);
-          if (pendingRequest) {
-            pendingRequest.reject(
-              new VError(
-                `Request cancelled: ${params.reason || 'No reason provided'}`
-              )
-            );
-            this._pendingRequests.delete(params.requestId);
-          }
-          break;
-        }
-        case 'notifications/progress': {
-          const params = notification.params as unknown as ProgressParams;
-          if (
-            !params?.token ||
-            typeof params.progress !== 'number' ||
-            typeof params.total !== 'number'
-          ) {
-            throw new VError(
-              'Invalid progress notification: missing required fields'
-            );
-          }
-          this.events.emit(
-            `progress:${params.token}`,
-            params.progress,
-            params.total
+      this.processNotificationMethod(notification);
+    } catch (error) {
+      if (this.events.listenerCount('error') > 0) {
+        this.events.emit(
+          'error',
+          new VError('Error handling notification', { cause: error })
+        );
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Process a notification method
+   * @param notification Notification to process
+   */
+  private processNotificationMethod(notification: JSONRPCNotification): void {
+    switch (notification.method) {
+      case 'notifications/cancelled': {
+        const params = notification.params as unknown as CancellationParams;
+        if (!params?.requestId) {
+          throw new VError(
+            'Invalid cancellation notification: missing requestId'
           );
-          break;
         }
-        case 'notifications/resource': {
-          const params = notification.params as {
-            name: string;
-            content: unknown;
-          };
-          if (!params?.name) {
-            throw new VError(
-              'Invalid resource notification: missing resource name'
-            );
-          }
-          this.events.emit(`resource:${params.name}`, params.content);
-          break;
+        const pendingRequest = this._pendingRequests.get(params.requestId);
+        if (pendingRequest) {
+          pendingRequest.reject(
+            new VError(
+              `Request cancelled: ${params.reason || 'No reason provided'}`
+            )
+          );
+          this._pendingRequests.delete(params.requestId);
         }
-        case 'notifications/message': {
-          const params = notification.params as { message: unknown };
-          if (!params?.message) {
-            throw new VError(
-              'Invalid message notification: missing message content'
-            );
-          }
-          this.events.emit('messageCreated', params.message);
-          break;
+        break;
+      }
+      case 'notifications/progress': {
+        const params = notification.params as unknown as ProgressParams;
+        if (
+          !params?.token ||
+          typeof params.progress !== 'number' ||
+          typeof params.total !== 'number'
+        ) {
+          throw new VError(
+            'Invalid progress notification: missing required fields'
+          );
         }
-        default: {
-          // Log unknown notification methods but don't throw
-          if (this.events.listenerCount('error') > 0) {
-            this.events.emit(
-              'error',
-              new VError(
-                `Received unknown notification method: ${notification.method}`
-              )
-            );
-          }
+        this.events.emit(
+          `progress:${params.token}`,
+          params.progress,
+          params.total
+        );
+        break;
+      }
+      case 'notifications/resource': {
+        const params = notification.params as {
+          name: string;
+          content: unknown;
+        };
+        if (!params?.name) {
+          throw new VError(
+            'Invalid resource notification: missing resource name'
+          );
+        }
+        this.events.emit(`resource:${params.name}`, params.content);
+        break;
+      }
+      case 'notifications/message': {
+        const params = notification.params as { message: unknown };
+        if (!params?.message) {
+          throw new VError(
+            'Invalid message notification: missing message content'
+          );
+        }
+        this.events.emit('messageCreated', params.message);
+        break;
+      }
+      default: {
+        // Log unknown notification methods but don't throw
+        if (this.events.listenerCount('error') > 0) {
+          this.events.emit(
+            'error',
+            new VError(
+              `Received unknown notification method: ${notification.method}`
+            )
+          );
         }
       }
-      return Promise.resolve();
-    } catch (error) {
-      // Emit error but don't throw to prevent breaking the message handling loop
-      this.events.emit(
-        'error',
-        new VError(error as Error, 'Failed to handle notification')
-      );
-      return Promise.resolve(); // Still resolve since we handled the error
     }
   }
 

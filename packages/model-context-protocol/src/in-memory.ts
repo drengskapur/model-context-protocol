@@ -7,7 +7,6 @@
 import { EventEmitter } from 'eventemitter3';
 import { TransportError } from './errors';
 import type { JSONRPCRequest, JSONRPCResponse } from './schema';
-import { JSONRPC_VERSION } from './schema';
 import type {
   McpTransport,
   MessageHandler,
@@ -52,6 +51,7 @@ export class InMemoryTransport implements McpTransport {
     const transport1 = new InMemoryTransport();
     const transport2 = new InMemoryTransport();
     transport1.pair(transport2);
+    transport2.pair(transport1);
     return [transport1, transport2];
   }
 
@@ -89,8 +89,10 @@ export class InMemoryTransport implements McpTransport {
    * @param transport Transport to pair with
    */
   public pair(transport: InMemoryTransport): void {
+    if (this.otherTransport) {
+      throw new TransportError('Transport already paired');
+    }
     this.otherTransport = transport;
-    transport.otherTransport = this;
   }
 
   /**
@@ -109,31 +111,33 @@ export class InMemoryTransport implements McpTransport {
 
   /**
    * Connects the transport.
-   * @throws {TransportError} If the transport is not paired
+   * @throws {TransportError} If the transport is not paired or already connected
    */
   public async connect(): Promise<void> {
     if (!this.otherTransport) {
       throw new TransportError('Transport not paired');
     }
-    if (this._connected) {
-      throw new TransportError('Transport already connected');
+
+    // Reset connection state if previously disconnected
+    if (!this._connected) {
+      this._connected = true;
+      this.messages = [];
+      await Promise.resolve(); // Ensure async behavior
+      this._events.emit('connect');
     }
-    this._connected = true;
-    await Promise.resolve(); // Ensure async behavior
-    this._events.emit('connect');
   }
 
   /**
    * Disconnects the transport.
    */
   public async disconnect(): Promise<void> {
-    if (!this._connected) {
-      return;
+    if (this._connected) {
+      this._connected = false;
+      this.messageHandlers.clear();
+      this.messages = [];
+      await Promise.resolve(); // Ensure async behavior
+      this._events.emit('disconnect');
     }
-    this._connected = false;
-    this.messageHandlers.clear();
-    await Promise.resolve(); // Ensure async behavior
-    this._events.emit('disconnect');
   }
 
   /**
@@ -149,52 +153,51 @@ export class InMemoryTransport implements McpTransport {
    * @throws {TransportError} If the transport is not connected or not paired
    */
   public async send(message: JSONRPCRequest | JSONRPCResponse): Promise<void> {
+    if (!this._connected) {
+      throw new TransportError('Transport not connected');
+    }
     if (!this.otherTransport) {
       throw new TransportError('Transport not paired');
     }
 
-    if (!this._connected) {
-      throw new TransportError('Transport not connected');
-    }
-
-    try {
-      this.messages.push(message);
-      await this.otherTransport.handleMessage(message);
-    } catch (error) {
-      throw new TransportError('Failed to send message', error as Error);
-    }
+    this.messages.push(message);
+    await this.otherTransport.handleMessage(message);
   }
 
   /**
    * Gets all messages sent through this transport.
-   * @returns Array of sent messages
    */
   public getMessages(): Array<JSONRPCRequest | JSONRPCResponse> {
-    return this.messages;
+    return [...this.messages];
   }
 
   /**
-   * Simulates an incoming message for testing.
-   * @param message Message to simulate
-   * @throws {TransportError} If the message format is invalid
+   * Simulates receiving a message from the other transport.
+   * @param message Message to simulate receiving
    */
-  public async simulateMessage(
+  public async simulateIncomingMessage(
     message: JSONRPCRequest | JSONRPCResponse
   ): Promise<void> {
     if (!this._connected) {
       throw new TransportError('Transport not connected');
     }
-
-    this.validateMessage(message);
-    this.messages.push(message);
     await this.handleMessage(message);
   }
 
   /**
-   * Clears all stored messages.
+   * Handles an incoming message.
+   * @param message Message to handle
    */
-  public clearMessages(): void {
-    this.messages = [];
+  private async handleMessage(
+    message: JSONRPCRequest | JSONRPCResponse
+  ): Promise<void> {
+    try {
+      for (const handler of this.messageHandlers) {
+        await handler(message);
+      }
+    } catch (error) {
+      throw new TransportError('Handler error', error as Error);
+    }
   }
 
   /**
@@ -205,43 +208,6 @@ export class InMemoryTransport implements McpTransport {
     this.otherTransport = null;
     this.messages = [];
     this.messageHandlers.clear();
-  }
-
-  /**
-   * Handles an incoming message.
-   * @param message Message to handle
-   */
-  private async handleMessage(message: unknown): Promise<void> {
-    this._events.emit('message', message);
-
-    const promises = Array.from(this.messageHandlers).map(async (handler) => {
-      try {
-        await handler(message);
-      } catch (error) {
-        throw new TransportError('Failed to handle message', error as Error);
-      }
-    });
-
-    await Promise.all(promises);
-  }
-
-  /**
-   * Validates a message.
-   * @param message Message to validate
-   * @throws {TransportError} If the message format is invalid
-   */
-  private validateMessage(message: unknown): void {
-    if (
-      typeof message !== 'object' ||
-      message === null ||
-      !('jsonrpc' in message)
-    ) {
-      throw new TransportError('Invalid message format');
-    }
-
-    if ((message as { jsonrpc: string }).jsonrpc !== JSONRPC_VERSION) {
-      throw new TransportError('Invalid JSON-RPC version');
-    }
   }
 
   public on<K extends keyof TransportEventMap>(
