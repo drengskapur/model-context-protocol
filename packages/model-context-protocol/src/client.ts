@@ -105,7 +105,7 @@ export class McpClient {
     method: string,
     params?: Record<string, unknown>
   ): Promise<T> {
-    if (!this.initialized) {
+    if (!this.initialized && method !== 'initialize') {
       throw new VError('Client not initialized');
     }
 
@@ -120,7 +120,7 @@ export class McpClient {
       try {
         const handler: MessageHandler = (msg: unknown): Promise<void> => {
           if (!this.isJSONRPCMessage(msg)) {
-            return;
+            return Promise.resolve();
           }
           const message = msg as JSONRPCMessage;
 
@@ -129,14 +129,15 @@ export class McpClient {
 
             if ('error' in message) {
               reject(new VError(message.error.message));
-              return;
+              return Promise.resolve();
             }
 
             if ('result' in message) {
               resolve(message.result as T);
-              return;
+              return Promise.resolve();
             }
           }
+          return Promise.resolve();
         };
 
         this.transport.onMessage(handler);

@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { JSONRPCMessage } from '../schema.js';
 import { SseTransport, type SseTransportOptions } from './sse.js';
+import type { Session, Channel } from 'better-sse';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { JSONRPCRequest } from './schema';
 
 // Mock EventSource class
 class MockEventSource implements EventSource {
@@ -371,13 +374,6 @@ describe('SseTransport', () => {
   });
 });
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { Session, Channel } from 'better-sse';
-import { SseTransport } from './sse';
-import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { JSONRPCRequest } from './schema';
-
-// Mock better-sse
 vi.mock('better-sse', () => ({
   createSession: vi.fn(() => ({
     retry: vi.fn(),

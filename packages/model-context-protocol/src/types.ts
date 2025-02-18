@@ -4,6 +4,8 @@
  * Provides shared types and type utilities.
  */
 
+import { z } from 'zod';
+
 /**
  * Represents a unique identifier.
  * Can be either a string or a number.
@@ -90,26 +92,270 @@ export type Transformer<T, U> = (value: T) => U;
 export type Validator<T> = (value: unknown) => Result<T, Error>;
 
 import type { Readable, Writable } from 'node:stream';
-import {
-  intersect,
-  literal,
-  never,
-  null_,
-  number,
-  object,
-  optional,
-  record,
-  string,
-  union,
-  unknown,
-} from 'valibot';
 
-export const LATEST_PROTOCOL_VERSION = '2024-11-05';
-export const JSONRPC_VERSION = '2.0';
+/**
+ * Protocol version.
+ */
+export const LATEST_PROTOCOL_VERSION = '2024-02-18';
 
+/**
+ * JSON-RPC version.
+ */
+export const JSONRPC_VERSION = '2.0' as const;
+
+/**
+ * Request ID type.
+ */
 export type RequestId = string | number;
-export type ErrorResponseId = RequestId | null;
-export type ProgressToken = string | number;
+
+/**
+ * Base request interface.
+ */
+export interface Request {
+  /**
+   * JSON-RPC version.
+   */
+  jsonrpc: typeof JSONRPC_VERSION;
+
+  /**
+   * Request ID.
+   */
+  id?: RequestId;
+
+  /**
+   * Method name.
+   */
+  method: string;
+
+  /**
+   * Method parameters.
+   */
+  params?: unknown;
+}
+
+/**
+ * Base response interface.
+ */
+export interface Response {
+  /**
+   * JSON-RPC version.
+   */
+  jsonrpc: typeof JSONRPC_VERSION;
+
+  /**
+   * Request ID.
+   */
+  id: RequestId;
+
+  /**
+   * Response result.
+   */
+  result?: unknown;
+
+  /**
+   * Error details.
+   */
+  error?: {
+    /**
+     * Error code.
+     */
+    code: number;
+
+    /**
+     * Error message.
+     */
+    message: string;
+
+    /**
+     * Additional error data.
+     */
+    data?: unknown;
+  };
+}
+
+/**
+ * Base notification interface.
+ */
+export interface Notification {
+  /**
+   * JSON-RPC version.
+   */
+  jsonrpc: typeof JSONRPC_VERSION;
+
+  /**
+   * Method name.
+   */
+  method: string;
+
+  /**
+   * Method parameters.
+   */
+  params?: unknown;
+}
+
+/**
+ * Base error interface.
+ */
+export interface Error {
+  /**
+   * Error code.
+   */
+  code: number;
+
+  /**
+   * Error message.
+   */
+  message: string;
+
+  /**
+   * Additional error data.
+   */
+  data?: unknown;
+}
+
+/**
+ * Base result interface.
+ */
+export interface Result {
+  /**
+   * This result property is reserved by the protocol to allow clients and servers
+   * to include custom data in the result that is not specified by the method.
+   */
+  result: unknown;
+}
+
+/**
+ * JSON-RPC request interface.
+ */
+export interface JSONRPCRequest extends Request {
+  /**
+   * JSON-RPC version.
+   */
+  jsonrpc: typeof JSONRPC_VERSION;
+
+  /**
+   * Request ID.
+   */
+  id: RequestId;
+
+  /**
+   * Method name.
+   */
+  method: string;
+
+  /**
+   * Method parameters.
+   */
+  params?: unknown;
+}
+
+/**
+ * JSON-RPC response interface.
+ */
+export interface JSONRPCResponse {
+  /**
+   * JSON-RPC version.
+   */
+  jsonrpc: typeof JSONRPC_VERSION;
+
+  /**
+   * Request ID.
+   */
+  id: RequestId;
+
+  /**
+   * Response result.
+   */
+  result: Result;
+}
+
+/**
+ * JSON-RPC error response interface.
+ */
+export interface JSONRPCErrorResponse {
+  /**
+   * JSON-RPC version.
+   */
+  jsonrpc: typeof JSONRPC_VERSION;
+
+  /**
+   * Request ID.
+   */
+  id: RequestId;
+
+  /**
+   * Error details.
+   */
+  error: Error;
+}
+
+/**
+ * JSON-RPC notification interface.
+ */
+export interface JSONRPCNotification extends Notification {
+  /**
+   * JSON-RPC version.
+   */
+  jsonrpc: typeof JSONRPC_VERSION;
+
+  /**
+   * Method name.
+   */
+  method: string;
+
+  /**
+   * Method parameters.
+   */
+  params?: unknown;
+}
+
+// Zod schemas for validation
+export const requestSchema = z.object({
+  jsonrpc: z.literal(JSONRPC_VERSION),
+  id: z.union([z.string(), z.number()]),
+  method: z.string(),
+  params: z.unknown().optional(),
+});
+
+export const responseSchema = z.object({
+  jsonrpc: z.literal(JSONRPC_VERSION),
+  id: z.union([z.string(), z.number()]),
+  result: z.object({
+    result: z.unknown(),
+  }),
+  method: z.never().optional(),
+  params: z.never().optional(),
+  error: z.never().optional(),
+});
+
+export const errorResponseSchema = z.object({
+  jsonrpc: z.literal(JSONRPC_VERSION),
+  id: z.union([z.string(), z.number()]),
+  error: z.object({
+    code: z.number(),
+    message: z.string(),
+    data: z.unknown().optional(),
+  }),
+  result: z.never().optional(),
+  method: z.never().optional(),
+  params: z.never().optional(),
+});
+
+export const notificationSchema = z.object({
+  jsonrpc: z.literal(JSONRPC_VERSION),
+  method: z.string(),
+  params: z.unknown().optional(),
+  id: z.never().optional(),
+  result: z.never().optional(),
+  error: z.never().optional(),
+});
+
+export const messageSchema = z.union([
+  requestSchema,
+  responseSchema,
+  errorResponseSchema,
+  notificationSchema,
+]);
 
 export interface Implementation {
   name: string;
@@ -216,70 +462,9 @@ export type JSONRPCMessage =
   | JSONRPCNotification
   | JSONRPCErrorResponse;
 
-// Base schema for all messages
-const _baseMessageSchema = object({
-  jsonrpc: literal(JSONRPC_VERSION),
-});
-
-// Schema for metadata
-const metaSchema = object({
-  _meta: optional(
-    object({
-      progressToken: optional(union([string(), number()])),
-    })
-  ),
-});
-
-// Schema for request messages
-const requestSchema = object({
-  jsonrpc: literal(JSONRPC_VERSION),
-  id: union([string(), number()]),
-  method: string(),
-  params: optional(intersect([record(string(), unknown()), metaSchema])),
-  result: optional(never()),
-  error: optional(never()),
-});
-
-// Schema for notification messages
-const notificationSchema = object({
-  jsonrpc: literal(JSONRPC_VERSION),
-  method: string(),
-  params: optional(intersect([record(string(), unknown()), metaSchema])),
-  id: optional(never()),
-  result: optional(never()),
-  error: optional(never()),
-});
-
-// Schema for response messages
-const responseSchema = object({
-  jsonrpc: literal(JSONRPC_VERSION),
-  id: union([string(), number()]),
-  result: JSONRPCResult,
-  method: optional(never()),
-  params: optional(never()),
-  error: optional(never()),
-});
-
-// Schema for error messages
-const errorSchema = object({
-  jsonrpc: literal(JSONRPC_VERSION),
-  id: union([string(), number(), null_()]),
-  error: object({
-    code: number(),
-    message: string(),
-    data: optional(unknown()),
-  }),
-  method: optional(never()),
-  params: optional(never()),
-  result: optional(never()),
-});
-
-export const jsonRpcMessageSchema = union([
-  requestSchema,
-  notificationSchema,
-  responseSchema,
-  errorSchema,
-]);
+export type RequestId = string | number;
+export type ErrorResponseId = RequestId | null;
+export type ProgressToken = string | number;
 
 export interface McpServerConfig {
   name: string;

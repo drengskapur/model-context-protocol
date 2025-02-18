@@ -90,7 +90,7 @@ export class StdioTransport extends BaseTransport {
   /**
    * Disconnects from stdin/stdout streams.
    */
-  async disconnect(): Promise<void> {
+  disconnect(): Promise<void> {
     try {
       this.input.removeAllListeners();
       this.buffer = '';
@@ -134,8 +134,14 @@ export class StdioTransport extends BaseTransport {
     // Keep the last line if it's incomplete
     this.buffer = lines.pop() || '';
 
+    this.processLines(lines);
+  }
+
+  private processLines(lines: string[]): void {
     for (const line of lines) {
-      if (!line) continue;
+      if (!line) {
+        continue;
+      }
 
       try {
         const message = JSON.parse(line);

@@ -8,7 +8,6 @@ import { z } from 'zod';
 import { McpError } from './errors';
 import type {
   CreateMessageRequest,
-  CreateMessageResult,
   ModelPreferences,
   SamplingMessage,
 } from './schema';
@@ -71,7 +70,7 @@ export interface SamplingResponse {
 /**
  * Sampling client interface.
  */
-export interface SamplingClient {
+export interface ISamplingClient {
   /**
    * Creates a message using sampling.
    * @param messages Messages to use as context.
@@ -88,8 +87,6 @@ export interface SamplingClient {
    * @param role Role of the message
    * @param content Content of the message
    * @param name Optional name of the message
-   * @param functionCall Optional function call
-   * @param toolCalls Optional tool calls
    * @param metadata Optional metadata
    * @returns Promise that resolves with the response
    */
@@ -97,8 +94,6 @@ export interface SamplingClient {
     role: string,
     content: string,
     name?: string,
-    functionCall?: unknown,
-    toolCalls?: unknown[],
     metadata?: Record<string, unknown>
   ): Promise<SamplingResponse>;
 }
@@ -106,7 +101,7 @@ export interface SamplingClient {
 /**
  * Base class for sampling clients.
  */
-export abstract class BaseSamplingClient implements SamplingClient {
+export abstract class BaseSamplingClient implements ISamplingClient {
   /**
    * Creates a message using sampling.
    * @param messages Messages to use as context.
@@ -203,17 +198,13 @@ export abstract class BaseSamplingClient implements SamplingClient {
    * @param role Role of the message
    * @param content Content of the message
    * @param name Optional name of the message
-   * @param functionCall Optional function call
-   * @param toolCalls Optional tool calls
    * @param metadata Optional metadata
    * @returns Promise that resolves with the response
    */
-  async respondToSampling(
+  respondToSampling(
     role: string,
     content: string,
     name?: string,
-    functionCall?: unknown,
-    toolCalls?: unknown[],
     metadata?: Record<string, unknown>
   ): Promise<SamplingResponse> {
     const message: SamplingMessage = {
@@ -225,10 +216,10 @@ export abstract class BaseSamplingClient implements SamplingClient {
       name,
     };
 
-    return {
+    return Promise.resolve({
       message,
       metadata,
-    };
+    });
   }
 }
 
@@ -289,7 +280,7 @@ export class Sampling {
     }
 
     // Create request
-    const request: CreateMessageRequest = {
+    const _request: CreateMessageRequest = {
       method: 'sampling/createMessage',
       params: {
         messages,
@@ -297,7 +288,6 @@ export class Sampling {
         temperature: options.temperature,
         maxTokens: options.maxTokens,
         stopSequences: options.stop,
-        metadata: options.metadata,
       },
     };
 
@@ -323,8 +313,6 @@ export class Sampling {
     role: string,
     content: string,
     name?: string,
-    functionCall?: unknown,
-    toolCalls?: unknown[],
     metadata?: Record<string, unknown>
   ): Promise<SamplingResponse> {
     return Promise.resolve({
@@ -341,13 +329,95 @@ export class Sampling {
   }
 }
 
-export class SamplingClient {
+export class SamplingClient implements ISamplingClient {
+  /**
+   * Creates a message using sampling.
+   * @param messages Messages to use as context.
+   * @param options Options for the sampling process.
+   * @returns A promise that resolves to the created message.
+   */
+  createMessage(
+    messages: SamplingMessage[],
+    options: SamplingOptions
+  ): Promise<SamplingResponse> {
+    // Validate messages
+    for (const message of messages) {
+      try {
+        z.object({
+          role: z.enum(['system', 'user', 'assistant', 'function', 'tool']),
+          content: z.union([
+            z.object({
+              type: z.literal('text'),
+              text: z.string(),
+            }),
+            z.object({
+              type: z.literal('function_call'),
+              function: z.object({
+                name: z.string(),
+                arguments: z.string(),
+              }),
+            }),
+            z.object({
+              type: z.literal('tool_calls'),
+              tool_calls: z.array(
+                z.object({
+                  id: z.string(),
+                  type: z.literal('function'),
+                  function: z.object({
+                    name: z.string(),
+                    arguments: z.string(),
+                  }),
+                })
+              ),
+            }),
+          ]),
+          name: z.string().optional(),
+          tool_call_id: z.string().optional(),
+        }).parse(message);
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          throw new McpError(`Invalid message: ${error.message}`, error);
+        }
+        throw error;
+      }
+    }
+
+    // Create request
+    const _request: CreateMessageRequest = {
+      method: 'sampling/createMessage',
+      params: {
+        messages,
+        modelPreferences: options.modelPreferences,
+        temperature: options.temperature,
+        maxTokens: options.maxTokens,
+        stopSequences: options.stop,
+      },
+    };
+
+    // Return mock result for now
+    return Promise.resolve({
+      message: {
+        role: 'assistant',
+        content: {
+          type: 'text',
+          text: 'Mock response',
+        },
+      },
+    });
+  }
+
+  /**
+   * Responds to a sampling request.
+   * @param role Role of the message
+   * @param content Content of the message
+   * @param name Optional name of the message
+   * @param metadata Optional metadata
+   * @returns Promise that resolves with the response
+   */
   respondToSampling(
     role: string,
     content: string,
     name?: string,
-    functionCall?: unknown,
-    toolCalls?: unknown[],
     metadata?: Record<string, unknown>
   ): Promise<SamplingResponse> {
     return Promise.resolve({

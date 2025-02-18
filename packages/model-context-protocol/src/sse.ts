@@ -5,11 +5,7 @@
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import {
-  Channel,
-  type Session,
-  createSession,
-} from 'better-sse';
+import { Channel, type Session, createSession } from 'better-sse';
 import { VError } from 'verror';
 import type { JSONRPCRequest, JSONRPCResponse } from './schema';
 import { BaseTransport } from './transport';

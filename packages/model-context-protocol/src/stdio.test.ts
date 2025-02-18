@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Readable, Writable } from 'node:stream';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StdioTransport } from './stdio';
 
 const ALREADY_CONNECTED_REGEX = /already connected/;
+const WRITE_ERROR_REGEX = /Write error/;
 
 describe('StdioTransport', () => {
   let transport: StdioTransport;
@@ -51,9 +52,7 @@ describe('StdioTransport', () => {
 
     it('should prevent double connect', async () => {
       await transport.connect();
-      await expect(transport.connect()).rejects.toThrow(
-        ALREADY_CONNECTED_REGEX
-      );
+      await expect(transport.connect()).rejects.toThrow(ALREADY_CONNECTED_REGEX);
     });
   });
 
@@ -94,8 +93,8 @@ describe('StdioTransport', () => {
         return Promise.resolve();
       });
 
-      input.push(`${messages.map((m) => JSON.stringify(m)).join('\n')}\n`);
-      await new Promise((resolve) => setTimeout(resolve, 10));
+      input.push(messages.map(m => `${JSON.stringify(m)}\n`).join(''));
+      await new Promise(resolve => setTimeout(resolve, 10));
 
       expect(received).toEqual(messages);
     });
@@ -122,7 +121,7 @@ describe('StdioTransport', () => {
       transport.onError(onError);
 
       input.push('invalid json\n');
-      await new Promise((resolve) => setTimeout(resolve, 10));
+      await new Promise(resolve => setTimeout(resolve, 10));
 
       expect(onError).toHaveBeenCalledWith(expect.any(Error));
     });
@@ -136,8 +135,8 @@ describe('StdioTransport', () => {
       const onError = vi.fn();
       transport.onError(onError);
 
-      input.push(JSON.stringify({ jsonrpc: '2.0', method: 'test' }) + '\n');
-      await new Promise((resolve) => setTimeout(resolve, 10));
+      input.push(`${JSON.stringify({ jsonrpc: '2.0', method: 'test' })}\n`);
+      await new Promise(resolve => setTimeout(resolve, 10));
 
       expect(onError).toHaveBeenCalledWith(error);
     });
@@ -152,10 +151,10 @@ describe('StdioTransport', () => {
       const error = new Error('Write error');
       output.write = vi.fn((_, __, cb) => cb(error));
 
-      await expect(transport.send({})).rejects.toThrow(/Write error/);
+      await expect(transport.send({})).rejects.toThrow(WRITE_ERROR_REGEX);
     });
 
-    it('should handle stream errors', async () => {
+    it('should handle stream errors', () => {
       const onError = vi.fn();
       transport.onError(onError);
 
@@ -178,7 +177,7 @@ describe('StdioTransport', () => {
       await transport.disconnect();
 
       input.push(`${JSON.stringify({ jsonrpc: '2.0', method: 'test' })}\n`);
-      await new Promise((resolve) => setTimeout(resolve, 10));
+      await new Promise(resolve => setTimeout(resolve, 10));
 
       expect(messageCount).toBe(0);
     });

@@ -6,19 +6,21 @@
 
 import { EventEmitter } from 'eventemitter3';
 import { JSONRPCClient, JSONRPCServer } from 'json-rpc-2.0';
-import type { JSONRPCRequest, JSONRPCResponse } from './schema';
+import type { JSONRPCRequest, JSONRPCResponse, RequestId } from './schema';
+import { VError } from 'verror';
 
 /**
  * Event types for transport events
  */
 export type TransportEventMap = {
-  message: [message: JSONRPCRequest];
+  message: [message: JSONRPCRequest | Omit<JSONRPCResponse, 'id'> & { id: RequestId }];
   error: [error: Error];
   connect: [];
   disconnect: [];
 };
 
 /**
+ * 
  * Base interface for event emitter functionality
  */
 export interface BaseEventEmitter {
@@ -119,9 +121,20 @@ export interface McpTransport {
  * Base class for transport implementations.
  */
 export abstract class BaseTransport implements McpTransport {
-  public readonly events: BaseEventEmitter = new EventEmitter();
+  protected readonly _events: EventEmitter = new EventEmitter();
+  public get events(): BaseEventEmitter {
+    return {
+      on: <K extends keyof TransportEventMap>(event: K, handler: (...args: TransportEventMap[K]) => void) => {
+        this._events.on(event, handler);
+      },
+      off: <K extends keyof TransportEventMap>(event: K, handler: (...args: TransportEventMap[K]) => void) => {
+        this._events.off(event, handler);
+      }
+    };
+  }
   protected connected = false;
   private messageHandlers = new Set<MessageHandler>();
+  private errorHandlers = new Set<ErrorHandler>();
 
   /**
    * Sends a message through the transport.
@@ -155,7 +168,7 @@ export abstract class BaseTransport implements McpTransport {
     event: K,
     handler: (...args: TransportEventMap[K]) => void
   ): void {
-    (this.events as EventEmitter).on(event, handler);
+    this._events.on(event, handler);
   }
 
   /**
@@ -167,7 +180,7 @@ export abstract class BaseTransport implements McpTransport {
     event: K,
     handler: (...args: TransportEventMap[K]) => void
   ): void {
-    (this.events as EventEmitter).off(event, handler);
+    this._events.off(event, handler);
   }
 
   /**
@@ -187,6 +200,22 @@ export abstract class BaseTransport implements McpTransport {
   }
 
   /**
+   * Registers an error handler.
+   * @param handler Error handler function
+   */
+  onError(handler: ErrorHandler): void {
+    this.errorHandlers.add(handler);
+  }
+
+  /**
+   * Unregisters an error handler.
+   * @param handler Error handler function
+   */
+  offError(handler: ErrorHandler): void {
+    this.errorHandlers.delete(handler);
+  }
+
+  /**
    * Close the transport and clean up any resources.
    */
   async close(): Promise<void> {
@@ -198,11 +227,12 @@ export abstract class BaseTransport implements McpTransport {
    * Handles an incoming message.
    * @param message Message to handle
    */
-  protected handleMessage(message: JSONRPCRequest): void {
-    (this.events as EventEmitter).emit('message', message);
-    for (const handler of this.messageHandlers) {
-      handler(message).catch((error) => this.handleError(error));
-    }
+  protected async handleMessage(message: JSONRPCRequest | JSONRPCResponse): Promise<void> {
+    this._events.emit('message', message as JSONRPCRequest | (Omit<JSONRPCResponse, 'id'> & { id: RequestId }));
+    const promises = Array.from(this.messageHandlers).map(handler => 
+      handler(message).catch(error => this.handleError(new VError(error, 'Handler error')))
+    );
+    await Promise.all(promises);
   }
 
   /**
@@ -210,7 +240,14 @@ export abstract class BaseTransport implements McpTransport {
    * @param error Error to handle
    */
   protected handleError(error: Error): void {
-    (this.events as EventEmitter).emit('error', error);
+    for (const handler of this.errorHandlers) {
+      try {
+        handler(error);
+      } catch (handlerError) {
+        // Log error but don't throw to avoid crashing the transport
+        this._events.emit('error', new VError(handlerError as Error, 'Error in error handler'));
+      }
+    }
   }
 
   /**
@@ -219,7 +256,7 @@ export abstract class BaseTransport implements McpTransport {
    */
   protected setConnected(state: boolean): void {
     this.connected = state;
-    (this.events as EventEmitter).emit(state ? 'connect' : 'disconnect');
+    this._events.emit(state ? 'connect' : 'disconnect');
   }
 }
 
@@ -332,7 +369,8 @@ export class ErrorManager {
       try {
         handler(error);
       } catch (handlerError) {
-        console.error('Error in error handler:', handlerError);
+        // Log error but don't throw to avoid crashing the transport
+        this.handleError(new VError(handlerError as Error, 'Error in error handler'));
       }
     }
   }
@@ -369,12 +407,13 @@ export class RpcClient {
     await this.transport.disconnect();
   }
 
-  request<T>(method: string, params?: unknown): Promise<T> {
-    return this.rpcClient.request(method, params);
+  async request<T>(method: string, params?: unknown): Promise<T> {
+    const result = await this.rpcClient.request(method, params);
+    return result as T;
   }
 
-  notify(method: string, params?: unknown): Promise<void> {
-    return this.rpcClient.notify(method, params);
+  async notify(method: string, params?: unknown): Promise<void> {
+    await this.rpcClient.notify(method, params);
   }
 }
 
@@ -390,7 +429,8 @@ export class RpcServer {
       if (this.isJsonRpcRequest(message)) {
         const response = await this.rpcServer.receive(message);
         if (response) {
-          await this.transport.send(response);
+          const validResponse = response as Omit<JSONRPCResponse, 'id'> & { id: RequestId };
+          await this.transport.send(validResponse);
         }
       }
     });

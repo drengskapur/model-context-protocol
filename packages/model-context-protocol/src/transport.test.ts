@@ -1,9 +1,9 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { EventEmitter } from 'eventemitter3';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BaseTransport } from './base';
 import type { JSONRPCRequest, JSONRPCResponse } from './schema';
-import type { MessageHandler } from './transport';
-import { EventEmitter } from 'eventemitter3';
 import { JSONRPC_VERSION } from './schema';
+import type { MessageHandler } from './transport';
 
 class TestTransport extends BaseTransport {
   public messages: (JSONRPCRequest | JSONRPCResponse)[] = [];

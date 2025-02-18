@@ -1,14 +1,12 @@
-import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { McpClient } from './client.js';
 import { InMemoryTransport } from './in-memory.js';
 import type {
-  JSONRPCMessage,
   JSONRPCRequest,
-  JSONRPCNotification,
   JSONRPCResponse,
   JSONRPCError,
+  JSONRPCNotification,
   PromptMessage,
-  SamplingMessage,
 } from './schema.js';
 import { JSONRPC_VERSION, LATEST_PROTOCOL_VERSION } from './schema.js';
 import { Auth } from './auth.js';
@@ -39,9 +37,9 @@ async function createConnectedPair() {
   await Promise.resolve();
 
   // Simulate server response to initialize request
-  await clientTransport.simulateIncomingMessage({
+  await serverTransport.simulateIncomingMessage({
     jsonrpc: JSONRPC_VERSION,
-    id: 1,
+    id: clientTransport.getMessages()[0].id,
     result: {
       protocolVersion: LATEST_PROTOCOL_VERSION,
       serverInfo: {
@@ -50,7 +48,7 @@ async function createConnectedPair() {
       },
       capabilities: {},
     },
-  } as JSONRPCResponse);
+  } satisfies JSONRPCResponse);
 
   // Wait for initialization to complete
   await connectPromise;
@@ -82,6 +80,29 @@ describe('McpClient', () => {
     });
 
     await server.connect(serverTransport);
+
+    // Start client connection
+    const connectPromise = client.connect();
+
+    // Wait for transport connection
+    await Promise.resolve();
+
+    // Simulate server response to initialize request
+    await serverTransport.simulateIncomingMessage({
+      jsonrpc: JSONRPC_VERSION,
+      id: clientTransport.getMessages()[0].id,
+      result: {
+        protocolVersion: LATEST_PROTOCOL_VERSION,
+        serverInfo: {
+          name: 'test-server',
+          version: '1.0.0',
+        },
+        capabilities: {},
+      },
+    } satisfies JSONRPCResponse);
+
+    // Wait for initialization to complete
+    await connectPromise;
   });
 
   afterEach(async () => {
@@ -90,6 +111,25 @@ describe('McpClient', () => {
   });
 
   it('should initialize successfully', async () => {
+    // Create a new client for this test since we don't want the beforeEach initialization
+    [clientTransport, serverTransport] = InMemoryTransport.createPair();
+
+    client = new McpClient(
+      {
+        name: 'test-client',
+        version: '1.0.0',
+        requestTimeout: 1000,
+      },
+      clientTransport
+    );
+
+    server = new McpServer({
+      name: 'test-server',
+      version: '1.0.0',
+    });
+
+    await server.connect(serverTransport);
+
     // Start the connection
     const connectPromise = client.connect();
 
