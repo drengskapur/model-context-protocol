@@ -4,17 +4,25 @@
  * Provides a transport that operates entirely in memory, useful for testing and local development.
  */
 
+import { EventEmitter } from 'eventemitter3';
 import { VError } from 'verror';
-import type { JSONRPCRequest, JSONRPCResponse } from './schema';
-import { BaseTransport } from './transport';
+import type { JSONRPCMessage, JSONRPCRequest, JSONRPCResponse } from './schema';
+import type {
+  McpTransport,
+  MessageHandler,
+  TransportEventMap,
+} from './transport';
 
 /**
  * In-memory transport implementation for testing.
  * Creates a pair of transports that communicate with each other in memory.
  */
-export class InMemoryTransport extends BaseTransport {
+export class InMemoryTransport implements McpTransport {
   private otherTransport: InMemoryTransport | null = null;
-  private messageHandlers = new Set<(message: unknown) => Promise<void>>();
+  private messageHandlers = new Set<MessageHandler>();
+  private messages: (JSONRPCRequest | JSONRPCResponse)[] = [];
+  private connected = false;
+  public readonly events = new EventEmitter();
 
   /**
    * Creates a pair of linked transports.
@@ -36,7 +44,8 @@ export class InMemoryTransport extends BaseTransport {
     if (!this.otherTransport) {
       throw new VError('Transport not paired');
     }
-    this.setConnected(true);
+    this.connected = true;
+    this.events.emit('connect');
     return Promise.resolve();
   }
 
@@ -44,61 +53,107 @@ export class InMemoryTransport extends BaseTransport {
    * Disconnects the transport.
    */
   disconnect(): Promise<void> {
-    this.setConnected(false);
+    this.connected = false;
     this.messageHandlers.clear();
+    this.events.emit('disconnect');
     return Promise.resolve();
   }
 
   /**
-   * Sends a message to the other transport.
+   * Whether the transport is currently connected.
+   */
+  isConnected(): boolean {
+    return this.connected;
+  }
+
+  /**
+   * Subscribe to transport events.
+   */
+  on<K extends keyof TransportEventMap>(
+    event: K,
+    handler: (...args: TransportEventMap[K]) => void
+  ): void {
+    this.events.on(event, handler);
+  }
+
+  /**
+   * Unsubscribe from transport events.
+   */
+  off<K extends keyof TransportEventMap>(
+    event: K,
+    handler: (...args: TransportEventMap[K]) => void
+  ): void {
+    this.events.off(event, handler);
+  }
+
+  /**
+   * Subscribe to message events.
+   */
+  onMessage(handler: MessageHandler): void {
+    this.messageHandlers.add(handler);
+  }
+
+  /**
+   * Unsubscribe from message events.
+   */
+  offMessage(handler: MessageHandler): void {
+    this.messageHandlers.delete(handler);
+  }
+
+  /**
+   * Sends a message through the transport.
    * @param message Message to send
-   * @throws {VError} If the transport is not connected or paired
    */
   async send(message: JSONRPCRequest | JSONRPCResponse): Promise<void> {
     if (!this.isConnected()) {
       throw new VError('Transport not connected');
     }
+
     if (!this.otherTransport) {
       throw new VError('Transport not paired');
     }
 
-    try {
-      await this.otherTransport.handleMessage(message);
-    } catch (error) {
-      throw new VError(error as Error, 'Failed to send message');
+    this.messages.push(message);
+    await this.otherTransport.handleMessage(message);
+  }
+
+  /**
+   * Gets all messages sent through this transport.
+   * @returns Array of sent messages
+   */
+  getMessages(): (JSONRPCRequest | JSONRPCResponse)[] {
+    return this.messages;
+  }
+
+  /**
+   * Simulates an incoming message for testing.
+   * @param message Message to simulate
+   */
+  async simulateIncomingMessage(message: JSONRPCMessage): Promise<void> {
+    for (const handler of this.messageHandlers) {
+      await handler(message);
     }
+  }
+
+  /**
+   * Clears all stored messages.
+   */
+  clearMessages(): void {
+    this.messages = [];
   }
 
   /**
    * Handles an incoming message.
    * @param message Message to handle
    */
-  private async handleMessage(
-    message: JSONRPCRequest | JSONRPCResponse
-  ): Promise<void> {
-    const promises = Array.from(this.messageHandlers).map((handler) =>
-      handler(message).catch((error: Error) => {
-        throw new VError(error, 'Handler error');
-      })
-    );
-
-    await Promise.all(promises);
-  }
-
-  /**
-   * Registers a message handler.
-   * @param handler Handler function to register
-   */
-  onMessage(handler: (message: unknown) => Promise<void>): void {
-    this.messageHandlers.add(handler);
-  }
-
-  /**
-   * Unregisters a message handler.
-   * @param handler Handler function to unregister
-   */
-  offMessage(handler: (message: unknown) => Promise<void>): void {
-    this.messageHandlers.delete(handler);
+  private async handleMessage(message: unknown): Promise<void> {
+    for (const handler of this.messageHandlers) {
+      try {
+        await handler(message);
+      } catch (error) {
+        this.events.emit('error', error as Error);
+      }
+    }
   }
 
   /**
@@ -110,51 +165,18 @@ export class InMemoryTransport extends BaseTransport {
   }
 
   /**
-   * Sends a request and returns a promise that resolves with the response.
-   * @param method Method name
-   * @param params Method parameters
-   * @returns Promise that resolves with the response
+   * Subscribe to error events.
+   * @param handler Error handler function
    */
-  async request<T>(
-    method: string,
-    params?: Record<string, unknown>
-  ): Promise<T> {
-    if (!this.isConnected()) {
-      throw new VError('Transport not connected');
-    }
+  onError(handler: (error: Error) => void): void {
+    this.events.on('error', handler);
+  }
 
-    const request: JSONRPCRequest = {
-      jsonrpc: '2.0',
-      id: Math.random().toString(36).slice(2),
-      method,
-      params,
-    };
-
-    await this.send(request);
-
-    return new Promise((resolve, reject) => {
-      const handler: (message: unknown) => Promise<void> = (
-        message: unknown
-      ) => {
-        const response = message as JSONRPCResponse;
-        if ('id' in response && response.id === request.id) {
-          this.offMessage(handler);
-          if ('error' in response) {
-            reject(response.error);
-          } else {
-            resolve(response.result as T);
-          }
-        }
-        return Promise.resolve();
-      };
-
-      this.onMessage(handler);
-
-      // Add timeout
-      setTimeout(() => {
-        this.offMessage(handler);
-        reject(new VError('Request timed out'));
-      }, 30000);
-    });
+  /**
+   * Unsubscribe from error events.
+   * @param handler Error handler function
+   */
+  offError(handler: (error: Error) => void): void {
+    this.events.off('error', handler);
   }
 }

@@ -743,11 +743,11 @@ describe('McpClient', () => {
     const request = messages.at(-1) as JSONRPCRequest;
 
     // Simulate response with neither result nor error
-    const invalidResponse: JSONRPCResponse = {
+    const invalidResponse = {
       jsonrpc: JSONRPC_VERSION,
       id: request.id,
-      result: undefined,
-    };
+      result: null
+    } as JSONRPCResponse;
     await clientTransport.simulateIncomingMessage(invalidResponse);
 
     // The promise should still be pending
@@ -766,7 +766,7 @@ describe('McpClient', () => {
     };
 
     // Initialize the client with capabilities
-    const connectPromise = client.connect(clientTransport);
+    const connectPromise = client.connect();
     await Promise.resolve();
     await clientTransport.simulateIncomingMessage({
       jsonrpc: '2.0',
@@ -791,7 +791,7 @@ describe('McpClient', () => {
 
   it('should clean up progress handlers after tool call', async () => {
     // First initialize the client
-    const connectPromise = client.connect(clientTransport);
+    const connectPromise = client.connect();
     await Promise.resolve();
     await clientTransport.simulateIncomingMessage({
       jsonrpc: '2.0',
@@ -846,7 +846,7 @@ describe('McpClient', () => {
 
     // First initialize the client
     await clientTransport.connect();
-    const connectPromise = client.connect(clientTransport);
+    const connectPromise = client.connect();
 
     // Set up handlers
     clientTransport.onError(errorHandler);
@@ -1144,7 +1144,7 @@ describe('McpClient', () => {
           name: 'test-prompt',
           description: 'A test prompt',
         },
-      ],
+      ] as unknown as Record<string, unknown>
     } as JSONRPCResponse);
 
     const prompts = await listPromise;
@@ -1171,6 +1171,7 @@ describe('McpClient', () => {
           version: '1.0.0',
         },
         capabilities: {},
+        _meta: {},
       },
     } as JSONRPCResponse);
 
