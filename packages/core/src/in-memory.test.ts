@@ -12,10 +12,10 @@ describe('InMemoryTransport', () => {
   describe('Connection Management', () => {
     it('should handle connect and disconnect', async () => {
       expect(transport.isConnected()).toBe(false);
-      
+
       await transport.connect();
       expect(transport.isConnected()).toBe(true);
-      
+
       await transport.disconnect();
       expect(transport.isConnected()).toBe(false);
     });
@@ -23,7 +23,7 @@ describe('InMemoryTransport', () => {
     it('should handle close', async () => {
       await transport.connect();
       expect(transport.isConnected()).toBe(true);
-      
+
       await transport.close();
       expect(transport.isConnected()).toBe(false);
     });
@@ -35,7 +35,9 @@ describe('InMemoryTransport', () => {
         params: {},
       };
 
-      await expect(transport.send(message)).rejects.toThrow('Transport not connected');
+      await expect(transport.send(message)).rejects.toThrow(
+        'Transport not connected'
+      );
     });
 
     it('should reject simulate message when not connected', async () => {
@@ -45,14 +47,16 @@ describe('InMemoryTransport', () => {
         params: {},
       };
 
-      await expect(transport.simulateIncomingMessage(message)).rejects.toThrow('Transport not connected');
+      await expect(transport.simulateIncomingMessage(message)).rejects.toThrow(
+        'Transport not connected'
+      );
     });
   });
 
   describe('Message Handling', () => {
     it('should store sent messages', async () => {
       await transport.connect();
-      
+
       const message: JSONRPCMessage = {
         jsonrpc: '2.0',
         method: 'test',
@@ -65,7 +69,7 @@ describe('InMemoryTransport', () => {
 
     it('should clear messages', async () => {
       await transport.connect();
-      
+
       const message: JSONRPCMessage = {
         jsonrpc: '2.0',
         method: 'test',
@@ -74,7 +78,7 @@ describe('InMemoryTransport', () => {
 
       await transport.send(message);
       expect(transport.getMessages()).toHaveLength(1);
-      
+
       transport.clearMessages();
       expect(transport.getMessages()).toHaveLength(0);
     });
@@ -114,7 +118,7 @@ describe('InMemoryTransport', () => {
 
       const error = new Error('Test error');
       for (const handler of transport['_errorHandlers']) {
-        handler(error);
+        handler.call(transport, error);
       }
 
       expect(handler1).toHaveBeenCalledWith(error);
@@ -122,7 +126,7 @@ describe('InMemoryTransport', () => {
 
       transport.offError(handler1);
       for (const handler of transport['_errorHandlers']) {
-        handler(error);
+        handler.call(transport, error);
       }
 
       expect(handler1).toHaveBeenCalledTimes(1);
@@ -133,9 +137,9 @@ describe('InMemoryTransport', () => {
   describe('Linked Pair', () => {
     it('should create linked pair', () => {
       const [transport1, transport2] = InMemoryTransport.createLinkedPair();
-      
-      expect(transport1['_otherTransport']).toBe(transport2);
-      expect(transport2['_otherTransport']).toBe(transport1);
+
+      expect(transport1._otherTransport).toBe(transport2);
+      expect(transport2._otherTransport).toBe(transport1);
     });
 
     it('should forward messages between linked transports', async () => {
@@ -178,9 +182,9 @@ describe('InMemoryTransport', () => {
   describe('Progress and Cancellation', () => {
     it('should send progress notifications', async () => {
       await transport.connect();
-      
+
       await transport.sendProgress('token1', 50, 100);
-      
+
       const messages = transport.getMessages();
       expect(messages).toHaveLength(1);
       expect(messages[0]).toEqual({
@@ -196,9 +200,9 @@ describe('InMemoryTransport', () => {
 
     it('should send cancellation notifications', async () => {
       await transport.connect();
-      
+
       await transport.cancelRequest('req1', 'Test reason');
-      
+
       const messages = transport.getMessages();
       expect(messages).toHaveLength(1);
       expect(messages[0]).toEqual({
@@ -211,4 +215,4 @@ describe('InMemoryTransport', () => {
       });
     });
   });
-}); 
+});

@@ -5,7 +5,11 @@ export class McpError extends Error {
   readonly code: number;
   readonly data?: unknown;
 
-  constructor(messageOrCode: string | number, messageOrData?: string | unknown, data?: unknown) {
+  constructor(
+    messageOrCode: string | number,
+    messageOrData?: string | unknown,
+    data?: unknown
+  ) {
     let message: string;
     let code: number;
     let errorData: unknown;
@@ -16,7 +20,8 @@ export class McpError extends Error {
       errorData = messageOrData;
     } else {
       code = messageOrCode;
-      message = typeof messageOrData === 'string' ? messageOrData : 'Unknown error';
+      message =
+        typeof messageOrData === 'string' ? messageOrData : 'Unknown error';
       errorData = data;
     }
 

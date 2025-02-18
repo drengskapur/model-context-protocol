@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { Sampling, SamplingError } from './sampling';
-import type { SamplingMessage, TextContent, ImageContent } from './schema.js';
+import type { ImageContent, SamplingMessage, TextContent } from './schema.js';
 
 describe('Sampling', () => {
   let sampling: Sampling;
@@ -102,7 +102,10 @@ describe('Sampling', () => {
         text: 'This is a response',
       };
 
-      const response = await sampling.respondToSampling('assistant', textContent);
+      const response = await sampling.respondToSampling(
+        'assistant',
+        textContent
+      );
       expect(response).toEqual({
         role: 'assistant',
         content: textContent,
@@ -116,7 +119,10 @@ describe('Sampling', () => {
         mimeType: 'image/jpeg',
       };
 
-      const response = await sampling.respondToSampling('assistant', imageContent);
+      const response = await sampling.respondToSampling(
+        'assistant',
+        imageContent
+      );
       expect(response).toEqual({
         role: 'assistant',
         content: imageContent,
@@ -147,7 +153,10 @@ describe('Sampling', () => {
         },
       };
 
-      const response = await sampling.respondToSampling('assistant', textContent);
+      const response = await sampling.respondToSampling(
+        'assistant',
+        textContent
+      );
       expect(response.content).toEqual(textContent);
       expect(response.content).toHaveProperty('annotations.audience');
       expect(response.content).toHaveProperty('annotations.priority');

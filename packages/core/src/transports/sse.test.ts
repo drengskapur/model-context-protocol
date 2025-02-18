@@ -123,13 +123,19 @@ describe('SseTransport', () => {
   describe('Message Handler Management', () => {
     it('should add and remove message handlers', () => {
       const transport = new SseTransport(defaultOptions);
-      const handler = async () => { /* noop */ };
+      const handler = async () => {
+        /* noop */
+      };
 
       transport.onMessage(handler);
-      expect(transport['_messageProcessor']['_handlers'].has(handler)).toBe(true);
+      expect(transport['_messageProcessor']['_handlers'].has(handler)).toBe(
+        true
+      );
 
       transport.offMessage(handler);
-      expect(transport['_messageProcessor']['_handlers'].has(handler)).toBe(false);
+      expect(transport['_messageProcessor']['_handlers'].has(handler)).toBe(
+        false
+      );
     });
 
     it('should handle multiple message handlers', async () => {
@@ -146,7 +152,9 @@ describe('SseTransport', () => {
         params: {},
       };
 
-      await transport['_messageProcessor'].processMessage(JSON.stringify(message));
+      await transport['_messageProcessor'].processMessage(
+        JSON.stringify(message)
+      );
 
       expect(handler1).toHaveBeenCalledWith(message);
       expect(handler2).toHaveBeenCalledWith(message);
@@ -167,7 +175,9 @@ describe('SseTransport', () => {
         params: {},
       };
 
-      await transport['_messageProcessor'].processMessage(JSON.stringify(message));
+      await transport['_messageProcessor'].processMessage(
+        JSON.stringify(message)
+      );
 
       expect(messageHandler).toHaveBeenCalledWith(message);
       expect(errorHandler).toHaveBeenCalledWith(expect.any(Error));
@@ -177,7 +187,9 @@ describe('SseTransport', () => {
   describe('Error Handler Management', () => {
     it('should add and remove error handlers', () => {
       const transport = new SseTransport(defaultOptions);
-      const handler = () => { /* noop */ };
+      const handler = () => {
+        /* noop */
+      };
 
       transport.onError(handler);
       expect(transport['_errorManager']['_handlers'].has(handler)).toBe(true);
@@ -221,26 +233,44 @@ describe('SseTransport', () => {
   describe('Connection Management', () => {
     it('should handle connection lifecycle', async () => {
       const transport = new SseTransport(defaultOptions);
-      
+
       // Mock EventSource
-      const mockEventSource = new MockEventSource(defaultOptions.eventSourceUrl);
-      const MockEventSourceClass = vi.fn(() => mockEventSource) as unknown as typeof EventSource;
+      const mockEventSource = new MockEventSource(
+        defaultOptions.eventSourceUrl
+      );
+      const MockEventSourceClass = vi.fn(
+        () => mockEventSource
+      ) as unknown as typeof EventSource;
       Object.defineProperties(MockEventSourceClass, {
         CONNECTING: { value: MockEventSource.CONNECTING },
         OPEN: { value: MockEventSource.OPEN },
-        CLOSED: { value: MockEventSource.CLOSED }
+        CLOSED: { value: MockEventSource.CLOSED },
       });
 
       transport['_options'].EventSource = MockEventSourceClass;
 
       await transport.connect();
-      expect(MockEventSourceClass).toHaveBeenCalledWith(defaultOptions.eventSourceUrl);
-      expect(mockEventSource.addEventListener).toHaveBeenCalledWith('message', expect.any(Function));
-      expect(mockEventSource.addEventListener).toHaveBeenCalledWith('error', expect.any(Function));
+      expect(MockEventSourceClass).toHaveBeenCalledWith(
+        defaultOptions.eventSourceUrl
+      );
+      expect(mockEventSource.addEventListener).toHaveBeenCalledWith(
+        'message',
+        expect.any(Function)
+      );
+      expect(mockEventSource.addEventListener).toHaveBeenCalledWith(
+        'error',
+        expect.any(Function)
+      );
 
       await transport.disconnect();
-      expect(mockEventSource.removeEventListener).toHaveBeenCalledWith('message', expect.any(Function));
-      expect(mockEventSource.removeEventListener).toHaveBeenCalledWith('error', expect.any(Function));
+      expect(mockEventSource.removeEventListener).toHaveBeenCalledWith(
+        'message',
+        expect.any(Function)
+      );
+      expect(mockEventSource.removeEventListener).toHaveBeenCalledWith(
+        'error',
+        expect.any(Function)
+      );
       expect(mockEventSource.close).toHaveBeenCalled();
     });
 
@@ -257,7 +287,7 @@ describe('SseTransport', () => {
       Object.defineProperties(MockEventSourceClass, {
         CONNECTING: { value: MockEventSource.CONNECTING },
         OPEN: { value: MockEventSource.OPEN },
-        CLOSED: { value: MockEventSource.CLOSED }
+        CLOSED: { value: MockEventSource.CLOSED },
       });
 
       transport['_options'].EventSource = MockEventSourceClass;
@@ -274,12 +304,16 @@ describe('SseTransport', () => {
       transport.onError(errorHandler);
 
       // Mock EventSource
-      const mockEventSource = new MockEventSource(defaultOptions.eventSourceUrl);
-      const MockEventSourceClass = vi.fn(() => mockEventSource) as unknown as typeof EventSource;
+      const mockEventSource = new MockEventSource(
+        defaultOptions.eventSourceUrl
+      );
+      const MockEventSourceClass = vi.fn(
+        () => mockEventSource
+      ) as unknown as typeof EventSource;
       Object.defineProperties(MockEventSourceClass, {
         CONNECTING: { value: MockEventSource.CONNECTING },
         OPEN: { value: MockEventSource.OPEN },
-        CLOSED: { value: MockEventSource.CLOSED }
+        CLOSED: { value: MockEventSource.CLOSED },
       });
 
       transport['_options'].EventSource = MockEventSourceClass;
@@ -288,7 +322,7 @@ describe('SseTransport', () => {
 
       // Get the message event handler
       const messageHandler = mockEventSource.addEventListener.mock.calls.find(
-        call => call[0] === 'message'
+        (call) => call[0] === 'message'
       )?.[1];
 
       if (!messageHandler) {
@@ -307,12 +341,16 @@ describe('SseTransport', () => {
       transport.onMessage(messageHandler);
 
       // Mock EventSource
-      const mockEventSource = new MockEventSource(defaultOptions.eventSourceUrl);
-      const MockEventSourceClass = vi.fn(() => mockEventSource) as unknown as typeof EventSource;
+      const mockEventSource = new MockEventSource(
+        defaultOptions.eventSourceUrl
+      );
+      const MockEventSourceClass = vi.fn(
+        () => mockEventSource
+      ) as unknown as typeof EventSource;
       Object.defineProperties(MockEventSourceClass, {
         CONNECTING: { value: MockEventSource.CONNECTING },
         OPEN: { value: MockEventSource.OPEN },
-        CLOSED: { value: MockEventSource.CLOSED }
+        CLOSED: { value: MockEventSource.CLOSED },
       });
 
       transport['_options'].EventSource = MockEventSourceClass;
@@ -321,7 +359,7 @@ describe('SseTransport', () => {
 
       // Get the message event handler
       const eventHandler = mockEventSource.addEventListener.mock.calls.find(
-        call => call[0] === 'message'
+        (call) => call[0] === 'message'
       )?.[1];
 
       if (!eventHandler) {

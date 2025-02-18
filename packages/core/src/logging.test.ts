@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { McpClient } from './client.js';
-import { McpServer } from './server.js';
 import { InMemoryTransport } from './in-memory.js';
 import type { LoggingLevel } from './schema.js';
+import { McpServer } from './server.js';
 
 describe('Logging', () => {
   let client: McpClient;
@@ -39,7 +39,7 @@ describe('Logging', () => {
     await client.setLoggingLevel(level);
 
     const messages = clientTransport.getMessages();
-    expect(messages[messages.length - 1]).toMatchObject({
+    expect(messages.at(-1)).toMatchObject({
       jsonrpc: '2.0',
       method: 'logging/setLevel',
       params: { level },

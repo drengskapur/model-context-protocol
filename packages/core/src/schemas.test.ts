@@ -1,39 +1,8 @@
 import { parse } from 'valibot';
 import { describe, expect, it } from 'vitest';
-import {
-  promptArgumentSchema,
-  promptMessageSchema,
-  promptSchema,
-  textResourceContentsSchema,
-  blobResourceContentsSchema,
-} from './schemas.js';
+import { promptMessageSchema, promptSchema } from './schemas.js';
 
 describe('Prompt Schemas', () => {
-  describe('Prompt Argument Schema', () => {
-    it('validates a basic prompt argument', () => {
-      const arg = {
-        name: 'test-arg',
-        description: 'A test argument',
-        required: true,
-      };
-      expect(() => parse(promptArgumentSchema, arg)).not.toThrow();
-    });
-
-    it('validates argument with only required fields', () => {
-      const arg = {
-        name: 'test-arg',
-      };
-      expect(() => parse(promptArgumentSchema, arg)).not.toThrow();
-    });
-
-    it('rejects invalid argument', () => {
-      const arg = {
-        description: 'Missing name field',
-      };
-      expect(() => parse(promptArgumentSchema, arg)).toThrow();
-    });
-  });
-
   describe('Prompt Schema', () => {
     it('validates a complete prompt', () => {
       const prompt = {

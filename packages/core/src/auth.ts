@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import { McpError } from './errors.js';
-import { type BaseSchema, type BaseIssue } from 'valibot';
 
 export class AuthorizationError extends McpError {
   constructor(message: string) {
@@ -20,7 +19,7 @@ export const authTokenSchema = z.object({
   sub: z.string(),
   iat: z.number(),
   exp: z.number(),
-  roles: z.array(z.string())
+  roles: z.array(z.string()),
 });
 
 export interface AuthOptions {
@@ -37,35 +36,35 @@ export class Authorization {
     this.tokenExpiration = options.tokenExpiration ?? 3600; // 1 hour default
   }
 
-  async generateToken(subject: string, roles: string[]): Promise<string> {
+  generateToken(subject: string, roles: string[]): string {
     const now = Math.floor(Date.now() / 1000);
     const token: AuthToken = {
       sub: subject,
       iat: now,
       exp: now + this.tokenExpiration,
-      roles
+      roles,
     };
-    
+
     // Base64 encode token for now - in production this should use proper JWT
     return Buffer.from(JSON.stringify(token)).toString('base64');
   }
 
-  async verifyToken(token: string): Promise<AuthToken> {
+  verifyToken(token: string): AuthToken {
     let decoded: unknown;
     try {
       decoded = JSON.parse(Buffer.from(token, 'base64').toString());
-    } catch (error) {
+    } catch (_error) {
       throw new AuthorizationError('Invalid token format');
     }
 
     try {
       const validated = authTokenSchema.parse(decoded);
-      
+
       const now = Math.floor(Date.now() / 1000);
       if (validated.exp < now) {
         throw new AuthorizationError('Token expired');
       }
-      
+
       return validated;
     } catch (error) {
       if (error instanceof AuthorizationError) {
@@ -75,9 +74,9 @@ export class Authorization {
     }
   }
 
-  async verifyPermission(token: string, requiredRoles: string[]): Promise<boolean> {
-    const decoded = await this.verifyToken(token);
-    return requiredRoles.some(role => decoded.roles.includes(role));
+  verifyPermission(token: string, requiredRoles: string[]): boolean {
+    const decoded = this.verifyToken(token);
+    return requiredRoles.some((role) => decoded.roles.includes(role));
   }
 }
 
@@ -86,19 +85,22 @@ export interface AuthMiddlewareOptions {
   requiredRoles?: string[];
 }
 
-export function createAuthMiddleware<T extends BaseSchema<unknown, unknown, BaseIssue<unknown>>>(
+export function createAuthMiddleware<T extends Record<string, unknown>>(
   options: AuthMiddlewareOptions,
-  handler: (params: unknown) => Promise<unknown>
+  handler: (params: T) => Promise<unknown>
 ): (params: unknown) => Promise<unknown> {
   return async (params: unknown) => {
     const { auth, requiredRoles = [] } = options;
-    
+
     if (!params || typeof params !== 'object') {
       throw new AuthorizationError('Invalid request parameters');
     }
 
-    const { token, ...rest } = params as { token?: string; [key: string]: unknown };
-    
+    const { token, ...rest } = params as {
+      token?: string;
+      [key: string]: unknown;
+    };
+
     if (!token) {
       throw new AuthorizationError('No authorization token provided');
     }
@@ -108,6 +110,6 @@ export function createAuthMiddleware<T extends BaseSchema<unknown, unknown, Base
       throw new AuthorizationError('Insufficient permissions');
     }
 
-    return handler(rest);
+    return handler(rest as T);
   };
 }

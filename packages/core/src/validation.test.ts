@@ -120,7 +120,9 @@ describe('Validation', () => {
         },
       };
 
-      await expect(validateSamplingMessage(message)).rejects.toThrow(ValidationError);
+      await expect(validateSamplingMessage(message)).rejects.toThrow(
+        ValidationError
+      );
     });
 
     it('should reject invalid content types', async () => {
@@ -132,7 +134,9 @@ describe('Validation', () => {
         },
       };
 
-      await expect(validateSamplingMessage(message)).rejects.toThrow(ValidationError);
+      await expect(validateSamplingMessage(message)).rejects.toThrow(
+        ValidationError
+      );
     });
 
     it('should reject invalid image MIME types', async () => {
@@ -145,7 +149,9 @@ describe('Validation', () => {
         },
       };
 
-      await expect(validateSamplingMessage(message)).rejects.toThrow(ValidationError);
+      await expect(validateSamplingMessage(message)).rejects.toThrow(
+        ValidationError
+      );
     });
   });
 
@@ -226,7 +232,9 @@ describe('Validation', () => {
     });
 
     it('should reject invalid logging levels', async () => {
-      await expect(validateLoggingLevel('invalid-level')).rejects.toThrow(ValidationError);
+      await expect(validateLoggingLevel('invalid-level')).rejects.toThrow(
+        ValidationError
+      );
     });
   });
 
@@ -238,14 +246,17 @@ describe('Validation', () => {
           name: '',
           mimeType: '',
         });
+        throw new Error('Expected validation to fail');
       } catch (error) {
-        if (error instanceof ValidationError) {
-          const json = error.toJSON();
-          expect(json).toHaveProperty('name', 'ValidationError');
-          expect(json).toHaveProperty('message');
-          expect(json).toHaveProperty('errors');
-          expect(Array.isArray(json.errors)).toBe(true);
+        if (!(error instanceof ValidationError)) {
+          throw error;
         }
+        expect(error).toBeInstanceOf(ValidationError);
+        expect(error.name).toBe('ValidationError');
+        expect(error.code).toBe(-32402);
+        expect(error.message).toBe('Invalid resource');
+        expect(error.errors).toBeDefined();
+        expect(error.errors.errors).toBeInstanceOf(Array);
       }
     });
   });

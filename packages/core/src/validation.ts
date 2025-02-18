@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Role } from './schema.js';
+import { McpError } from './errors.js';
 
 // Base schemas
 export const roleSchema = z.enum(['system', 'user', 'assistant']);
@@ -139,12 +139,15 @@ export const loggingLevelSchema = z.enum([
 
 // Error handling
 export class ValidationError extends McpError {
+  readonly errors: z.ZodError;
+
   constructor(
     message: string,
-    public readonly errors: z.ZodError
+    errors: z.ZodError
   ) {
     super(-32402, message); // Use custom error code for validation errors
     this.name = 'ValidationError';
+    this.errors = errors;
   }
 
   toJSON() {

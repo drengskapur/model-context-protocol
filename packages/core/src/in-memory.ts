@@ -39,7 +39,7 @@ export class InMemoryTransport implements McpTransport {
     this._messages.push(message);
 
     // If we're in a linked pair, forward the message
-    if (this._otherTransport && this._otherTransport._connected) {
+    if (this._otherTransport?._connected) {
       // Process in next tick to simulate async behavior
       await Promise.resolve();
       for (const handler of this._otherTransport._messageHandlers) {
@@ -103,14 +103,14 @@ export class InMemoryTransport implements McpTransport {
     return this._messages;
   }
 
-  async simulateIncomingMessage(message: JSONRPCMessage): Promise<void> {
+  simulateIncomingMessage(message: JSONRPCMessage): void {
     if (!this._connected) {
       throw new Error('Transport not connected');
     }
     // Process in next tick to simulate async behavior
-    await Promise.resolve();
+    Promise.resolve();
     for (const handler of this._messageHandlers) {
-      await handler(message);
+      handler(message);
     }
   }
 

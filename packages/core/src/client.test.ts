@@ -117,7 +117,7 @@ describe('McpClient', () => {
 
     // Wait for the initialization message to be sent
     await Promise.resolve();
-    
+
     // Send the initialization response
     const initResponse: JSONRPCResponse = {
       jsonrpc: JSONRPC_VERSION,
@@ -152,7 +152,7 @@ describe('McpClient', () => {
     expect(messageHandler).toHaveBeenCalledTimes(2);
     expect(messageHandler).toHaveBeenNthCalledWith(1, initResponse);
     expect(messageHandler).toHaveBeenNthCalledWith(2, notification);
-    
+
     client.offMessage(messageHandler);
   });
 
@@ -1396,7 +1396,10 @@ describe('McpClient', () => {
     await connectPromise;
 
     const onChange = vi.fn();
-    const subscribePromise = client.subscribeToResource('test-resource', onChange);
+    const subscribePromise = client.subscribeToResource(
+      'test-resource',
+      onChange
+    );
     await Promise.resolve();
 
     const messages = transport.getMessages();
@@ -1430,7 +1433,9 @@ describe('McpClient', () => {
     cleanup();
     await Promise.resolve();
 
-    const unsubscribeRequest = transport.getMessages()[transport.getMessages().length - 1] as JSONRPCRequest;
+    const unsubscribeRequest = transport.getMessages()[
+      transport.getMessages().length - 1
+    ] as JSONRPCRequest;
     expect(unsubscribeRequest.method).toBe('resources/unsubscribe');
     expect(unsubscribeRequest.params).toEqual({ uri: 'test-resource' });
   });
@@ -1627,7 +1632,9 @@ describe('McpClient', () => {
     await Promise.resolve();
 
     const requestMessages = transport.getMessages();
-    const request = requestMessages[requestMessages.length - 1] as JSONRPCRequest;
+    const request = requestMessages[
+      requestMessages.length - 1
+    ] as JSONRPCRequest;
     expect(request.method).toBe('sampling/createMessage');
     expect(request.params).toMatchObject({
       messages,
@@ -1773,7 +1780,7 @@ describe('McpClient with Authorization', () => {
     transport = new InMemoryTransport();
     client = new McpClient({
       name: 'test-client',
-      version: '1.0.0'
+      version: '1.0.0',
     });
     await client.connect(transport);
   });
@@ -1781,13 +1788,15 @@ describe('McpClient with Authorization', () => {
   it('should set and clear auth token', () => {
     const token = 'test-token';
     client.setAuthToken(token);
-    
+
     // Token should be included in request params
     const request = client['prepareRequest']('test-method', { data: 'test' });
     expect(request).resolves.toHaveProperty('params.token', token);
 
     client.clearAuthToken();
-    const requestWithoutToken = client['prepareRequest']('test-method', { data: 'test' });
+    const requestWithoutToken = client['prepareRequest']('test-method', {
+      data: 'test',
+    });
     expect(requestWithoutToken).resolves.not.toHaveProperty('params.token');
   });
 
@@ -1817,7 +1826,7 @@ describe('McpClient with Authorization', () => {
     const request = await client['prepareRequest']('test-method', 'test-data');
     expect(request.params).toEqual({
       token,
-      data: 'test-data'
+      data: 'test-data',
     });
   });
 

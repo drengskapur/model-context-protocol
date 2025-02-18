@@ -144,9 +144,10 @@ export class McpClient {
   }
 
   private handleError(error: Error): void {
+    // Pass error to transport error handlers
     if (this.transport) {
       const errorHandler = (err: Error) => {
-        console.error('Error in message handler:', err);
+        this.transport?.onError(err);
       };
       this.transport.onError(errorHandler);
       errorHandler(error);
@@ -362,13 +363,15 @@ export class McpClient {
       throw new RequestFailedError('Server does not support sampling');
     }
 
-    const progressToken = options?.progressHandler ? this.nextMessageId++ : undefined;
+    const progressToken = options?.progressHandler
+      ? this.nextMessageId++
+      : undefined;
     if (progressToken && options?.progressHandler) {
       this.onProgress(progressToken, options.progressHandler);
     }
 
     try {
-      const request = await this.prepareRequest('sampling/createMessage', {
+      const request = this.prepareRequest('sampling/createMessage', {
         messages,
         modelPreferences: options?.modelPreferences,
         systemPrompt: options?.systemPrompt,
@@ -389,7 +392,9 @@ export class McpClient {
     }
   }
 
-  public onMessageCreated(handler: (message: SamplingMessage) => void): () => void {
+  public onMessageCreated(
+    handler: (message: SamplingMessage) => void
+  ): () => void {
     if (!this.initialized) {
       throw new ServerNotInitializedError('Client not initialized');
     }
@@ -398,8 +403,12 @@ export class McpClient {
       throw new RequestFailedError('Server does not support sampling');
     }
 
-    const messageHandler = async (message: JSONRPCMessage) => {
-      if ('method' in message && message.method === 'notifications/messageCreated' && message.params) {
+    const messageHandler = (message: JSONRPCMessage) => {
+      if (
+        'method' in message &&
+        message.method === 'notifications/messageCreated' &&
+        message.params
+      ) {
         handler(message.params.message as SamplingMessage);
       }
     };
@@ -408,26 +417,25 @@ export class McpClient {
     return () => this.offMessage(messageHandler);
   }
 
-  private async prepareRequest(method: string, params: unknown): Promise<JSONRPCRequest> {
-    if (!this.initialized) {
-      throw new ServerNotInitializedError('Client not initialized');
-    }
-
-    let finalParams: Record<string, unknown>;
-    if (params === undefined || params === null) {
-      finalParams = {};
-    } else if (typeof params === 'object') {
-      finalParams = params as Record<string, unknown>;
-    } else {
-      finalParams = { data: params };
-    }
-
-    return {
+  private prepareRequest(
+    method: string,
+    params?: unknown
+  ): JSONRPCRequest {
+    const request: JSONRPCRequest = {
       jsonrpc: JSONRPC_VERSION,
       id: this.nextMessageId++,
       method,
-      params: finalParams,
+      params: params ?? null,
     };
+
+    if (this._authToken) {
+      request.params = {
+        token: this._authToken,
+        ...(typeof request.params === 'object' ? request.params : { data: request.params }),
+      };
+    }
+
+    return request;
   }
 
   public async listPrompts(): Promise<Prompt[]> {
@@ -439,12 +447,15 @@ export class McpClient {
       throw new RequestFailedError('Server does not support prompts');
     }
 
-    const request = await this.prepareRequest('prompts/list', {});
+    const request = this.prepareRequest('prompts/list', {});
     const response = await this.send(request);
     return (response as { prompts: Prompt[] }).prompts;
   }
 
-  public async getPrompt(name: string, args?: Record<string, string>): Promise<{ description: string; messages: PromptMessage[] }> {
+  public async getPrompt(
+    name: string,
+    args?: Record<string, string>
+  ): Promise<{ description: string; messages: PromptMessage[] }> {
     if (!this.initialized) {
       throw new ServerNotInitializedError('Client not initialized');
     }
@@ -453,11 +464,14 @@ export class McpClient {
       throw new RequestFailedError('Server does not support prompts');
     }
 
-    const request = await this.prepareRequest('prompts/get', {
+    const request = this.prepareRequest('prompts/get', {
       name,
       arguments: args,
     });
-    return await this.send(request) as { description: string; messages: PromptMessage[] };
+    return (await this.send(request)) as {
+      description: string;
+      messages: PromptMessage[];
+    };
   }
 
   public async executePrompt(
@@ -479,12 +493,12 @@ export class McpClient {
     }
 
     try {
-      const request = await this.prepareRequest('prompts/execute', {
+      const request = this.prepareRequest('prompts/execute', {
         name,
         arguments: args,
         _meta: progressToken ? { progressToken } : undefined,
       });
-      return await this.send(request) as { messages: PromptMessage[] };
+      return (await this.send(request)) as { messages: PromptMessage[] };
     } finally {
       if (progressToken) {
         this.offProgress(progressToken);
@@ -501,7 +515,7 @@ export class McpClient {
       throw new RequestFailedError('Server does not support resources');
     }
 
-    const request = await this.prepareRequest('resources/list', {});
+    const request = this.prepareRequest('resources/list', {});
     const response = await this.send(request);
     return (response as { resources: string[] }).resources;
   }
@@ -515,7 +529,7 @@ export class McpClient {
       throw new RequestFailedError('Server does not support resources');
     }
 
-    const request = await this.prepareRequest('resources/read', { name });
+    const request = this.prepareRequest('resources/read', { name });
     const response = await this.send(request);
     return (response as { content: unknown }).content;
   }
@@ -532,15 +546,14 @@ export class McpClient {
       throw new RequestFailedError('Server does not support resources');
     }
 
-    const request = await this.prepareRequest('resources/subscribe', { name });
+    const request = this.prepareRequest('resources/subscribe', { name });
     await this.send(request);
 
-    const messageHandler = async (message: JSONRPCMessage) => {
+    const messageHandler = (message: JSONRPCMessage) => {
       if (
         'method' in message &&
         message.method === 'notifications/resourceChanged' &&
-        message.params &&
-        message.params.name === name
+        message.params?.name === name
       ) {
         onChange(message.params.content);
       }
@@ -550,7 +563,10 @@ export class McpClient {
 
     return async () => {
       this.offMessage(messageHandler);
-      const unsubscribeRequest = await this.prepareRequest('resources/unsubscribe', { name });
+      const unsubscribeRequest = this.prepareRequest(
+        'resources/unsubscribe',
+        { name }
+      );
       await this.send(unsubscribeRequest);
     };
   }
@@ -564,7 +580,7 @@ export class McpClient {
       throw new RequestFailedError('Server does not support roots');
     }
 
-    const request = await this.prepareRequest('roots/list', {});
+    const request = this.prepareRequest('roots/list', {});
     const response = await this.send(request);
     return (response as { roots: string[] }).roots;
   }
@@ -578,7 +594,7 @@ export class McpClient {
       throw new RequestFailedError('Server does not support roots');
     }
 
-    const messageHandler = async (message: JSONRPCMessage) => {
+    const messageHandler = (message: JSONRPCMessage) => {
       if (
         'method' in message &&
         message.method === 'notifications/rootsChanged' &&
@@ -600,12 +616,15 @@ export class McpClient {
     this._authToken = undefined;
   }
 
-  public async invokeTool(name: string, params: Record<string, unknown>): Promise<unknown> {
+  public async invokeTool(
+    name: string,
+    params: Record<string, unknown>
+  ): Promise<unknown> {
     if (!this.initialized) {
       throw new ServerNotInitializedError('Client not initialized');
     }
 
-    const request = await this.prepareRequest(name, {
+    const request = this.prepareRequest(name, {
       ...params,
       token: this._authToken,
     });

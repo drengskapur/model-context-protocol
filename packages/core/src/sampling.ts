@@ -1,14 +1,14 @@
 import { z } from 'zod';
+import { McpError } from './errors.js';
 import type {
   CreateMessageRequest,
   CreateMessageResult,
+  ImageContent,
   ModelPreferences,
   Role,
   SamplingMessage,
   TextContent,
-  ImageContent,
 } from './schema.js';
-import { McpError } from './errors.js';
 
 export class SamplingError extends McpError {
   constructor(message: string) {
@@ -85,7 +85,7 @@ export class Sampling {
       }
 
       // Construct the sampling request
-      const request: CreateMessageRequest = {
+      const _request: CreateMessageRequest = {
         method: 'sampling/createMessage',
         params: {
           messages,

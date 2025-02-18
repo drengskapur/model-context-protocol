@@ -111,16 +111,22 @@ describe('McpTransport', () => {
         method: 'test',
         params: {},
       };
-      await expect(transport.send(message)).rejects.toThrow('Transport not connected');
-      await expect(transport.simulateMessage(message)).rejects.toThrow('Transport not connected');
+      await expect(transport.send(message)).rejects.toThrow(
+        'Transport not connected'
+      );
+      await expect(transport.simulateMessage(message)).rejects.toThrow(
+        'Transport not connected'
+      );
     });
   });
 
   describe('Message Handling', () => {
     it('should manage message handlers', async () => {
       const transport = new TestTransport();
-      const handler: MessageHandler = async () => { /* noop */ };
-      
+      const handler: MessageHandler = () => {
+        /* noop */
+      };
+
       transport.onMessage(handler);
       expect(transport.getMessageHandlers().has(handler)).toBe(true);
 
@@ -130,8 +136,10 @@ describe('McpTransport', () => {
 
     it('should manage error handlers', async () => {
       const transport = new TestTransport();
-      const handler = () => { /* noop */ };
-      
+      const handler = () => {
+        /* noop */
+      };
+
       transport.onError(handler);
       expect(transport.getErrorHandlers().has(handler)).toBe(true);
 
@@ -145,8 +153,12 @@ describe('McpTransport', () => {
 
       let count1 = 0;
       let count2 = 0;
-      const handler1: MessageHandler = async () => { count1++; };
-      const handler2: MessageHandler = async () => { count2++; };
+      const handler1: MessageHandler = () => {
+        count1++;
+      };
+      const handler2: MessageHandler = () => {
+        count2++;
+      };
 
       transport.onMessage(handler1);
       transport.onMessage(handler2);
@@ -170,8 +182,12 @@ describe('McpTransport', () => {
       const transport = new TestTransport();
       let count1 = 0;
       let count2 = 0;
-      const handler1 = () => { count1++; };
-      const handler2 = () => { count2++; };
+      const handler1 = () => {
+        count1++;
+      };
+      const handler2 = () => {
+        count2++;
+      };
 
       transport.onError(handler1);
       transport.onError(handler2);
@@ -191,11 +207,15 @@ describe('McpTransport', () => {
       await transport.connect();
 
       const error = new Error('Handler error');
-      const handler: MessageHandler = async () => { throw error; };
+      const handler: MessageHandler = async () => {
+        throw error;
+      };
       let caughtError: Error | null = null;
-      
+
       transport.onMessage(handler);
-      transport.onError((e) => { caughtError = e; });
+      transport.onError((e) => {
+        caughtError = e;
+      });
 
       const message: JSONRPCMessage = {
         jsonrpc: '2.0',
@@ -210,8 +230,12 @@ describe('McpTransport', () => {
   describe('Cleanup', () => {
     it('should clean up handlers on disconnect', async () => {
       const transport = new TestTransport();
-      const messageHandler: MessageHandler = async () => { /* noop */ };
-      const errorHandler = () => { /* noop */ };
+      const messageHandler: MessageHandler = () => {
+        /* noop */
+      };
+      const errorHandler = () => {
+        /* noop */
+      };
 
       transport.onMessage(messageHandler);
       transport.onError(errorHandler);
@@ -224,8 +248,12 @@ describe('McpTransport', () => {
 
     it('should clean up handlers on close', async () => {
       const transport = new TestTransport();
-      const messageHandler: MessageHandler = async () => { /* noop */ };
-      const errorHandler = () => { /* noop */ };
+      const messageHandler: MessageHandler = () => {
+        /* noop */
+      };
+      const errorHandler = () => {
+        /* noop */
+      };
 
       transport.onMessage(messageHandler);
       transport.onError(errorHandler);
@@ -236,4 +264,4 @@ describe('McpTransport', () => {
       expect(transport.getErrorHandlers().size).toBe(0);
     });
   });
-}); 
+});

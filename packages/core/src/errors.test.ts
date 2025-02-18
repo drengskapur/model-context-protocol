@@ -171,7 +171,8 @@ describe('Error Handling', () => {
 
   describe('Error Message Formatting', () => {
     it('should handle special characters in messages', () => {
-      const message = 'Error with special chars: \n\t"quotes" and \\backslashes\\';
+      const message =
+        'Error with special chars: \n\t"quotes" and \\backslashes\\';
       const error = new McpError(message);
       const json = error.toJSON();
       expect(json.message).toBe(message);
@@ -197,7 +198,7 @@ describe('Error Handling', () => {
       const json = originalError.toJSON();
       const serialized = JSON.stringify(json);
       const deserialized = JSON.parse(serialized);
-      
+
       expect(deserialized).toEqual({
         code: originalError.toJSON().code,
         message: originalError.message,
@@ -208,7 +209,7 @@ describe('Error Handling', () => {
       const innerError = new Error('Inner error');
       const outerError = new McpError(`Outer error: ${innerError.message}`);
       const json = outerError.toJSON();
-      
+
       expect(json.message).toBe('Outer error: Inner error');
       expect(json.code).toBe(-32603);
     });

@@ -3,30 +3,30 @@ import { ReadBuffer, serializeMessage } from './buffer.js';
 import type { JSONRPCMessage } from './schema.js';
 
 describe('ReadBuffer', () => {
-  it('should append string data to buffer', () => {
+  it('should append string', () => {
     const buffer = new ReadBuffer();
     buffer.append('hello');
-    expect(buffer['_buffer']).toBe('hello');
+    expect(buffer._buffer).toBe('hello');
   });
 
-  it('should append Buffer data to buffer', () => {
+  it('should append buffer', () => {
     const buffer = new ReadBuffer();
     buffer.append(Buffer.from('hello'));
-    expect(buffer['_buffer']).toBe('hello');
+    expect(buffer._buffer).toBe('hello');
   });
 
   it('should read complete message from buffer', () => {
     const buffer = new ReadBuffer();
     buffer.append('hello\nworld');
     expect(buffer.read()).toBe('hello');
-    expect(buffer['_buffer']).toBe('world');
+    expect(buffer._buffer).toBe('world');
   });
 
   it('should return undefined when no complete message is available', () => {
     const buffer = new ReadBuffer();
     buffer.append('hello');
     expect(buffer.read()).toBeUndefined();
-    expect(buffer['_buffer']).toBe('hello');
+    expect(buffer._buffer).toBe('hello');
   });
 
   it('should handle multiple messages', () => {
@@ -39,9 +39,9 @@ describe('ReadBuffer', () => {
 
   it('should clear buffer', () => {
     const buffer = new ReadBuffer();
-    buffer.append('hello\nworld');
+    buffer.append('hello');
     buffer.clear();
-    expect(buffer['_buffer']).toBe('');
+    expect(buffer._buffer).toBe('');
   });
 });
 

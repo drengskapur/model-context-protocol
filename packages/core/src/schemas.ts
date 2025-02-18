@@ -1,6 +1,4 @@
 import {
-  type BaseSchema,
-  type ValiError,
   any,
   array,
   boolean,
@@ -14,18 +12,6 @@ import {
   union,
   unknown,
 } from 'valibot';
-import type {
-  JSONRPCRequest,
-  JSONRPCNotification,
-  JSONRPCResponse,
-  JSONRPCError,
-  JSONRPCMessage,
-  Resource,
-  ResourceTemplate,
-  Tool,
-  Prompt,
-  PromptMessage,
-} from './schema.js';
 import { JSONRPC_VERSION } from './schema.js';
 
 // Basic types

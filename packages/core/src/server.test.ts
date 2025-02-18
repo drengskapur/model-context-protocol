@@ -1,8 +1,17 @@
 import { literal, number, object, string, type BaseSchema } from 'valibot';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { JSONRPCMessage, Prompt, PromptMessage, SamplingMessage } from './schema.js';
+import type {
+  JSONRPCMessage,
+  Prompt,
+  PromptMessage,
+  SamplingMessage,
+} from './schema.js';
 import { JSONRPC_VERSION, LATEST_PROTOCOL_VERSION } from './schema.js';
-import { Server, McpServer, type Resource as ServerResource } from './server.js';
+import {
+  Server,
+  McpServer,
+  type Resource as ServerResource,
+} from './server.js';
 import type { McpTransport, MessageHandler } from './transport.js';
 import { InMemoryTransport } from './in-memory.js';
 import { Authorization } from './auth.js';
@@ -77,12 +86,14 @@ describe('Server', () => {
     clearMessages(): void;
   };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     server = new Server({
       name: 'test-server',
       version: '1.0.0',
     });
-    transport = new InMemoryTransport();
+    transport = new TestTransport();
+    await transport.connect();
+    await server.connect(transport);
   });
 
   it('should handle initialization', async () => {
@@ -319,9 +330,9 @@ describe('Server', () => {
   });
 
   it('should reject invalid parameters', async () => {
-    server.tool('greet', greetSchema, async (params: unknown) => {
+    server.tool('greet', greetSchema, (params: unknown) => {
       const typedParams = params as GreetParams;
-      return `Hello ${typedParams.name}, you are ${typedParams.age} years old`;
+      return Promise.resolve(`Hello ${typedParams.name}, you are ${typedParams.age} years old`);
     });
     await server.connect(transport);
 
@@ -569,7 +580,7 @@ describe('Server', () => {
     const resource: ServerResource = {
       uri: 'test-resource',
       mimeType: 'text/plain',
-      content: { key: 'value' }
+      content: { key: 'value' },
     };
     server.resource(resource, resource.content);
 
@@ -751,7 +762,7 @@ describe('Server', () => {
 
     // Verify disconnect message was sent
     const messages = transport.getMessages();
-    expect(messages[messages.length - 1]).toMatchObject({
+    expect(messages.at(-1)).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
       method: 'disconnect',
     });

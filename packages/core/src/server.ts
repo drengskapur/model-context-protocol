@@ -16,9 +16,11 @@ import {
   type PromptArgument,
   type SamplingMessage,
   type ModelPreferences,
+  type ResourceReference,
+  type PromptReference,
+  type Tool,
 } from './schema.js';
-
-import type { BaseSchema } from 'valibot';
+import { type BaseSchema, ValiError } from 'valibot';
 import { object, parse, string } from 'valibot';
 import {
   InvalidParamsError,
@@ -37,7 +39,6 @@ import {
   validateTool,
   validateReference,
   validateLoggingLevel,
-  ValidationError,
 } from './validation.js';
 
 const initializeParamsSchema = object({
@@ -53,10 +54,16 @@ export interface ServerOptions {
 
 export class PromptManager {
   private prompts = new Map<string, Prompt>();
-  private executors = new Map<string, (args?: Record<string, string>) => Promise<PromptMessage[]>>();
+  private executors = new Map<
+    string,
+    (args?: Record<string, string>) => Promise<PromptMessage[]>
+  >();
   private subscribers = new Set<() => void>();
 
-  registerPrompt(prompt: Prompt, executor?: (args?: Record<string, string>) => Promise<PromptMessage[]>): void {
+  registerPrompt(
+    prompt: Prompt,
+    executor?: (args?: Record<string, string>) => Promise<PromptMessage[]>
+  ): void {
     this.prompts.set(prompt.name, prompt);
     if (executor) {
       this.executors.set(prompt.name, executor);
@@ -96,7 +103,10 @@ export class PromptManager {
     return null;
   }
 
-  async executePrompt(name: string, args?: Record<string, string>): Promise<PromptMessage[]> {
+  async executePrompt(
+    name: string,
+    args?: Record<string, string>
+  ): Promise<PromptMessage[]> {
     const prompt = this.getPrompt(name);
     if (!prompt) {
       throw new Error(`Prompt not found: ${name}`);
@@ -124,7 +134,7 @@ export class PromptManager {
   }
 
   private notifySubscribers(): void {
-    this.subscribers.forEach(subscriber => subscriber());
+    this.subscribers.forEach((subscriber) => subscriber());
   }
 }
 
@@ -197,7 +207,7 @@ export class ResourceManager {
   }
 
   private notifyResourceUpdated(uri: string, content: unknown): void {
-    this.subscribers.get(uri)?.forEach(subscriber => subscriber(content));
+    this.subscribers.get(uri)?.forEach((subscriber) => subscriber(content));
   }
 
   private notifyResourceListChanged(): void {
@@ -239,7 +249,7 @@ export class RootManager {
 
   private notifySubscribers(): void {
     const roots = this.listRoots();
-    this.subscribers.forEach(subscriber => subscriber(roots));
+    this.subscribers.forEach((subscriber) => subscriber(roots));
   }
 }
 
@@ -255,23 +265,40 @@ export class SamplingManager {
   }
 
   notifyMessageCreated(message: SamplingMessage): void {
-    this.messageHandlers.forEach(handler => handler(message));
+    this.messageHandlers.forEach((handler) => handler(message));
   }
 }
 
 export class CompletionManager {
-  private promptCompletions = new Map<string, (value: string) => Promise<string[]>>();
-  private resourceCompletions = new Map<string, (value: string) => Promise<string[]>>();
+  private promptCompletions = new Map<
+    string,
+    (value: string) => Promise<string[]>
+  >();
+  private resourceCompletions = new Map<
+    string,
+    (value: string) => Promise<string[]>
+  >();
 
-  registerPromptCompletion(promptName: string, handler: (value: string) => Promise<string[]>): void {
+  registerPromptCompletion(
+    promptName: string,
+    handler: (value: string) => Promise<string[]>
+  ): void {
     this.promptCompletions.set(promptName, handler);
   }
 
-  registerResourceCompletion(uriTemplate: string, handler: (value: string) => Promise<string[]>): void {
+  registerResourceCompletion(
+    uriTemplate: string,
+    handler: (value: string) => Promise<string[]>
+  ): void {
     this.resourceCompletions.set(uriTemplate, handler);
   }
 
-  async getCompletions(ref: PromptReference | ResourceReference, value: string): Promise<string[]> {
+  async getCompletions(
+    ref:
+      | { type: 'ref/prompt'; name: string }
+      | { type: 'ref/resource'; uri: string },
+    value: string
+  ): Promise<string[]> {
     if (ref.type === 'ref/prompt') {
       const handler = this.promptCompletions.get(ref.name);
       if (handler) {
@@ -309,41 +336,43 @@ export class Server {
     this.options = options;
   }
 
-  public tool<T extends BaseSchema<unknown, unknown, any>>(
+  public async tool<T extends BaseSchema<unknown, unknown, unknown>>(
     name: string,
     schema: T,
-    handler: (params: Input<T>) => Promise<Output<T>>
+    handler: (params: unknown) => Promise<unknown>
   ): Promise<void> {
-    const tool = {
+    const tool: Tool = {
       name,
       inputSchema: {
         type: 'object',
-        properties: schema,
+        properties: {},
+        required: [],
       },
     };
     await validateTool(tool);
     this.tools.set(name, {
       schema,
-      handler: handler as (params: unknown) => Promise<unknown>,
+      handler,
     });
 
     if (this.transport && this.initialized) {
-      this.transport.send({
+      await this.transport.send({
         jsonrpc: JSONRPC_VERSION,
         method: 'notifications/tools/list_changed',
-      }).catch(() => {});
+      });
     }
-    return Promise.resolve();
   }
 
   public removeTool(name: string): void {
     this.tools.delete(name);
 
     if (this.transport && this.initialized) {
-      this.transport.send({
-        jsonrpc: JSONRPC_VERSION,
-        method: 'notifications/tools/list_changed',
-      }).catch(() => {});
+      this.transport
+        .send({
+          jsonrpc: JSONRPC_VERSION,
+          method: 'notifications/tools/list_changed',
+        })
+        .catch(() => {});
     }
   }
 
@@ -438,7 +467,9 @@ export class Server {
     return this.handleToolCall(message as JSONRPCRequest);
   }
 
-  private async handleToolCall(request: JSONRPCRequest): Promise<JSONRPCResponse | JSONRPCError> {
+  private async handleToolCall(
+    request: JSONRPCRequest
+  ): Promise<JSONRPCResponse | JSONRPCError> {
     const tool = this.tools.get(request.method);
     if (!tool) {
       return {
@@ -460,6 +491,16 @@ export class Server {
         result: { value: result },
       };
     } catch (error) {
+      if (error instanceof ValiError) {
+        return {
+          jsonrpc: JSONRPC_VERSION,
+          id: request.id,
+          error: {
+            code: -32602,
+            message: error.message,
+          },
+        };
+      }
       return {
         jsonrpc: JSONRPC_VERSION,
         id: request.id,
@@ -550,7 +591,11 @@ export class Server {
     data: unknown,
     logger?: string
   ): Promise<void> {
-    if (!this.options.capabilities?.logging || !this.transport || !this.initialized) {
+    if (
+      !this.options.capabilities?.logging ||
+      !this.transport ||
+      !this.initialized
+    ) {
       return;
     }
 
@@ -602,20 +647,24 @@ export class Server {
     await validatePrompt(prompt);
     this.prompts.registerPrompt(prompt, executor);
     if (this.transport && this.initialized) {
-      this.transport.send({
-        jsonrpc: JSONRPC_VERSION,
-        method: 'notifications/prompts/list_changed',
-      }).catch(() => {});
+      this.transport
+        .send({
+          jsonrpc: JSONRPC_VERSION,
+          method: 'notifications/prompts/list_changed',
+        })
+        .catch(() => {});
     }
   }
 
   public removePrompt(name: string): void {
     this.prompts.unregisterPrompt(name);
     if (this.transport && this.initialized) {
-      this.transport.send({
-        jsonrpc: JSONRPC_VERSION,
-        method: 'notifications/prompts/list_changed',
-      }).catch(() => {});
+      this.transport
+        .send({
+          jsonrpc: JSONRPC_VERSION,
+          method: 'notifications/prompts/list_changed',
+        })
+        .catch(() => {});
     }
   }
 
@@ -627,7 +676,9 @@ export class Server {
     };
   }
 
-  private async handleListPrompts(request: JSONRPCRequest): Promise<JSONRPCResponse> {
+  private async handleListPrompts(
+    request: JSONRPCRequest
+  ): Promise<JSONRPCResponse> {
     return {
       jsonrpc: JSONRPC_VERSION,
       id: request.id,
@@ -637,7 +688,9 @@ export class Server {
     };
   }
 
-  private async handleGetPrompt(request: JSONRPCRequest): Promise<JSONRPCResponse | JSONRPCError> {
+  private async handleGetPrompt(
+    request: JSONRPCRequest
+  ): Promise<JSONRPCResponse | JSONRPCError> {
     const { name, arguments: args } = request.params as {
       name: string;
       arguments?: Record<string, string>;
@@ -677,7 +730,9 @@ export class Server {
     };
   }
 
-  private async handleExecutePrompt(request: JSONRPCRequest): Promise<JSONRPCResponse | JSONRPCError> {
+  private async handleExecutePrompt(
+    request: JSONRPCRequest
+  ): Promise<JSONRPCResponse | JSONRPCError> {
     const { name, arguments: args } = request.params as {
       name: string;
       arguments?: Record<string, string>;
@@ -705,7 +760,9 @@ export class Server {
     }
   }
 
-  private async handleListTools(request: JSONRPCRequest): Promise<JSONRPCResponse> {
+  private async handleListTools(
+    request: JSONRPCRequest
+  ): Promise<JSONRPCResponse> {
     return {
       jsonrpc: JSONRPC_VERSION,
       id: request.id,
@@ -715,7 +772,9 @@ export class Server {
     };
   }
 
-  private async handleListResources(request: JSONRPCRequest): Promise<JSONRPCResponse> {
+  private async handleListResources(
+    request: JSONRPCRequest
+  ): Promise<JSONRPCResponse> {
     return {
       jsonrpc: JSONRPC_VERSION,
       id: request.id,
@@ -725,7 +784,9 @@ export class Server {
     };
   }
 
-  private async handleListResourceTemplates(request: JSONRPCRequest): Promise<JSONRPCResponse> {
+  private async handleListResourceTemplates(
+    request: JSONRPCRequest
+  ): Promise<JSONRPCResponse> {
     return {
       jsonrpc: JSONRPC_VERSION,
       id: request.id,
@@ -735,7 +796,9 @@ export class Server {
     };
   }
 
-  private async handleReadResource(request: JSONRPCRequest): Promise<JSONRPCResponse | JSONRPCError> {
+  private async handleReadResource(
+    request: JSONRPCRequest
+  ): Promise<JSONRPCResponse | JSONRPCError> {
     const { uri } = request.params as { uri: string };
     const resource = this.resources.getResource(uri);
 
@@ -754,16 +817,20 @@ export class Server {
       jsonrpc: JSONRPC_VERSION,
       id: request.id,
       result: {
-        contents: [{
-          uri,
-          mimeType: resource.mimeType,
-          text: resource.content as string, // For now, assuming text content
-        }],
+        contents: [
+          {
+            uri,
+            mimeType: resource.mimeType,
+            text: resource.content as string, // For now, assuming text content
+          },
+        ],
       },
     };
   }
 
-  private async handleSubscribeResource(request: JSONRPCRequest): Promise<JSONRPCResponse | JSONRPCError> {
+  private async handleSubscribeResource(
+    request: JSONRPCRequest
+  ): Promise<JSONRPCResponse | JSONRPCError> {
     const { uri } = request.params as { uri: string };
     const resource = this.resources.getResource(uri);
 
@@ -780,14 +847,16 @@ export class Server {
 
     const onChange = (content: unknown) => {
       if (this.transport) {
-        this.transport.send({
-          jsonrpc: JSONRPC_VERSION,
-          method: 'notifications/resources/updated',
-          params: {
-            uri,
-            content,
-          },
-        }).catch(() => {});
+        this.transport
+          .send({
+            jsonrpc: JSONRPC_VERSION,
+            method: 'notifications/resources/updated',
+            params: {
+              uri,
+              content,
+            },
+          })
+          .catch(() => {});
       }
     };
 
@@ -800,7 +869,9 @@ export class Server {
     };
   }
 
-  private async handleUnsubscribeResource(request: JSONRPCRequest): Promise<JSONRPCResponse | JSONRPCError> {
+  private async handleUnsubscribeResource(
+    request: JSONRPCRequest
+  ): Promise<JSONRPCResponse | JSONRPCError> {
     const { uri } = request.params as { uri: string };
     const resource = this.resources.getResource(uri);
 
@@ -825,7 +896,9 @@ export class Server {
     };
   }
 
-  private async handleListRoots(request: JSONRPCRequest): Promise<JSONRPCResponse> {
+  private async handleListRoots(
+    request: JSONRPCRequest
+  ): Promise<JSONRPCResponse> {
     return {
       jsonrpc: JSONRPC_VERSION,
       id: request.id,
@@ -835,10 +908,12 @@ export class Server {
     };
   }
 
-  private async handleGetRoot(request: JSONRPCRequest): Promise<JSONRPCResponse | JSONRPCError> {
+  private async handleGetRoot(
+    request: JSONRPCRequest
+  ): Promise<JSONRPCResponse | JSONRPCError> {
     const { uri } = request.params as { uri: string };
     const roots = this.roots.listRoots();
-    const root = roots.find(r => r === uri);
+    const root = roots.find((r) => r === uri);
 
     if (!root) {
       return {
@@ -863,7 +938,9 @@ export class Server {
     };
   }
 
-  private async handleCreateMessage(request: JSONRPCRequest): Promise<JSONRPCResponse | JSONRPCError> {
+  private async handleCreateMessage(
+    request: JSONRPCRequest
+  ): Promise<JSONRPCResponse | JSONRPCError> {
     const params = request.params as {
       messages: SamplingMessage[];
       modelPreferences?: ModelPreferences;
@@ -913,7 +990,9 @@ export class Server {
     }
   }
 
-  private async handleComplete(request: JSONRPCRequest): Promise<JSONRPCResponse | JSONRPCError> {
+  private async handleComplete(
+    request: JSONRPCRequest
+  ): Promise<JSONRPCResponse | JSONRPCError> {
     try {
       const { ref, argument } = request.params as {
         ref: PromptReference | ResourceReference;
@@ -924,7 +1003,10 @@ export class Server {
       };
 
       await validateReference(ref);
-      const completions = await this.completion.getCompletions(ref, argument.value);
+      const completions = await this.completion.getCompletions(
+        ref,
+        argument.value
+      );
 
       return {
         jsonrpc: JSONRPC_VERSION,
@@ -1022,11 +1104,17 @@ export class Server {
     await this.transport.send(response);
   }
 
-  public promptCompletion(promptName: string, handler: (value: string) => Promise<string[]>): void {
+  public promptCompletion(
+    promptName: string,
+    handler: (value: string) => Promise<string[]>
+  ): void {
     this.completion.registerPromptCompletion(promptName, handler);
   }
 
-  public resourceCompletion(uriTemplate: string, handler: (value: string) => Promise<string[]>): void {
+  public resourceCompletion(
+    uriTemplate: string,
+    handler: (value: string) => Promise<string[]>
+  ): void {
     this.completion.registerResourceCompletion(uriTemplate, handler);
   }
 
@@ -1034,53 +1122,71 @@ export class Server {
     await validateResource(resource);
     this.resources.registerResource(resource, content);
     if (this.transport && this.initialized) {
-      this.transport.send({
-        jsonrpc: JSONRPC_VERSION,
-        method: 'notifications/resources/list_changed',
-      }).catch(() => {});
+      this.transport
+        .send({
+          jsonrpc: JSONRPC_VERSION,
+          method: 'notifications/resources/list_changed',
+        })
+        .catch(() => {});
     }
   }
 
   public resourceTemplate(template: ResourceTemplate): void {
     this.resources.registerTemplate(template);
     if (this.transport) {
-      this.transport.send({
-        jsonrpc: JSONRPC_VERSION,
-        method: 'notifications/resources/list_changed',
-      }).catch(() => {});
+      this.transport
+        .send({
+          jsonrpc: JSONRPC_VERSION,
+          method: 'notifications/resources/list_changed',
+        })
+        .catch(() => {});
     }
   }
 
   public addRoot(root: string): void {
     this.roots.addRoot(root);
     if (this.transport) {
-      this.transport.send({
-        jsonrpc: JSONRPC_VERSION,
-        method: 'notifications/rootsChanged',
-        params: {
-          roots: this.roots.listRoots(),
-        },
-      }).catch(() => {});
+      this.transport
+        .send({
+          jsonrpc: JSONRPC_VERSION,
+          method: 'notifications/rootsChanged',
+          params: {
+            roots: this.roots.listRoots(),
+          },
+        })
+        .catch(() => {});
     }
   }
 
   public removeRoot(root: string): void {
     this.roots.removeRoot(root);
     if (this.transport) {
-      this.transport.send({
-        jsonrpc: JSONRPC_VERSION,
-        method: 'notifications/rootsChanged',
-        params: {
-          roots: this.roots.listRoots(),
-        },
-      }).catch(() => {});
+      this.transport
+        .send({
+          jsonrpc: JSONRPC_VERSION,
+          method: 'notifications/rootsChanged',
+          params: {
+            roots: this.roots.listRoots(),
+          },
+        })
+        .catch(() => {});
     }
   }
 
   // Add public methods for sampling
-  public onMessageCreated(handler: (message: SamplingMessage) => void): () => void {
+  public onMessageCreated(
+    handler: (message: SamplingMessage) => void
+  ): () => void {
     this.sampling.subscribe(handler);
     return () => this.sampling.unsubscribe(handler);
+  }
+
+  private async generatePromptMessages(
+    prompt: Prompt,
+    args?: Record<string, string>
+  ): Promise<PromptMessage[]> {
+    // Implementation can be added here
+    return [];
   }
 }
 
@@ -1097,7 +1203,7 @@ export class McpServer {
     this.server = new Server(options);
   }
 
-  public tool<T extends BaseSchema<unknown, unknown, BaseIssue<unknown>>>(
+  public tool<T extends BaseSchema<unknown, unknown, unknown>>(
     name: string,
     schema: T,
     handler: (params: unknown) => Promise<unknown>
@@ -1114,5 +1220,12 @@ export class McpServer {
       jsonrpc: JSONRPC_VERSION,
       method: 'disconnect',
     });
+  }
+}
+
+export class ValidationError extends Error {
+  constructor(public readonly message: string) {
+    super(message);
+    this.name = 'ValidationError';
   }
 }
