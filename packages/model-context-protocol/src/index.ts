@@ -53,16 +53,14 @@ export { McpServer } from './server.js';
 export { McpClient } from './client.js';
 
 // Export transport layer interfaces and implementations
-export { type McpTransport, type MessageHandler } from './transports/base.js';
-export { InMemoryTransport } from './transports/in-memory.js';
-export { JsonRpcTransport } from './transports/json-rpc.js';
+export { type McpTransport, type MessageHandler } from './base.js';
+export { InMemoryTransport } from './in-memory.js';
+export { JsonRpcTransport } from './json-rpc.js';
+export { StdioTransport } from './stdio.js';
+export { SseTransport } from './sse.js';
 
 // Export authorization types and utilities
 export * from './auth.js';
-
-// Export built-in transport implementations
-export * from './transports/stdio.js';
-export * from './transports/sse.js';
 
 // Export sampling types and utilities
 export * from './sampling.js';

@@ -4,8 +4,8 @@
  * Provides a transport that operates entirely in memory, useful for testing and local development.
  */
 
-import type { JSONRPCRequest, JSONRPCResponse } from '../schema.js';
-import { JsonRpcTransport } from './json-rpc.js';
+import type { JSONRPCRequest, JSONRPCResponse } from './schema.js';
+import { JsonRpcTransport } from './transports/json-rpc.js';
 
 /**
  * In-memory transport implementation.

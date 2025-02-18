@@ -221,10 +221,9 @@ class ErrorManager {
  * and HTTP POST for sending messages.
  */
 export class SseTransport implements McpTransport {
-  /** EventSource instance for SSE connection */
-  protected _eventSource: EventSource | null = null;
-  /** Transport configuration options */
-  public readonly options: Required<SseTransportOptions>;
+  private eventSource: EventSource | null = null;
+  private messageHandlers = new Set<(message: unknown) => Promise<void>>();
+  private readonly options: Required<SseTransportOptions>;
   /** Message processor for handling incoming messages */
   public readonly messageProcessor: MessageProcessor;
   /** Error manager for handling transport errors */
@@ -270,52 +269,52 @@ export class SseTransport implements McpTransport {
    * @throws {Error} If connection fails
    */
   public async connect(): Promise<void> {
-    if (this._eventSource) {
+    if (this.eventSource) {
       throw new Error('Already connected');
     }
 
-    const url = this.buildUrl();
-    this._eventSource = new this.options.EventSource(url.toString());
-    this._eventSource.onmessage = this._onMessage;
-    this._eventSource.onerror = this._onError;
+    const url = new URL(this.options.eventSourceUrl);
+    for (const [key, value] of Object.entries(this.options.eventSourceHeaders)) {
+      url.searchParams.append(key, value);
+    }
+
+    this.eventSource = new this.options.EventSource(url.toString());
 
     return new Promise((resolve, reject) => {
-      if (!this._eventSource) {
+      if (!this.eventSource) {
         reject(new Error('EventSource not initialized'));
         return;
       }
 
       const onOpen = () => {
-        if (this._eventSource) {
-          this._eventSource.removeEventListener('open', onOpen);
+        if (this.eventSource) {
+          this.eventSource.removeEventListener('open', onOpen);
           resolve();
         }
       };
 
       const onError = (error: Event) => {
-        if (this._eventSource) {
-          this._eventSource.removeEventListener('error', onError);
-          this._eventSource.close();
-          this._eventSource = null;
+        if (this.eventSource) {
+          this.eventSource.removeEventListener('error', onError);
+          this.eventSource.close();
+          this.eventSource = null;
           reject(new Error('Connection failed'));
         }
       };
 
-      this._eventSource.addEventListener('open', onOpen);
-      this._eventSource.addEventListener('error', onError);
+      this.eventSource.addEventListener('open', onOpen);
+      this.eventSource.addEventListener('error', onError);
+      this.eventSource.addEventListener('message', async (event: MessageEvent) => {
+        try {
+          const message = JSON.parse(event.data);
+          for (const handler of this.messageHandlers) {
+            await handler(message);
+          }
+        } catch (error) {
+          console.error('Error processing message:', error);
+        }
+      });
     });
-  }
-
-  /**
-   * Builds the SSE connection URL with headers.
-   * @returns URL instance with headers as query parameters
-   */
-  private buildUrl(): URL {
-    const url = new URL(this.options.eventSourceUrl);
-    for (const [key, value] of Object.entries(this.options.eventSourceHeaders)) {
-      url.searchParams.append(key, value);
-    }
-    return url;
   }
 
   /**
@@ -323,11 +322,11 @@ export class SseTransport implements McpTransport {
    * @returns Promise that resolves when disconnected
    */
   public async disconnect(): Promise<void> {
-    if (this._eventSource) {
-      this._eventSource.close();
-      this._eventSource = null;
+    if (this.eventSource) {
+      this.eventSource.close();
+      this.eventSource = null;
     }
-    this.messageProcessor.clear();
+    this.messageHandlers.clear();
     this.errorManager.clear();
     return Promise.resolve();
   }
@@ -337,7 +336,7 @@ export class SseTransport implements McpTransport {
    * @returns true if connected, false otherwise
    */
   public isConnected(): boolean {
-    return this._eventSource !== null;
+    return this.eventSource !== null;
   }
 
   /**
@@ -353,16 +352,16 @@ export class SseTransport implements McpTransport {
    * Registers a message handler.
    * @param handler Handler function to register
    */
-  public onMessage(handler: MessageHandler): void {
-    this.messageProcessor.addHandler(handler);
+  public onMessage(handler: (message: unknown) => Promise<void>): void {
+    this.messageHandlers.add(handler);
   }
 
   /**
    * Unregisters a message handler.
    * @param handler Handler function to unregister
    */
-  public offMessage(handler: MessageHandler): void {
-    this.messageProcessor.removeHandler(handler);
+  public offMessage(handler: (message: unknown) => Promise<void>): void {
+    this.messageHandlers.delete(handler);
   }
 
   /**

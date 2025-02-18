@@ -6,8 +6,8 @@
 
 import type { Readable, Writable } from 'node:stream';
 import { parse } from 'valibot';
-import type { JSONRPCMessage, ProgressToken } from '../schema.js';
-import { jsonRpcMessageSchema } from '../schemas.js';
+import type { JSONRPCMessage, ProgressToken } from './schema.js';
+import { jsonRpcMessageSchema } from './schemas.js';
 import type { McpTransport, MessageHandler } from '../transport.js';
 
 /**
