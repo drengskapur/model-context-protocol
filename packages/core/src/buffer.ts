@@ -7,10 +7,21 @@ export class ReadBuffer {
   private _buffer = '';
 
   /**
+   * Get the current buffer contents.
+   */
+  get buffer(): string {
+    return this._buffer;
+  }
+
+  /**
    * Append data to the buffer.
    */
   append(data: string | Buffer): void {
-    this._buffer += data.toString();
+    if (Buffer.isBuffer(data)) {
+      this._buffer += data.toString();
+    } else {
+      this._buffer += data;
+    }
   }
 
   /**
@@ -23,9 +34,9 @@ export class ReadBuffer {
       return undefined;
     }
 
-    const message = this._buffer.slice(0, newlineIndex);
+    const line = this._buffer.slice(0, newlineIndex);
     this._buffer = this._buffer.slice(newlineIndex + 1);
-    return message;
+    return line;
   }
 
   /**

@@ -239,7 +239,7 @@ describe('SseTransport', () => {
         CLOSED: { value: MockEventSource.CLOSED },
       });
 
-      transport['_options']['EventSource'] = MockEventSourceClass;
+      transport.options.EventSource = MockEventSourceClass;
 
       await transport.connect();
       expect(MockEventSourceClass).toHaveBeenCalledWith(
@@ -282,7 +282,7 @@ describe('SseTransport', () => {
         CLOSED: { value: MockEventSource.CLOSED },
       });
 
-      transport['_options']['EventSource'] = MockEventSourceClass;
+      transport.options.EventSource = MockEventSourceClass;
 
       await expect(transport.connect()).rejects.toThrow('Connection failed');
       expect(errorHandler).toHaveBeenCalledWith(error);
@@ -308,7 +308,7 @@ describe('SseTransport', () => {
         CLOSED: { value: MockEventSource.CLOSED },
       });
 
-      transport['_options']['EventSource'] = MockEventSourceClass;
+      transport.options.EventSource = MockEventSourceClass;
 
       await transport.connect();
 
@@ -345,7 +345,7 @@ describe('SseTransport', () => {
         CLOSED: { value: MockEventSource.CLOSED },
       });
 
-      transport['_options']['EventSource'] = MockEventSourceClass;
+      transport.options.EventSource = MockEventSourceClass;
 
       await transport.connect();
 

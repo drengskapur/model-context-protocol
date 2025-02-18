@@ -11,6 +11,8 @@ import type {
 } from './schema.js';
 import { JSONRPC_VERSION, LATEST_PROTOCOL_VERSION } from './schema.js';
 
+const PROTOCOL_VERSION_MISMATCH_REGEX = /Protocol version mismatch/;
+
 describe('McpClient', () => {
   let client: McpClient;
   let transport: InMemoryTransport;
@@ -87,7 +89,7 @@ describe('McpClient', () => {
     await Promise.resolve();
 
     const messages = transport.getMessages();
-    const request = messages[messages.length - 1] as JSONRPCRequest;
+    const request = messages.at(-1) as JSONRPCRequest;
 
     // Simulate cancellation notification
     await transport.simulateIncomingMessage({
@@ -197,8 +199,8 @@ describe('McpClient', () => {
     await Promise.resolve();
 
     const messages = transport.getMessages();
-    const request1 = messages[messages.length - 2] as JSONRPCRequest;
-    const request2 = messages[messages.length - 1] as JSONRPCRequest;
+    const request1 = messages.at(-2) as JSONRPCRequest;
+    const request2 = messages.at(-1) as JSONRPCRequest;
 
     // Simulate responses in reverse order
     await transport.simulateIncomingMessage({
@@ -282,7 +284,7 @@ describe('McpClient', () => {
     await Promise.resolve();
 
     const messages = transport.getMessages();
-    const request = messages[messages.length - 1] as JSONRPCRequest;
+    const request = messages.at(-1) as JSONRPCRequest;
     expect(request.method).toBe('tools/list');
 
     await transport.simulateIncomingMessage({
@@ -343,7 +345,7 @@ describe('McpClient', () => {
     await Promise.resolve();
 
     const messages = transport.getMessages();
-    const request = messages[messages.length - 1] as JSONRPCRequest;
+    const request = messages.at(-1) as JSONRPCRequest;
     const progressToken = request.params?._meta?.progressToken;
 
     // Simulate progress notification
@@ -439,7 +441,9 @@ describe('McpClient', () => {
       },
     } as JSONRPCResponse);
 
-    await expect(connectPromise).rejects.toThrow(/Protocol version mismatch/);
+    await expect(connectPromise).rejects.toThrow(
+      PROTOCOL_VERSION_MISMATCH_REGEX
+    );
   });
 
   it('should handle logging level setting', async () => {
@@ -467,7 +471,7 @@ describe('McpClient', () => {
     await Promise.resolve();
 
     const messages = transport.getMessages();
-    const request = messages[messages.length - 1] as JSONRPCRequest;
+    const request = messages.at(-1) as JSONRPCRequest;
     expect(request.method).toBe('logging/setLevel');
     expect(request.params).toEqual({ level: 'info' });
 
@@ -627,7 +631,7 @@ describe('McpClient', () => {
     await Promise.resolve();
 
     const messages = transport.getMessages();
-    const request = messages[messages.length - 1] as JSONRPCRequest;
+    const request = messages.at(-1) as JSONRPCRequest;
 
     // Simulate response with wrong id
     await transport.simulateIncomingMessage({
@@ -665,7 +669,7 @@ describe('McpClient', () => {
     await Promise.resolve();
 
     const messages = transport.getMessages();
-    const request = messages[messages.length - 1] as JSONRPCRequest;
+    const request = messages.at(-1) as JSONRPCRequest;
 
     // Simulate response with wrong jsonrpc version
     await transport.simulateIncomingMessage({
@@ -703,7 +707,7 @@ describe('McpClient', () => {
     await Promise.resolve();
 
     const messages = transport.getMessages();
-    const request = messages[messages.length - 1] as JSONRPCRequest;
+    const request = messages.at(-1) as JSONRPCRequest;
 
     // Simulate response with neither result nor error
     await transport.simulateIncomingMessage({
@@ -773,7 +777,7 @@ describe('McpClient', () => {
     await Promise.resolve();
 
     const messages = transport.getMessages();
-    const request = messages[messages.length - 1] as JSONRPCRequest;
+    const request = messages.at(-1) as JSONRPCRequest;
     const progressToken = request.params?._meta?.progressToken;
 
     // Simulate successful response
@@ -1092,7 +1096,7 @@ describe('McpClient', () => {
     await Promise.resolve();
 
     const messages = transport.getMessages();
-    const request = messages[messages.length - 1] as JSONRPCRequest;
+    const request = messages.at(-1) as JSONRPCRequest;
     expect(request.method).toBe('prompts/list');
 
     await transport.simulateIncomingMessage({
@@ -1148,7 +1152,7 @@ describe('McpClient', () => {
     await Promise.resolve();
 
     const messages = transport.getMessages();
-    const request = messages[messages.length - 1] as JSONRPCRequest;
+    const request = messages.at(-1) as JSONRPCRequest;
     expect(request.method).toBe('prompts/get');
     expect(request.params).toEqual({
       name: 'test-prompt',
@@ -1210,7 +1214,7 @@ describe('McpClient', () => {
     await Promise.resolve();
 
     const messages = transport.getMessages();
-    const request = messages[messages.length - 1] as JSONRPCRequest;
+    const request = messages.at(-1) as JSONRPCRequest;
     expect(request.method).toBe('prompts/execute');
     expect(request.params?.name).toBe('test-prompt');
     expect(request.params?.arguments).toEqual({ arg1: 'value1' });
@@ -1314,7 +1318,7 @@ describe('McpClient', () => {
     await Promise.resolve();
 
     const messages = transport.getMessages();
-    const request = messages[messages.length - 1] as JSONRPCRequest;
+    const request = messages.at(-1) as JSONRPCRequest;
     expect(request.method).toBe('resources/list');
 
     await transport.simulateIncomingMessage({
@@ -1356,7 +1360,7 @@ describe('McpClient', () => {
     await Promise.resolve();
 
     const messages = transport.getMessages();
-    const request = messages[messages.length - 1] as JSONRPCRequest;
+    const request = messages.at(-1) as JSONRPCRequest;
     expect(request.method).toBe('resources/read');
     expect(request.params).toEqual({ name: 'test-resource' });
 
@@ -1403,7 +1407,7 @@ describe('McpClient', () => {
     await Promise.resolve();
 
     const messages = transport.getMessages();
-    const request = messages[messages.length - 1] as JSONRPCRequest;
+    const request = messages.at(-1) as JSONRPCRequest;
     expect(request.method).toBe('resources/subscribe');
     expect(request.params).toEqual({ name: 'test-resource' });
 
@@ -1433,11 +1437,17 @@ describe('McpClient', () => {
     cleanup();
     await Promise.resolve();
 
-    const unsubscribeRequest = transport.getMessages()[
-      transport.getMessages().length - 1
-    ] as JSONRPCRequest;
-    expect(unsubscribeRequest.method).toBe('resources/unsubscribe');
-    expect(unsubscribeRequest.params).toEqual({ uri: 'test-resource' });
+    // Simulate another change - handler should not be called
+    await transport.simulateIncomingMessage({
+      jsonrpc: JSONRPC_VERSION,
+      method: 'notifications/resources/updated',
+      params: {
+        uri: 'test-resource',
+        content: { key: 'another-value' },
+      },
+    } as JSONRPCNotification);
+
+    expect(onChange).toHaveBeenCalledTimes(1);
   });
 
   it('should reject resource operations when not supported', async () => {
@@ -1496,7 +1506,7 @@ describe('McpClient', () => {
     await Promise.resolve();
 
     const messages = transport.getMessages();
-    const request = messages[messages.length - 1] as JSONRPCRequest;
+    const request = messages.at(-1) as JSONRPCRequest;
     expect(request.method).toBe('roots/list');
 
     await transport.simulateIncomingMessage({
@@ -1632,9 +1642,7 @@ describe('McpClient', () => {
     await Promise.resolve();
 
     const requestMessages = transport.getMessages();
-    const request = requestMessages[
-      requestMessages.length - 1
-    ] as JSONRPCRequest;
+    const request = requestMessages.at(-1) as JSONRPCRequest;
     expect(request.method).toBe('sampling/createMessage');
     expect(request.params).toMatchObject({
       messages,
@@ -1770,6 +1778,35 @@ describe('McpClient', () => {
       'Server does not support sampling'
     );
   });
+
+  it('should handle resource subscription with empty handler', async () => {
+    // First initialize the client with resources capability
+    const connectPromise = client.connect(transport);
+    await Promise.resolve();
+    await transport.simulateIncomingMessage({
+      jsonrpc: '2.0',
+      id: 1,
+      result: {
+        protocolVersion: LATEST_PROTOCOL_VERSION,
+        serverInfo: {
+          name: 'test-server',
+          version: '1.0.0',
+        },
+        capabilities: {
+          resources: {
+            listChanged: true,
+          },
+        },
+      },
+    } as JSONRPCResponse);
+    await connectPromise;
+
+    await expect(
+      client.subscribeToResource('test', () => {
+        /* Intentionally empty - test handler */
+      })
+    ).rejects.toThrow('Server does not support resources');
+  });
 });
 
 describe('McpClient with Authorization', () => {
@@ -1790,11 +1827,11 @@ describe('McpClient with Authorization', () => {
     client.setAuthToken(token);
 
     // Token should be included in request params
-    const request = client['prepareRequest']('test-method', { data: 'test' });
+    const request = client.prepareRequest('test-method', { data: 'test' });
     expect(request).resolves.toHaveProperty('params.token', token);
 
     client.clearAuthToken();
-    const requestWithoutToken = client['prepareRequest']('test-method', {
+    const requestWithoutToken = client.prepareRequest('test-method', {
       data: 'test',
     });
     expect(requestWithoutToken).resolves.not.toHaveProperty('params.token');
@@ -1823,7 +1860,7 @@ describe('McpClient with Authorization', () => {
     const token = 'test-token';
     client.setAuthToken(token);
 
-    const request = await client['prepareRequest']('test-method', 'test-data');
+    const request = await client.prepareRequest('test-method', 'test-data');
     expect(request.params).toEqual({
       token,
       data: 'test-data',

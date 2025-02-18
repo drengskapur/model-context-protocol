@@ -130,31 +130,31 @@ export interface SseTransportOptions {
  */
 export class SseTransport implements McpTransport {
   protected _eventSource: EventSource | null = null;
-  private readonly _options: Required<SseTransportOptions>;
+  public readonly options: Required<SseTransportOptions>;
   public readonly messageProcessor: MessageProcessor;
-  private readonly _errorManager: ErrorManager;
+  public readonly errorManager: ErrorManager;
 
   constructor(options: SseTransportOptions) {
-    this._options = {
+    this.options = {
       eventSourceUrl: options.eventSourceUrl,
       eventSourceHeaders: options.eventSourceHeaders ?? {},
       EventSource: options.EventSource ?? globalThis.EventSource,
     };
 
-    this._errorManager = new ErrorManager();
+    this.errorManager = new ErrorManager();
     this.messageProcessor = new MessageProcessor((error) =>
-      this._errorManager.handleError(error)
+      this.errorManager.handleError(error)
     );
   }
 
   private _onMessage = (event: MessageEvent) => {
     this.messageProcessor.processMessage(event.data).catch((error) => {
-      this._errorManager.handleError(error);
+      this.errorManager.handleError(error);
     });
   };
 
   private _onError = (_event: Event) => {
-    this._errorManager.handleError(new Error('SSE error occurred'));
+    this.errorManager.handleError(new Error('SSE error occurred'));
   };
 
   public async connect(): Promise<void> {
@@ -163,7 +163,7 @@ export class SseTransport implements McpTransport {
     }
 
     const url = this.buildUrl();
-    this._eventSource = new this._options.EventSource(url.toString());
+    this._eventSource = new this.options.EventSource(url.toString());
     this._eventSource.onmessage = this._onMessage;
     this._eventSource.onerror = this._onError;
 
@@ -171,9 +171,9 @@ export class SseTransport implements McpTransport {
   }
 
   private buildUrl(): URL {
-    const url = new URL(this._options.eventSourceUrl);
+    const url = new URL(this.options.eventSourceUrl);
     for (const [key, value] of Object.entries(
-      this._options.eventSourceHeaders
+      this.options.eventSourceHeaders
     )) {
       url.searchParams.append(key, value);
     }
@@ -212,7 +212,7 @@ export class SseTransport implements McpTransport {
       this._eventSource = null;
     }
     this.messageProcessor.clear();
-    this._errorManager.clear();
+    this.errorManager.clear();
     return Promise.resolve();
   }
 
@@ -233,10 +233,10 @@ export class SseTransport implements McpTransport {
   }
 
   public onError(handler: (error: Error) => void): void {
-    this._errorManager.addHandler(handler);
+    this.errorManager.addHandler(handler);
   }
 
   public offError(handler: (error: Error) => void): void {
-    this._errorManager.removeHandler(handler);
+    this.errorManager.removeHandler(handler);
   }
 }

@@ -1,27 +1,28 @@
 import {
-  type InitializeResult,
   type JSONRPCError,
   type JSONRPCMessage,
   type JSONRPCNotification,
   type JSONRPCRequest,
   type JSONRPCResponse,
-  JSONRPC_VERSION,
-  LATEST_PROTOCOL_VERSION,
   type LoggingLevel,
-  type RequestId,
-  type Result,
-  type ServerCapabilities,
+  type ModelPreferences,
+  type ProgressToken,
   type Prompt,
   type PromptMessage,
-  type PromptArgument,
-  type SamplingMessage,
-  type ModelPreferences,
-  type ResourceReference,
   type PromptReference,
+  type Resource,
+  type ResourceReference,
+  type ResourceTemplate,
+  type SamplingMessage,
+  type ServerCapabilities,
   type Tool,
-  type ProgressToken,
+  type RequestId,
+  type InitializeResult,
+  type Result,
+  JSONRPC_VERSION,
+  LATEST_PROTOCOL_VERSION,
 } from './schema.js';
-import { type BaseSchema, ValiError } from 'valibot';
+import { type BaseSchema, type ValiError } from 'valibot';
 import { object, parse, string } from 'valibot';
 import {
   InvalidParamsError,
@@ -32,9 +33,8 @@ import {
   ServerNotInitializedError,
 } from './errors.js';
 import type { McpTransport } from './transport.js';
-import { Authorization, type AuthOptions } from './auth.js';
+import type { AuthOptions } from './auth.js';
 import {
-  validateResource,
   validatePrompt,
   validateSamplingMessage,
   validateTool,
@@ -162,23 +162,23 @@ export class PromptManager {
    * @param args Argument values
    * @returns Promise that resolves with prompt messages
    */
-  async executePrompt(
+  executePrompt(
     name: string,
     args?: Record<string, string>
   ): Promise<PromptMessage[]> {
     const prompt = this.getPrompt(name);
     if (!prompt) {
-      throw new Error(`Prompt not found: ${name}`);
+      return Promise.reject(new Error(`Prompt ${name} not found`));
     }
 
-    const validationError = this.validateArguments(prompt, args);
-    if (validationError) {
-      throw new Error(validationError);
+    const error = this.validateArguments(prompt, args);
+    if (error) {
+      return Promise.reject(new Error(error));
     }
 
     const executor = this.executors.get(name);
     if (!executor) {
-      throw new Error(`No executor registered for prompt: ${name}`);
+      return Promise.reject(new Error(`No executor for prompt ${name}`));
     }
 
     return executor(args);
@@ -535,10 +535,10 @@ export class CompletionManager {
    * @param value Value to complete
    * @returns Promise that resolves with completion values
    */
-  async getCompletions(
+  getCompletions(
     ref:
       | { type: 'ref/prompt'; name: string }
-      | { type: 'ref/resource'; uri: string },
+      | { type: 'ref/resource'; uriTemplate: string },
     value: string
   ): Promise<string[]> {
     if (ref.type === 'ref/prompt') {
@@ -547,12 +547,12 @@ export class CompletionManager {
         return handler(value);
       }
     } else if (ref.type === 'ref/resource') {
-      const handler = this.resourceCompletions.get(ref.uri);
+      const handler = this.resourceCompletions.get(ref.uriTemplate);
       if (handler) {
         return handler(value);
       }
     }
-    return [];
+    return Promise.resolve([]);
   }
 }
 
@@ -615,21 +615,6 @@ export class Server {
 
     if (this.transport && this.initialized) {
       await this.transport.send({
-        jsonrpc: JSONRPC_VERSION,
-        method: 'notifications/tools/list_changed',
-      });
-    }
-  }
-
-  /**
-   * Removes a tool from the server.
-   * @param name Name of the tool to remove
-   */
-  public removeTool(name: string): void {
-    this.tools.delete(name);
-
-    if (this.transport && this.initialized) {
-      this.transport.send({
         jsonrpc: JSONRPC_VERSION,
         method: 'notifications/tools/list_changed',
       });
@@ -1009,10 +994,10 @@ export class Server {
    * Removes a prompt.
    * @param name Name of the prompt to remove
    */
-  public removePrompt(name: string): void {
+  public async removePrompt(name: string): Promise<void> {
     this.promptManager.unregisterPrompt(name);
     if (this.transport && this.initialized) {
-      this.transport.send({
+      await this.transport.send({
         jsonrpc: JSONRPC_VERSION,
         method: 'notifications/prompts/list_changed',
       });
@@ -1445,24 +1430,26 @@ export class Server {
    * Generates prompt messages.
    * @param prompt Prompt instance
    * @param args Argument values
-   * @returns Array of prompt messages
+   * @returns Promise that resolves with prompt messages
    */
-  private generatePromptMessages(
+  private async generatePromptMessages(
     prompt: Prompt,
     args?: Record<string, string>
-  ): PromptMessage[] {
+  ): Promise<PromptMessage[]> {
     // This is a placeholder implementation
     // In a real implementation, you would:
     // 1. Template the prompt using the arguments
     // 2. Generate any dynamic content
     // 3. Format everything as PromptMessages
-    return [{
-      role: 'assistant',
-      content: {
-        type: 'text',
-        text: `Generated message for prompt ${prompt.name}${args ? ` with args ${JSON.stringify(args)}` : ''}`
-      }
-    }];
+    return [
+      {
+        role: 'assistant',
+        content: {
+          type: 'text',
+          text: `Generated message for prompt ${prompt.name}${args ? ` with args ${JSON.stringify(args)}` : ''}`,
+        },
+      },
+    ];
   }
 
   public async sendProgress(
@@ -1508,10 +1495,10 @@ export class Server {
    * @param resource Resource to register
    * @param content Initial content for the resource
    */
-  public resource(resource: Resource, content: unknown): void {
+  public async resource(resource: Resource, content: unknown): Promise<void> {
     this.resourceManager.registerResource(resource, content);
     if (this.transport && this.initialized) {
-      this.transport.send({
+      await this.transport.send({
         jsonrpc: JSONRPC_VERSION,
         method: 'notifications/resources/list_changed',
       });
@@ -1522,10 +1509,10 @@ export class Server {
    * Registers a new resource template.
    * @param template Resource template to register
    */
-  public resourceTemplate(template: ResourceTemplate): void {
+  public async resourceTemplate(template: ResourceTemplate): Promise<void> {
     this.resourceManager.registerTemplate(template);
     if (this.transport && this.initialized) {
-      this.transport.send({
+      await this.transport.send({
         jsonrpc: JSONRPC_VERSION,
         method: 'notifications/resources/list_changed',
       });
@@ -1574,12 +1561,12 @@ export class McpServer {
    * @param schema Valibot schema for validating tool parameters
    * @param handler Function to execute when the tool is called
    */
-  public tool<T extends BaseSchema>(
+  public async tool<T extends BaseSchema>(
     name: string,
     schema: T,
     handler: (params: unknown) => Promise<unknown>
-  ): void {
-    this.server.tool(name, schema, handler);
+  ): Promise<void> {
+    await this.server.tool(name, schema, handler);
   }
 
   /**
@@ -1587,8 +1574,8 @@ export class McpServer {
    * @param transport Transport instance to connect to
    * @returns Promise that resolves when connected
    */
-  public connect(transport: McpTransport): Promise<void> {
-    return this.server.connect(transport);
+  public async connect(transport: McpTransport): Promise<void> {
+    await this.server.connect(transport);
   }
 
   /**
@@ -1600,5 +1587,42 @@ export class McpServer {
       jsonrpc: JSONRPC_VERSION,
       method: 'disconnect',
     });
+  }
+
+  /**
+   * Registers a new resource.
+   * @param resource Resource to register
+   * @param content Initial content for the resource
+   */
+  public async resource(resource: Resource, content: unknown): Promise<void> {
+    await this.server.resource(resource, content);
+  }
+
+  /**
+   * Registers a new resource template.
+   * @param template Resource template to register
+   */
+  public async resourceTemplate(template: ResourceTemplate): Promise<void> {
+    await this.server.resourceTemplate(template);
+  }
+
+  /**
+   * Registers a new prompt.
+   * @param prompt Prompt to register
+   * @param executor Executor function for the prompt
+   */
+  public async prompt(
+    prompt: Prompt,
+    executor?: (args?: Record<string, string>) => Promise<PromptMessage[]>
+  ): Promise<void> {
+    await this.server.prompt(prompt, executor);
+  }
+
+  /**
+   * Removes a prompt.
+   * @param name Name of the prompt to remove
+   */
+  public async removePrompt(name: string): Promise<void> {
+    await this.server.removePrompt(name);
   }
 }

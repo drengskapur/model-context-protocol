@@ -1,3 +1,23 @@
+import { RequestFailedError, ServerNotInitializedError } from './errors.js';
+import type {
+  ClientCapabilities,
+  InitializeResult,
+  JSONRPCError,
+  JSONRPCMessage,
+  JSONRPCNotification,
+  JSONRPCRequest,
+  JSONRPCResponse,
+  LoggingLevel,
+  ModelPreferences,
+  ProgressToken,
+  Prompt,
+  PromptMessage,
+  SamplingMessage,
+  ServerCapabilities,
+} from './schema.js';
+import { JSONRPC_VERSION, LATEST_PROTOCOL_VERSION } from './schema.js';
+import type { McpTransport, MessageHandler } from './transport.js';
+
 /**
  * Client options for initializing a Model Context Protocol client.
  */
@@ -571,7 +591,7 @@ export class McpClient {
    * @param params Method parameters
    * @returns Prepared JSON-RPC request
    */
-  private prepareRequest(method: string, params?: unknown): JSONRPCRequest {
+  public prepareRequest(method: string, params?: unknown): JSONRPCRequest {
     const request: JSONRPCRequest = {
       jsonrpc: JSONRPC_VERSION,
       id: this.nextMessageId++,
@@ -582,9 +602,7 @@ export class McpClient {
     if (this._authToken) {
       request.params = {
         token: this._authToken,
-        ...(typeof request.params === 'object'
-          ? request.params
-          : { data: request.params }),
+        ...(typeof request.params === 'object' ? request.params : { data: request.params }),
       };
     }
 

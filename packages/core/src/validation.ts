@@ -1,131 +1,166 @@
 import { z } from 'zod';
 import { McpError } from './errors.js';
 
-// Base schemas
+/**
+ * Schema for message roles in the protocol.
+ * Possible values: 'system', 'user', 'assistant'
+ */
 export const roleSchema = z.enum(['system', 'user', 'assistant']);
 
+/**
+ * Schema for message annotations.
+ * Used to provide additional metadata about messages.
+ */
 export const annotationsSchema = z.object({
+  /** Target audience for the message */
   audience: z.array(roleSchema).optional(),
+  /** Priority value between 0 and 1 */
   priority: z.number().min(0).max(1).optional(),
 });
 
-// Content schemas
+/**
+ * Schema for text content in messages.
+ */
 export const textContentSchema = z.object({
+  /** Content type, must be 'text' */
   type: z.literal('text'),
+  /** Text content */
   text: z.string().min(1),
+  /** Optional annotations */
   annotations: annotationsSchema.optional(),
 });
 
+/**
+ * Schema for image content in messages.
+ */
 export const imageContentSchema = z.object({
+  /** Content type, must be 'image' */
   type: z.literal('image'),
+  /** Image data */
   data: z.string().min(1),
+  /** Image MIME type */
   mimeType: z.string().regex(/^image\//),
+  /** Optional annotations */
   annotations: annotationsSchema.optional(),
 });
 
+/**
+ * Schema for message content.
+ * Can be either text or image content.
+ */
 export const contentSchema = z.discriminatedUnion('type', [
   textContentSchema,
   imageContentSchema,
 ]);
 
-// Message schemas
-export const promptMessageSchema = z.object({
+/**
+ * Schema for sampling messages.
+ * Used in model interactions.
+ */
+export const samplingMessageSchema = z.object({
+  /** Message role */
   role: roleSchema,
+  /** Message content */
   content: contentSchema,
 });
 
-// Resource schemas
-export const uriSchema = z.string().url();
-
-export const resourceSchema = z.object({
-  uri: uriSchema,
+/**
+ * Schema for prompts.
+ * Defines a reusable prompt template.
+ */
+export const promptSchema = z.object({
+  /** Prompt name */
   name: z.string().min(1),
+  /** Optional description */
   description: z.string().optional(),
+  /** Optional arguments */
+  arguments: z.array(
+    z.object({
+      /** Argument name */
+      name: z.string().min(1),
+      /** Optional argument description */
+      description: z.string().optional(),
+      /** Optional argument required flag */
+      required: z.boolean().optional(),
+    })
+  ).optional(),
+});
+
+/**
+ * Schema for resources.
+ * Represents a persistent data resource.
+ */
+export const resourceSchema = z.object({
+  /** Resource URI */
+  uri: z.string().url(),
+  /** Resource name */
+  name: z.string().min(1),
+  /** Optional resource description */
+  description: z.string().optional(),
+  /** Resource MIME type */
   mimeType: z.string().min(1),
+  /** Optional resource size */
   size: z.number().nonnegative().optional(),
 });
 
+/**
+ * Schema for resource templates.
+ * Represents a template for generating resources.
+ */
 export const resourceTemplateSchema = z.object({
+  /** Resource URI template */
   uriTemplate: z.string().min(1),
+  /** Resource name */
   name: z.string().min(1),
+  /** Optional resource description */
   description: z.string().optional(),
+  /** Resource MIME type */
   mimeType: z.string().min(1),
 });
 
-// Prompt schemas
-export const promptArgumentSchema = z.object({
-  name: z.string().min(1),
-  description: z.string().optional(),
-  required: z.boolean().optional(),
-});
-
-export const promptSchema = z.object({
-  name: z.string().min(1),
-  description: z.string().optional(),
-  arguments: z.array(promptArgumentSchema).optional(),
-});
-
-// Sampling schemas
-export const modelHintSchema = z.object({
-  name: z.string().optional(),
-});
-
-export const modelPreferencesSchema = z.object({
-  hints: z.array(modelHintSchema).optional(),
-  costPriority: z.number().min(0).max(1).optional(),
-  speedPriority: z.number().min(0).max(1).optional(),
-  intelligencePriority: z.number().min(0).max(1).optional(),
-});
-
-export const samplingMessageSchema = z.object({
-  role: roleSchema,
-  content: contentSchema,
-});
-
-export const createMessageParamsSchema = z.object({
-  messages: z.array(samplingMessageSchema),
-  modelPreferences: modelPreferencesSchema.optional(),
-  systemPrompt: z.string().optional(),
-  includeContext: z.enum(['none', 'thisServer', 'allServers']).optional(),
-  temperature: z.number().min(0).max(1).optional(),
-  maxTokens: z.number().positive(),
-  stopSequences: z.array(z.string()).optional(),
-  metadata: z.record(z.unknown()).optional(),
-});
-
-// Tool schemas
+/**
+ * Schema for tools.
+ * Defines a tool that can be called by the model.
+ */
 export const toolSchema = z.object({
+  /** Tool name */
   name: z.string().min(1),
+  /** Optional tool description */
   description: z.string().optional(),
+  /** Tool input schema */
   inputSchema: z.object({
+    /** Input schema type, must be 'object' */
     type: z.literal('object'),
+    /** Input schema properties */
     properties: z.record(z.unknown()).optional(),
+    /** Input schema required properties */
     required: z.array(z.string()).optional(),
   }),
 });
 
-// Completion schemas
-export const promptReferenceSchema = z.object({
-  type: z.literal('ref/prompt'),
-  name: z.string().min(1),
-});
-
-export const resourceReferenceSchema = z.object({
-  type: z.literal('ref/resource'),
-  uri: uriSchema,
-});
-
+/**
+ * Schema for references.
+ * Can reference either a prompt or a resource.
+ */
 export const referenceSchema = z.discriminatedUnion('type', [
-  promptReferenceSchema,
-  resourceReferenceSchema,
+  z.object({
+    /** Reference type for prompts */
+    type: z.literal('ref/prompt'),
+    /** Prompt name */
+    name: z.string().min(1),
+  }),
+  z.object({
+    /** Reference type for resources */
+    type: z.literal('ref/resource'),
+    /** Resource URI */
+    uri: z.string().url(),
+  }),
 ]);
 
-export const completionArgumentSchema = z.object({
-  name: z.string().min(1),
-  value: z.string(),
-});
-
-// Logging schemas
+/**
+ * Schema for logging levels.
+ * Standard logging levels from debug to emergency.
+ */
 export const loggingLevelSchema = z.enum([
   'debug',
   'info',
@@ -137,25 +172,58 @@ export const loggingLevelSchema = z.enum([
   'emergency',
 ]);
 
-// Error handling
-export class ValidationError extends McpError {
-  readonly errors: z.ZodError;
+/**
+ * Schema for model hints.
+ * Used to provide additional metadata about models.
+ */
+export const modelHintSchema = z.object({
+  /** Model name */
+  name: z.string().optional(),
+});
 
-  constructor(message: string, errors: z.ZodError) {
-    super(-32402, message);
-    this.name = 'ValidationError';
-    this.errors = errors;
-  }
+/**
+ * Schema for model preferences.
+ * Used to define model preferences.
+ */
+export const modelPreferencesSchema = z.object({
+  /** Model hints */
+  hints: z.array(modelHintSchema).optional(),
+  /** Cost priority value between 0 and 1 */
+  costPriority: z.number().min(0).max(1).optional(),
+  /** Speed priority value between 0 and 1 */
+  speedPriority: z.number().min(0).max(1).optional(),
+  /** Intelligence priority value between 0 and 1 */
+  intelligencePriority: z.number().min(0).max(1).optional(),
+});
 
-  toJSON(): object {
-    return {
-      ...super.toJSON(),
-      errors: this.errors.errors,
-    };
-  }
-}
+/**
+ * Schema for create message parameters.
+ * Used to define parameters for creating messages.
+ */
+export const createMessageParamsSchema = z.object({
+  /** Messages to create */
+  messages: z.array(samplingMessageSchema),
+  /** Optional model preferences */
+  modelPreferences: modelPreferencesSchema.optional(),
+  /** Optional system prompt */
+  systemPrompt: z.string().optional(),
+  /** Optional include context flag */
+  includeContext: z.enum(['none', 'thisServer', 'allServers']).optional(),
+  /** Optional temperature value between 0 and 1 */
+  temperature: z.number().min(0).max(1).optional(),
+  /** Maximum number of tokens */
+  maxTokens: z.number().positive(),
+  /** Optional stop sequences */
+  stopSequences: z.array(z.string()).optional(),
+  /** Optional metadata */
+  metadata: z.record(z.unknown()).optional(),
+});
 
-// Validation functions
+/**
+ * Validates a resource object.
+ * @param resource The resource to validate
+ * @throws {ValidationError} If the resource is invalid
+ */
 export async function validateResource(resource: unknown): Promise<void> {
   try {
     await resourceSchema.parseAsync(resource);
@@ -167,6 +235,11 @@ export async function validateResource(resource: unknown): Promise<void> {
   }
 }
 
+/**
+ * Validates a prompt object.
+ * @param prompt The prompt to validate
+ * @throws {ValidationError} If the prompt is invalid
+ */
 export async function validatePrompt(prompt: unknown): Promise<void> {
   try {
     await promptSchema.parseAsync(prompt);
@@ -178,6 +251,11 @@ export async function validatePrompt(prompt: unknown): Promise<void> {
   }
 }
 
+/**
+ * Validates a sampling message object.
+ * @param message The message to validate
+ * @throws {ValidationError} If the message is invalid
+ */
 export async function validateSamplingMessage(message: unknown): Promise<void> {
   try {
     await samplingMessageSchema.parseAsync(message);
@@ -189,6 +267,11 @@ export async function validateSamplingMessage(message: unknown): Promise<void> {
   }
 }
 
+/**
+ * Validates a tool object.
+ * @param tool The tool to validate
+ * @throws {ValidationError} If the tool is invalid
+ */
 export async function validateTool(tool: unknown): Promise<void> {
   try {
     await toolSchema.parseAsync(tool);
@@ -200,6 +283,11 @@ export async function validateTool(tool: unknown): Promise<void> {
   }
 }
 
+/**
+ * Validates a reference object.
+ * @param ref The reference to validate
+ * @throws {ValidationError} If the reference is invalid
+ */
 export async function validateReference(ref: unknown): Promise<void> {
   try {
     await referenceSchema.parseAsync(ref);
@@ -211,6 +299,11 @@ export async function validateReference(ref: unknown): Promise<void> {
   }
 }
 
+/**
+ * Validates a logging level value.
+ * @param level The logging level to validate
+ * @throws {ValidationError} If the level is invalid
+ */
 export async function validateLoggingLevel(level: unknown): Promise<void> {
   try {
     await loggingLevelSchema.parseAsync(level);
@@ -219,5 +312,37 @@ export async function validateLoggingLevel(level: unknown): Promise<void> {
       throw new ValidationError('Invalid logging level', error);
     }
     throw error;
+  }
+}
+
+/**
+ * Error thrown when validation fails.
+ * Contains the Zod validation error details.
+ */
+export class ValidationError extends McpError {
+  readonly errors: z.ZodError;
+
+  /**
+   * Creates a new ValidationError instance.
+   * @param message Error message
+   * @param errors Zod validation error details
+   */
+  constructor(message: string, errors: z.ZodError) {
+    super(-32402, message); // Use custom error code for validation errors
+    this.name = 'ValidationError';
+    this.errors = errors;
+  }
+
+  /**
+   * Converts the error to a JSON-RPC error object.
+   * @returns JSON-RPC error object with validation details
+   */
+  toJSON(): { code: number; message: string; data?: unknown } {
+    return {
+      ...super.toJSON(),
+      data: {
+        errors: this.errors.errors,
+      },
+    };
   }
 }
