@@ -1,5 +1,81 @@
+/**
+ * @file validation.ts
+ * @description Schema validation utilities for the Model Context Protocol.
+ * Provides functions and types for validating protocol messages and data.
+ */
+
 import { z } from 'zod';
 import { McpError } from './errors.js';
+
+/**
+ * Options for configuring validation behavior.
+ */
+export interface ValidationOptions {
+  /**
+   * Whether to allow unknown properties.
+   * @default false
+   */
+  allowUnknown?: boolean;
+
+  /**
+   * Whether to strip unknown properties.
+   * @default true
+   */
+  stripUnknown?: boolean;
+
+  /**
+   * Custom error messages for specific validation failures.
+   */
+  messages?: Record<string, string>;
+}
+
+/**
+ * Result of a validation operation.
+ * Contains validation status and any error details.
+ */
+export interface ValidationResult<T> {
+  /**
+   * Whether validation succeeded.
+   */
+  success: boolean;
+
+  /**
+   * Validated and potentially transformed data.
+   * Only present if validation succeeded.
+   */
+  data?: T;
+
+  /**
+   * Validation errors if validation failed.
+   * Contains detailed information about what went wrong.
+   */
+  errors?: ValidationError[];
+}
+
+/**
+ * Detailed information about a validation error.
+ */
+export interface ValidationError {
+  /**
+   * Path to the invalid property.
+   */
+  path: string[];
+
+  /**
+   * Error message describing the validation failure.
+   */
+  message: string;
+
+  /**
+   * Type of validation that failed.
+   */
+  type: string;
+
+  /**
+   * Value that failed validation.
+   */
+  value?: unknown;
+}
 
 /**
  * Schema for message roles in the protocol.
@@ -288,14 +364,19 @@ export async function validateTool(tool: unknown): Promise<void> {
  * @param ref The reference to validate
  * @throws {ValidationError} If the reference is invalid
  */
-export async function validateReference(ref: unknown): Promise<void> {
-  try {
-    await referenceSchema.parseAsync(ref);
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      throw new ValidationError('Invalid reference', error);
+export async function validateReference(
+  ref: { type: 'ref/prompt'; name: string } | { type: 'ref/resource'; uriTemplate: string }
+): Promise<void> {
+  if (ref.type === 'ref/prompt') {
+    if (!ref.name) {
+      throw new ValidationError('Prompt reference must have a name', new Error('Missing name'));
     }
-    throw error;
+  } else if (ref.type === 'ref/resource') {
+    if (!ref.uriTemplate) {
+      throw new ValidationError('Resource reference must have a uriTemplate', new Error('Missing uriTemplate'));
+    }
+  } else {
+    throw new ValidationError('Invalid reference type', new Error('Unknown reference type'));
   }
 }
 

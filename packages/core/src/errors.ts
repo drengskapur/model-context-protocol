@@ -1,4 +1,10 @@
 /**
+ * @file errors.ts
+ * @description Custom error classes for the Model Context Protocol.
+ * Defines specific error types for various failure scenarios.
+ */
+
+/**
  * Base error class for Model Context Protocol errors.
  * All MCP errors extend from this class.
  */
@@ -181,6 +187,33 @@ export class RequestFailedError extends McpError {
   constructor(message = 'Request failed') {
     super(REQUEST_FAILED, message);
     this.name = 'RequestFailedError';
+    Error.captureStackTrace(this, this.constructor);
+  }
+}
+
+/**
+ * Error thrown when attempting operations before initialization.
+ * The client must successfully initialize before most operations.
+ */
+export class ServerNotInitializedError extends McpError {
+  constructor() {
+    super('Server not initialized');
+  }
+}
+
+/**
+ * Error thrown when there are transport-level issues.
+ * Indicates problems with the underlying communication channel.
+ */
+export class TransportError extends McpError {
+  /**
+   * Creates a new transport error.
+   * @param message Error description
+   * @param cause Original error that caused the transport failure
+   */
+  constructor(message: string, public readonly cause?: unknown) {
+    super(INTERNAL_ERROR, message, cause);
+    this.name = 'TransportError';
     Error.captureStackTrace(this, this.constructor);
   }
 }

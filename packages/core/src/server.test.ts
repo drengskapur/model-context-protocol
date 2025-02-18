@@ -10,8 +10,13 @@ import {
 } from './server.js';
 import type { McpTransport, MessageHandler } from './transport.js';
 
+/**
+ * Test interface for greeting parameters.
+ */
 interface GreetParams {
+  /** Name parameter */
   name: string;
+  /** Age parameter */
   age: number;
 }
 
@@ -20,61 +25,125 @@ const _greetSchema = object({
   age: number(),
 });
 
+/**
+ * Test transport implementation for simulating message handling.
+ * Wraps an InMemoryTransport and adds message tracking capabilities.
+ */
 class TestTransport implements McpTransport {
+  /** Underlying transport instance */
   public transport: InMemoryTransport;
+  /** Message queue for tracking sent messages */
   public messages: JSONRPCMessage[] = [];
 
   constructor() {
     this.transport = new InMemoryTransport();
   }
 
+  /**
+   * Simulates connecting to the transport.
+   * @returns Promise that resolves when connected
+   */
   async connect(): Promise<void> {
     await this.transport.connect();
   }
 
+  /**
+   * Simulates disconnecting from the transport.
+   * @returns Promise that resolves when disconnected
+   */
   async disconnect(): Promise<void> {
     await this.transport.disconnect();
   }
 
+  /**
+   * Checks if the transport is connected.
+   * @returns true if connected, false otherwise
+   */
+  isConnected(): boolean {
+    return this.transport.isConnected();
+  }
+
+  /**
+   * Simulates sending a message through the transport.
+   * Also tracks the message in the messages array.
+   * @param message Message to send
+   * @returns Promise that resolves when sent
+   */
   async send(message: JSONRPCMessage): Promise<void> {
     await this.transport.send(message);
     this.messages.push(message);
   }
 
+  /**
+   * Registers a message handler.
+   * @param handler Handler function to register
+   */
   onMessage(handler: MessageHandler): void {
     this.transport.onMessage(handler);
   }
 
+  /**
+   * Unregisters a message handler.
+   * @param handler Handler function to unregister
+   */
   offMessage(handler: MessageHandler): void {
     this.transport.offMessage(handler);
   }
 
+  /**
+   * Registers an error handler.
+   * @param handler Handler function to register
+   */
   onError(handler: (error: Error) => void): void {
     this.transport.onError(handler);
   }
 
+  /**
+   * Unregisters an error handler.
+   * @param handler Handler function to unregister
+   */
   offError(handler: (error: Error) => void): void {
     this.transport.offError(handler);
   }
 
-  async close(): Promise<void> {
-    await this.transport.close();
-  }
-
-  async simulateIncomingMessage(message: JSONRPCMessage): Promise<void> {
-    await this.transport.simulateIncomingMessage(message);
-  }
-
+  /**
+   * Gets all messages sent through this transport.
+   * @returns Array of sent messages
+   */
   getMessages(): JSONRPCMessage[] {
-    return this.transport.getMessages();
+    return this.messages;
   }
 
+  /**
+   * Clears all sent messages.
+   */
   clearMessages(): void {
     this.transport.clearMessages();
     this.messages = [];
   }
+
+  /**
+   * Simulates an incoming message from the other transport.
+   * @param message Message to simulate
+   * @returns Promise that resolves when processed
+   */
+  async simulateIncomingMessage(message: JSONRPCMessage): Promise<void> {
+    await this.transport.simulateIncomingMessage(message);
+  }
+
+  /**
+   * Closes the transport.
+   * @returns Promise that resolves when closed
+   */
+  async close(): Promise<void> {
+    await this.transport.close();
+  }
 }
 
+/**
+ * Test suite for the Server class.
+ * Tests server initialization, message handling, and various protocol features.
+ */
 describe('Server', () => {
   let server: Server;
   let transport: TestTransport;
@@ -89,235 +158,390 @@ describe('Server', () => {
     await server.connect(transport);
   });
 
-  it('should handle initialization', async () => {
-    const testPrompt: Prompt = {
-      name: 'test-prompt',
-      description: 'A test prompt',
-      arguments: [
-        {
-          name: 'arg1',
-          description: 'First argument',
-          required: true,
-        },
-      ],
-    };
-
-    server.prompt(testPrompt);
-
-    await transport.simulateIncomingMessage({
-      jsonrpc: JSONRPC_VERSION,
-      id: 1,
-      method: 'initialize',
-      params: {
-        protocolVersion: LATEST_PROTOCOL_VERSION,
-        capabilities: {},
-      },
-    });
-
-    await transport.simulateIncomingMessage({
-      jsonrpc: JSONRPC_VERSION,
-      id: 2,
-      method: 'prompts/list',
-      params: {},
-    });
-
-    const messages = transport.getMessages();
-
-    // Verify initialization response
-    expect(messages[0]).toMatchObject({
-      jsonrpc: JSONRPC_VERSION,
-      id: 1,
-      result: {
-        protocolVersion: LATEST_PROTOCOL_VERSION,
-        serverInfo: {
-          name: 'test-server',
-          version: '1.0.0',
-        },
-        capabilities: {},
-      },
-    });
-
-    // Verify prompts list response
-    expect(messages[1]).toMatchObject({
-      jsonrpc: JSONRPC_VERSION,
-      id: 2,
-      result: {
-        prompts: [testPrompt],
-      },
-    });
-
-    // Test getting a prompt
-    await transport.simulateIncomingMessage({
-      jsonrpc: JSONRPC_VERSION,
-      id: 3,
-      method: 'prompts/get',
-      params: {
+  /**
+   * Tests server initialization and basic message handling.
+   */
+  describe('initialization', () => {
+    /**
+     * Tests that the server handles initialization correctly.
+     * Verifies protocol version negotiation and capability exchange.
+     */
+    it('should handle initialization correctly', async () => {
+      const testPrompt: Prompt = {
         name: 'test-prompt',
-        arguments: {
-          arg1: 'test-value',
-        },
-      },
-    });
-
-    // Test executing a prompt
-    await transport.simulateIncomingMessage({
-      jsonrpc: JSONRPC_VERSION,
-      id: 4,
-      method: 'prompts/execute',
-      params: {
-        name: 'test-prompt',
-        arguments: {
-          arg1: 'test-value',
-        },
-      },
-    });
-
-    // Test getting a non-existent prompt
-    await transport.simulateIncomingMessage({
-      jsonrpc: JSONRPC_VERSION,
-      id: 5,
-      method: 'prompts/get',
-      params: {
-        name: 'non-existent-prompt',
-      },
-    });
-
-    // Test getting a prompt without required argument
-    await transport.simulateIncomingMessage({
-      jsonrpc: JSONRPC_VERSION,
-      id: 6,
-      method: 'prompts/get',
-      params: {
-        name: 'test-prompt',
-        // Missing required arg1
-      },
-    });
-
-    // Test executing a prompt without required argument
-    await transport.simulateIncomingMessage({
-      jsonrpc: JSONRPC_VERSION,
-      id: 7,
-      method: 'prompts/execute',
-      params: {
-        name: 'test-prompt',
-        // Missing required arg1
-      },
-    });
-
-    const messagesAfter = transport.getMessages();
-
-    // Verify get prompt response
-    expect(messagesAfter[2]).toMatchObject({
-      jsonrpc: JSONRPC_VERSION,
-      id: 3,
-      result: {
         description: 'A test prompt',
-        messages: expect.any(Array),
-      },
+        arguments: [
+          {
+            name: 'arg1',
+            description: 'First argument',
+            required: true,
+          },
+        ],
+      };
+
+      server.prompt(testPrompt);
+
+      await transport.simulateIncomingMessage({
+        jsonrpc: JSONRPC_VERSION,
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: LATEST_PROTOCOL_VERSION,
+          capabilities: {},
+        },
+      });
+
+      await transport.simulateIncomingMessage({
+        jsonrpc: JSONRPC_VERSION,
+        id: 2,
+        method: 'prompts/list',
+        params: {},
+      });
+
+      const messages = transport.getMessages();
+
+      // Verify initialization response
+      expect(messages[0]).toMatchObject({
+        jsonrpc: JSONRPC_VERSION,
+        id: 1,
+        result: {
+          protocolVersion: LATEST_PROTOCOL_VERSION,
+          serverInfo: {
+            name: 'test-server',
+            version: '1.0.0',
+          },
+          capabilities: {},
+        },
+      });
+
+      // Verify prompts list response
+      expect(messages[1]).toMatchObject({
+        jsonrpc: JSONRPC_VERSION,
+        id: 2,
+        result: {
+          prompts: [testPrompt],
+        },
+      });
+
+      // Test getting a prompt
+      await transport.simulateIncomingMessage({
+        jsonrpc: JSONRPC_VERSION,
+        id: 3,
+        method: 'prompts/get',
+        params: {
+          name: 'test-prompt',
+          arguments: {
+            arg1: 'test-value',
+          },
+        },
+      });
+
+      // Test executing a prompt
+      await transport.simulateIncomingMessage({
+        jsonrpc: JSONRPC_VERSION,
+        id: 4,
+        method: 'prompts/execute',
+        params: {
+          name: 'test-prompt',
+          arguments: {
+            arg1: 'test-value',
+          },
+        },
+      });
+
+      // Test getting a non-existent prompt
+      await transport.simulateIncomingMessage({
+        jsonrpc: JSONRPC_VERSION,
+        id: 5,
+        method: 'prompts/get',
+        params: {
+          name: 'non-existent-prompt',
+        },
+      });
+
+      // Test getting a prompt without required argument
+      await transport.simulateIncomingMessage({
+        jsonrpc: JSONRPC_VERSION,
+        id: 6,
+        method: 'prompts/get',
+        params: {
+          name: 'test-prompt',
+          // Missing required arg1
+        },
+      });
+
+      // Test executing a prompt without required argument
+      await transport.simulateIncomingMessage({
+        jsonrpc: JSONRPC_VERSION,
+        id: 7,
+        method: 'prompts/execute',
+        params: {
+          name: 'test-prompt',
+          // Missing required arg1
+        },
+      });
+
+      const messagesAfter = transport.getMessages();
+
+      // Verify get prompt response
+      expect(messagesAfter[2]).toMatchObject({
+        jsonrpc: JSONRPC_VERSION,
+        id: 3,
+        result: {
+          description: 'A test prompt',
+          messages: expect.any(Array),
+        },
+      });
+
+      // Verify execute prompt response
+      expect(messagesAfter[3]).toMatchObject({
+        jsonrpc: JSONRPC_VERSION,
+        id: 4,
+        result: {
+          messages: expect.any(Array),
+        },
+      });
+
+      // Verify non-existent prompt error
+      expect(messagesAfter[4]).toMatchObject({
+        jsonrpc: JSONRPC_VERSION,
+        id: 5,
+        error: {
+          code: -32602,
+          message: 'Prompt not found: non-existent-prompt',
+        },
+      });
+
+      // Verify missing argument error for get
+      expect(messagesAfter[5]).toMatchObject({
+        jsonrpc: JSONRPC_VERSION,
+        id: 6,
+        error: {
+          code: -32602,
+          message: 'Missing required argument: arg1',
+        },
+      });
+
+      // Verify missing argument error for execute
+      expect(messagesAfter[6]).toMatchObject({
+        jsonrpc: JSONRPC_VERSION,
+        id: 7,
+        error: {
+          code: -32602,
+          message: 'Missing required argument: arg1',
+        },
+      });
     });
 
-    // Verify execute prompt response
-    expect(messagesAfter[3]).toMatchObject({
-      jsonrpc: JSONRPC_VERSION,
-      id: 4,
-      result: {
-        messages: expect.any(Array),
-      },
-    });
+    /**
+     * Tests that the server rejects initialization with an incompatible protocol version.
+     */
+    it('should reject incompatible protocol version', async () => {
+      await transport.simulateIncomingMessage({
+        jsonrpc: JSONRPC_VERSION,
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '0.1.0',
+          capabilities: {},
+        },
+      });
 
-    // Verify non-existent prompt error
-    expect(messagesAfter[4]).toMatchObject({
-      jsonrpc: JSONRPC_VERSION,
-      id: 5,
-      error: {
-        code: -32602,
-        message: 'Prompt not found: non-existent-prompt',
-      },
-    });
-
-    // Verify missing argument error for get
-    expect(messagesAfter[5]).toMatchObject({
-      jsonrpc: JSONRPC_VERSION,
-      id: 6,
-      error: {
-        code: -32602,
-        message: 'Missing required argument: arg1',
-      },
-    });
-
-    // Verify missing argument error for execute
-    expect(messagesAfter[6]).toMatchObject({
-      jsonrpc: JSONRPC_VERSION,
-      id: 7,
-      error: {
-        code: -32602,
-        message: 'Missing required argument: arg1',
-      },
+      expect(transport.messages[0]).toMatchObject({
+        jsonrpc: JSONRPC_VERSION,
+        id: 1,
+        error: {
+          code: -32600,
+          message: `Protocol version mismatch. Server: ${LATEST_PROTOCOL_VERSION}, Client: 0.1.0`,
+        },
+      });
     });
   });
 
-  it('should register and expose tools', async () => {
-    const schema = object({
-      name: string(),
-      age: number(),
+  /**
+   * Tests prompt-related functionality.
+   */
+  describe('prompts', () => {
+    /**
+     * Tests registering and listing prompts.
+     */
+    it('should handle prompts correctly', async () => {
+      const testPrompt: Prompt = {
+        name: 'test-prompt',
+        description: 'A test prompt',
+        arguments: [
+          {
+            name: 'arg1',
+            description: 'First argument',
+          },
+        ],
+      };
+
+      server.prompt(testPrompt);
+
+      await transport.simulateIncomingMessage({
+        jsonrpc: JSONRPC_VERSION,
+        id: 2,
+        method: 'prompts/list',
+        params: {},
+      });
+
+      const messages = transport.getMessages();
+      expect(messages[0]).toMatchObject({
+        jsonrpc: JSONRPC_VERSION,
+        id: 2,
+        result: {
+          prompts: [testPrompt],
+        },
+      });
     });
 
-    await server.tool('greet', schema, (params: unknown) => {
-      const typedParams = params as GreetParams;
-      return Promise.resolve(
-        `Hello, ${typedParams.name}! You are ${typedParams.age} years old.`
-      );
-    });
+    /**
+     * Tests prompt execution with arguments.
+     */
+    it('should execute prompts with arguments', async () => {
+      const testPrompt: Prompt = {
+        name: 'test-prompt',
+        arguments: [
+          {
+            name: 'arg1',
+            description: 'First argument',
+          },
+        ],
+      };
 
-    await transport.simulateIncomingMessage({
-      jsonrpc: JSONRPC_VERSION,
-      id: 1,
-      method: 'initialize',
-      params: {
-        protocolVersion: LATEST_PROTOCOL_VERSION,
-        capabilities: {},
-      },
-    });
+      server.prompt(testPrompt, async (args) => {
+        return [{
+          role: 'assistant',
+          content: {
+            type: 'text',
+            text: `Using arg1: ${args?.arg1}`,
+          },
+        }];
+      });
 
-    await transport.simulateIncomingMessage({
-      jsonrpc: JSONRPC_VERSION,
-      id: 2,
-      method: 'tools/list',
-      params: {},
-    });
+      await transport.simulateIncomingMessage({
+        jsonrpc: JSONRPC_VERSION,
+        id: 3,
+        method: 'prompts/execute',
+        params: {
+          name: 'test-prompt',
+          arguments: {
+            arg1: 'test value',
+          },
+        },
+      });
 
-    const messages = transport.getMessages();
-    expect(messages[1]).toMatchObject({
-      jsonrpc: JSONRPC_VERSION,
-      id: 2,
-      result: {
-        tools: ['greet'],
-      },
+      const messages = transport.getMessages();
+      expect(messages[0]).toMatchObject({
+        jsonrpc: JSONRPC_VERSION,
+        id: 3,
+        result: {
+          messages: [{
+            role: 'assistant',
+            content: {
+              type: 'text',
+              text: 'Using arg1: test value',
+            },
+          }],
+        },
+      });
     });
   });
 
+  /**
+   * Tests tool-related functionality.
+   */
+  describe('tools', () => {
+    /**
+     * Tests registering and executing tools.
+     */
+    it('should handle tools correctly', async () => {
+      const schema = object({
+        name: string(),
+        age: number(),
+      });
+
+      await server.tool('greet', schema, (params: unknown) => {
+        const typedParams = params as GreetParams;
+        return Promise.resolve(`Hello, ${typedParams.name}! You are ${typedParams.age} years old.`);
+      });
+
+      await transport.simulateIncomingMessage({
+        jsonrpc: JSONRPC_VERSION,
+        id: 4,
+        method: 'tools/execute',
+        params: {
+          name: 'greet',
+          params: {
+            name: 'Alice',
+            age: 25,
+          },
+        },
+      });
+
+      const messages = transport.getMessages();
+      expect(messages[0]).toMatchObject({
+        jsonrpc: JSONRPC_VERSION,
+        id: 4,
+        result: 'Hello, Alice! You are 25 years old.',
+      });
+    });
+
+    /**
+     * Tests tool parameter validation.
+     */
+    it('should validate tool parameters', async () => {
+      const schema = object({
+        name: string(),
+        age: number(),
+      });
+
+      await server.tool('greet', schema, (params: unknown) => {
+        const typedParams = params as GreetParams;
+        return Promise.resolve(`Hello, ${typedParams.name}! You are ${typedParams.age} years old.`);
+      });
+
+      await transport.simulateIncomingMessage({
+        jsonrpc: JSONRPC_VERSION,
+        id: 5,
+        method: 'tools/execute',
+        params: {
+          name: 'greet',
+          params: {
+            name: 'Alice',
+            age: 'twenty-five', // Invalid type
+          },
+        },
+      });
+
+      const messages = transport.getMessages();
+      expect(messages[0]).toMatchObject({
+        jsonrpc: JSONRPC_VERSION,
+        id: 5,
+        error: {
+          code: -32602,
+          message: expect.stringContaining('Invalid params'),
+        },
+      });
+    });
+  });
+
+  /**
+   * Tests unknown tool handling.
+   */
   it('should handle unknown tools', async () => {
     await transport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
       id: 1,
-      method: 'initialize',
-      params: {
-        protocolVersion: LATEST_PROTOCOL_VERSION,
-        capabilities: {},
-      },
-    });
-
-    await transport.simulateIncomingMessage({
-      jsonrpc: JSONRPC_VERSION,
-      id: 2,
       method: 'unknown-tool',
       params: {},
     });
 
     const messages = transport.getMessages();
-    expect(messages[1]).toMatchObject({
+    expect(messages[0]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
-      id: 2,
+      id: 1,
       error: {
         code: -32601,
         message: 'Method not found',
@@ -325,6 +549,9 @@ describe('Server', () => {
     });
   });
 
+  /**
+   * Tests invalid parameter rejection.
+   */
   it('should reject invalid parameters', async () => {
     const schema = object({
       name: string(),
@@ -333,9 +560,7 @@ describe('Server', () => {
 
     await server.tool('greet', schema, (params: unknown) => {
       const typedParams = params as GreetParams;
-      return Promise.resolve(
-        `Hello, ${typedParams.name}! You are ${typedParams.age} years old.`
-      );
+      return Promise.resolve(`Hello, ${typedParams.name}! You are ${typedParams.age} years old.`);
     });
 
     await transport.simulateIncomingMessage({
@@ -369,6 +594,9 @@ describe('Server', () => {
     });
   });
 
+  /**
+   * Tests error responses with null id.
+   */
   it('should handle error responses with null id', async () => {
     const errorHandler = vi.fn();
     transport.onError(errorHandler);
@@ -382,6 +610,9 @@ describe('Server', () => {
     expect(errorHandler).toHaveBeenCalled();
   });
 
+  /**
+   * Tests protocol version mismatch handling.
+   */
   it('should handle protocol version mismatch', async () => {
     await server.connect(transport.transport);
 
@@ -405,6 +636,9 @@ describe('Server', () => {
     });
   });
 
+  /**
+   * Tests logging level setting when supported.
+   */
   it('should handle logging level setting when supported', async () => {
     server = new Server({
       name: 'test-server',
@@ -456,6 +690,9 @@ describe('Server', () => {
     });
   });
 
+  /**
+   * Tests logging rejection when not supported.
+   */
   it('should reject logging when not supported', async () => {
     await server.connect(transport.transport);
 
@@ -490,6 +727,9 @@ describe('Server', () => {
     });
   });
 
+  /**
+   * Tests logging level priority.
+   */
   it('should respect logging level priority', async () => {
     server = new Server({
       name: 'test-server',
@@ -547,6 +787,9 @@ describe('Server', () => {
     ]);
   });
 
+  /**
+   * Tests resource operations.
+   */
   it('should handle resource operations', async () => {
     server = new Server({
       name: 'test-server',
@@ -669,6 +912,9 @@ describe('Server', () => {
     });
   });
 
+  /**
+   * Tests resource errors.
+   */
   it('should handle resource errors', async () => {
     server = new Server({
       name: 'test-server',
@@ -750,6 +996,9 @@ describe('Server', () => {
     });
   });
 
+  /**
+   * Tests disconnect handling.
+   */
   it('should handle disconnect', async () => {
     const server = new McpServer({
       name: 'test-server',
@@ -770,6 +1019,9 @@ describe('Server', () => {
     });
   });
 
+  /**
+   * Tests message handler error handling.
+   */
   it('should handle message handler errors gracefully', async () => {
     const messageHandler = vi.fn().mockImplementation(() => {
       throw new Error('Handler error');
@@ -785,6 +1037,9 @@ describe('Server', () => {
     expect(messageHandler).toHaveBeenCalled();
   });
 
+  /**
+   * Tests error handler error handling.
+   */
   it('should handle error handler errors gracefully', async () => {
     const errorHandler = vi.fn().mockImplementation(() => {
       throw new Error('Handler error');
@@ -800,6 +1055,9 @@ describe('Server', () => {
     expect(errorHandler).toHaveBeenCalled();
   });
 
+  /**
+   * Tests message handler removal.
+   */
   it('should handle message handler removal', async () => {
     const messageHandler = vi.fn();
     transport.onMessage(messageHandler);

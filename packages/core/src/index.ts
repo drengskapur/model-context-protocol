@@ -1,7 +1,13 @@
-// Export core protocol schema
+/**
+ * @file index.ts
+ * @description Entry point for the Model Context Protocol core package.
+ * Exports all public types, interfaces, and implementations.
+ */
+
+// Export core protocol schema and types
 export * from './schema.js';
 
-// Export validation schemas
+// Export validation schemas for JSON-RPC messages
 export {
   jsonRpcRequestSchema,
   jsonRpcNotificationSchema,
@@ -15,18 +21,20 @@ export {
   promptMessageSchema,
 } from './schemas.js';
 
-// Export implementations
+// Export main client and server implementations
 export { McpServer } from './server.js';
 export { McpClient } from './client.js';
+
+// Export transport layer interfaces and implementations
 export { McpTransport, MessageHandler } from './transport.js';
 export { InMemoryTransport } from './in-memory.js';
 
-// Export authorization types and classes
+// Export authorization types and utilities
 export * from './auth.js';
 
-// Export transports
+// Export built-in transport implementations
 export * from './transports/stdio.js';
 export * from './transports/sse.js';
 
-// Export sampling types and classes
+// Export sampling types and utilities
 export * from './sampling.js';

@@ -103,39 +103,3 @@ const auth = new Authorization({
 const token = auth.generateToken('user-123', ['user']);
 await auth.verifyPermission(token, ['admin']); // false
 ```
-
-## Contributing
-
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
-
-### Development
-
-```bash
-# Install dependencies
-pnpm install
-
-# Run tests
-pnpm test
-
-# Build
-pnpm build
-
-# Lint
-pnpm lint
-```
-
-### Project Structure
-
-```
-packages/
-  core/           # Core protocol implementation
-    src/          # Source code
-    test/         # Tests
-    package.json  # Package config
-  examples/       # Example implementations
-docs/            # Documentation
-```
-
-## License
-
-MIT 
