@@ -6,13 +6,9 @@
 
 import { EventEmitter } from 'node:events';
 import { VError } from 'verror';
-import type {
-  JSONRPCMessage,
-  JSONRPCRequest,
-  JSONRPCResponse,
-} from './schema.js';
-import type { McpTransport, MessageHandler } from './transport.js';
 import { InMemoryTransport } from './in-memory.js';
+import type { JSONRPCMessage, JSONRPCRequest } from './schema.js';
+import type { McpTransport, MessageHandler } from './transport.js';
 
 /**
  * Client options for Model Context Protocol.
@@ -105,7 +101,10 @@ export class McpClient {
   /**
    * Send a request to the server
    */
-  public async request<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T> {
+  public async request<T = unknown>(
+    method: string,
+    params?: Record<string, unknown>
+  ): Promise<T> {
     if (!this.initialized) {
       throw new VError('Client not initialized');
     }
@@ -119,12 +118,12 @@ export class McpClient {
 
     return new Promise((resolve, reject) => {
       try {
-        const handler: MessageHandler = async (msg: unknown): Promise<void> => {
+        const handler: MessageHandler = (msg: unknown): Promise<void> => {
           if (!this.isJSONRPCMessage(msg)) {
             return;
           }
           const message = msg as JSONRPCMessage;
-          
+
           if ('id' in message && message.id === request.id) {
             this.transport.offMessage(handler);
 
@@ -162,7 +161,10 @@ export class McpClient {
   /**
    * Send a notification to the server
    */
-  public async notify(method: string, params?: Record<string, unknown>): Promise<void> {
+  public async notify(
+    method: string,
+    params?: Record<string, unknown>
+  ): Promise<void> {
     if (!this.initialized) {
       throw new VError('Client not initialized');
     }
@@ -256,14 +258,14 @@ export class McpClient {
   /**
    * Lists available tools.
    */
-  async listTools(): Promise<Array<{ name: string; description: string }>> {
+  listTools(): Promise<Array<{ name: string; description: string }>> {
     return this.request('tools/list');
   }
 
   /**
    * Lists available prompts.
    */
-  async listPrompts(): Promise<Array<{ name: string; description: string }>> {
+  listPrompts(): Promise<Array<{ name: string; description: string }>> {
     if (!this.hasCapability('prompts')) {
       throw new VError('Server does not support prompts');
     }
@@ -274,7 +276,7 @@ export class McpClient {
    * Gets a prompt by name.
    * @param name Prompt name
    */
-  async getPrompt(name: string): Promise<unknown> {
+  getPrompt(name: string): Promise<unknown> {
     if (!this.hasCapability('prompts')) {
       throw new VError('Server does not support prompts');
     }
@@ -310,7 +312,7 @@ export class McpClient {
    * Reads a resource.
    * @param name Resource name
    */
-  async readResource<T = unknown>(name: string): Promise<T> {
+  readResource<T = unknown>(name: string): Promise<T> {
     if (!this.hasCapability('resources')) {
       throw new VError('Server does not support resources');
     }
@@ -434,9 +436,9 @@ export class McpClient {
    * Handles an incoming message.
    * @param message Incoming message
    */
-  private async handleMessage(message: unknown): Promise<void> {
+  private handleMessage(message: unknown): Promise<void> {
     if (!this.isJSONRPCMessage(message)) {
-      return;
+      return Promise.resolve();
     }
 
     // Handle the message
@@ -446,6 +448,7 @@ export class McpClient {
       // Handle method calls
       this.events.emit('method', message);
     }
+    return Promise.resolve();
   }
 
   private isJSONRPCMessage(message: unknown): message is JSONRPCMessage {
@@ -468,7 +471,11 @@ export class McpClient {
 
     let current = this.serverCapabilities;
     for (const part of path.split('.')) {
-      if (typeof current !== 'object' || current === null || !(part in current)) {
+      if (
+        typeof current !== 'object' ||
+        current === null ||
+        !(part in current)
+      ) {
         return false;
       }
       current = current[part] as Record<string, unknown>;

@@ -4,10 +4,10 @@
  * Provides a transport that uses process stdin/stdout for communication.
  */
 
-import { VError } from 'verror';
 import type { Readable, Writable } from 'node:stream';
-import { BaseTransport } from './transport';
+import { VError } from 'verror';
 import type { JSONRPCRequest, JSONRPCResponse } from './schema';
+import { BaseTransport } from './transport';
 
 /**
  * Options for StdioTransport.
@@ -130,13 +130,13 @@ export class StdioTransport extends BaseTransport {
    */
   private processBuffer(): void {
     const lines = this.buffer.split(this.options.separator);
-    
+
     // Keep the last line if it's incomplete
     this.buffer = lines.pop() || '';
 
     for (const line of lines) {
       if (!line) continue;
-      
+
       try {
         const message = JSON.parse(line);
         this.handleMessage(message);

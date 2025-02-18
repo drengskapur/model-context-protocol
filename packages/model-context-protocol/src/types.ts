@@ -157,13 +157,12 @@ export interface Request {
   };
 }
 
-export interface Result {
+export interface JSONRPCResult {
   /**
    * This result property is reserved by the protocol to allow clients and servers
-   * to attach additional metadata to their responses.
+   * to include custom data in the result that is not specified by the method.
    */
-  _meta?: { [key: string]: unknown };
-  [key: string]: unknown;
+  result: unknown;
 }
 
 export interface JSONRPCRequest extends Request {
@@ -187,7 +186,7 @@ export interface JSONRPCNotification {
 export interface JSONRPCResponse {
   jsonrpc: typeof JSONRPC_VERSION;
   id: RequestId;
-  result: Result;
+  result: JSONRPCResult;
 }
 
 export interface JSONRPCErrorResponse {
@@ -255,7 +254,7 @@ const notificationSchema = object({
 const responseSchema = object({
   jsonrpc: literal(JSONRPC_VERSION),
   id: union([string(), number()]),
-  result: record(string(), unknown()),
+  result: JSONRPCResult,
   method: optional(never()),
   params: optional(never()),
   error: optional(never()),

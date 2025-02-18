@@ -35,7 +35,10 @@ class TestTransport extends BaseTransport {
     return Promise.resolve();
   }
 
-  async request<T>(method: string, params?: Record<string, unknown>): Promise<T> {
+  async request<T>(
+    method: string,
+    params?: Record<string, unknown>
+  ): Promise<T> {
     const request: JSONRPCRequest = {
       jsonrpc: JSONRPC_VERSION,
       id: Math.random().toString(36).slice(2),

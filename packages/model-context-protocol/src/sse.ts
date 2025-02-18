@@ -4,32 +4,26 @@
  * Provides a transport that uses SSE for communication.
  */
 
-import { VError } from 'verror';
-import { Session, Channel as BetterSseChannel, createSession } from 'better-sse';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { BaseTransport } from './transport';
+import {
+  Channel,
+  type Session,
+  createSession,
+} from 'better-sse';
+import { VError } from 'verror';
 import type { JSONRPCRequest, JSONRPCResponse } from './schema';
+import { BaseTransport } from './transport';
 
 /**
  * Options for SSE transport.
  */
 export interface SseTransportOptions {
-  /**
-   * HTTP request object.
-   */
+  /** Request object from HTTP server */
   req: IncomingMessage;
-
-  /**
-   * HTTP response object.
-   */
+  /** Response object from HTTP server */
   res: ServerResponse;
-
-  /**
-   * Channel name for broadcasting.
-   * If provided, messages will be broadcast to all clients in the channel.
-   */
+  /** Optional channel name for broadcasting */
   channel?: string;
-
   /**
    * Whether to automatically reconnect.
    * @default true
@@ -54,17 +48,13 @@ export interface SseTransportOptions {
   headers?: Record<string, string>;
 }
 
-interface Channel extends EventTarget {
-  close(): void;
-}
-
 /**
  * SSE transport implementation using better-sse.
  */
 export class SseTransport extends BaseTransport {
   private readonly options: Required<SseTransportOptions>;
   private session: Session | null = null;
-  private channel: BetterSseChannel | null = null;
+  private channel: Channel | null = null;
 
   constructor(options: SseTransportOptions) {
     super();
@@ -97,7 +87,7 @@ export class SseTransport extends BaseTransport {
 
       // Join channel if specified
       if (this.options.channel) {
-        this.channel = new BetterSseChannel();
+        this.channel = new Channel();
         this.channel.register(this.session);
       }
 
@@ -118,17 +108,13 @@ export class SseTransport extends BaseTransport {
    */
   disconnect(): Promise<void> {
     try {
-      if (this.channel) {
-        this.channel.close();
-        this.channel = null;
-      }
-      if (this.session) {
-        this.session.close();
-        this.session = null;
-      }
+      this.session?.close();
+      this.channel?.close();
       return Promise.resolve();
     } catch (error) {
-      return Promise.reject(new VError(error as Error, 'Failed to disconnect SSE transport'));
+      return Promise.reject(
+        new VError(error as Error, 'Failed to disconnect SSE transport')
+      );
     }
   }
 
@@ -144,10 +130,7 @@ export class SseTransport extends BaseTransport {
     try {
       // If we have a channel, broadcast to all clients
       if (this.channel) {
-        await this.channel.broadcast(
-          'message',
-          JSON.stringify(message),
-        );
+        await this.channel.broadcast('message', JSON.stringify(message));
       } else if (this.session) {
         // Otherwise send to single client
         await this.session.push('message', JSON.stringify(message), {
@@ -173,7 +156,7 @@ export class SseTransport extends BaseTransport {
    * Gets the current channel.
    * @returns The current channel or null if not using channels
    */
-  getChannel(): BetterSseChannel | null {
+  getChannel(): Channel | null {
     return this.channel;
   }
 }

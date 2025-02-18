@@ -4,8 +4,8 @@
  * Provides core transport functionality for message passing and event handling.
  */
 
-import { JSONRPCClient, JSONRPCServer } from 'json-rpc-2.0';
 import { EventEmitter } from 'eventemitter3';
+import { JSONRPCClient, JSONRPCServer } from 'json-rpc-2.0';
 import type { JSONRPCRequest, JSONRPCResponse } from './schema';
 
 /**
@@ -369,11 +369,11 @@ export class RpcClient {
     await this.transport.disconnect();
   }
 
-  async request(method: string, params?: unknown): Promise<unknown> {
+  request<T>(method: string, params?: unknown): Promise<T> {
     return this.rpcClient.request(method, params);
   }
 
-  async notify(method: string, params?: unknown): Promise<void> {
+  notify(method: string, params?: unknown): Promise<void> {
     return this.rpcClient.notify(method, params);
   }
 }

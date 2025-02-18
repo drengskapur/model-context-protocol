@@ -39,7 +39,11 @@ export function validateRequest<T>(
   try {
     return schema.parse(request.params);
   } catch (error) {
-    throw new McpError('validation', 'Invalid request parameters', error as Error);
+    throw new McpError(
+      'validation',
+      'Invalid request parameters',
+      error as Error
+    );
   }
 }
 

@@ -466,9 +466,9 @@ describe('SseTransport', () => {
 
       // Simulate session close
       const session = transport.getSession();
-      const closeHandler = vi.mocked(session?.on).mock.calls.find(
-        (call) => call[0] === 'close'
-      )?.[1];
+      const closeHandler = vi
+        .mocked(session?.on)
+        .mock.calls.find((call) => call[0] === 'close')?.[1];
       closeHandler?.();
 
       expect(transport.isConnected()).toBe(false);
@@ -521,7 +521,9 @@ describe('SseTransport', () => {
 
     it('should reject messages when not connected', async () => {
       await transport.disconnect();
-      await expect(transport.send({})).rejects.toThrow(/Transport not connected/);
+      await expect(transport.send({})).rejects.toThrow(
+        /Transport not connected/
+      );
     });
 
     it('should handle send errors', async () => {
@@ -529,7 +531,9 @@ describe('SseTransport', () => {
       const error = new Error('Send failed');
       vi.mocked(session?.push).mockRejectedValueOnce(error);
 
-      await expect(transport.send({})).rejects.toThrow(/Failed to send message/);
+      await expect(transport.send({})).rejects.toThrow(
+        /Failed to send message/
+      );
     });
   });
 
