@@ -60,7 +60,7 @@ export abstract class BaseTransport implements McpTransport {
    * Sends a message through the transport.
    * @param message Message to send
    */
-  abstract send(message: JSONRPCRequest | JSONRPCResponse): Promise<void>;
+  abstract send(message: JSONRPCMessage): Promise<void>;
 
   /**
    * Connects the transport.
@@ -95,10 +95,7 @@ export abstract class BaseTransport implements McpTransport {
    * @param event Event name
    * @param handler Event handler
    */
-  on<K extends keyof EventHandler>(
-    event: K,
-    handler: EventHandler[K]
-  ): void {
+  on<K extends keyof EventHandler>(event: K, handler: EventHandler[K]): void {
     (this.events as EventEmitter).on(event, handler);
   }
 
@@ -107,10 +104,7 @@ export abstract class BaseTransport implements McpTransport {
    * @param event Event name
    * @param handler Event handler
    */
-  off<K extends keyof EventHandler>(
-    event: K,
-    handler: EventHandler[K]
-  ): void {
+  off<K extends keyof EventHandler>(event: K, handler: EventHandler[K]): void {
     (this.events as EventEmitter).off(event, handler);
   }
 

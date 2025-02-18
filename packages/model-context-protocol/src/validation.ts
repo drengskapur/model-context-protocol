@@ -6,7 +6,43 @@
 
 import { z } from 'zod';
 import { McpError } from './errors.js';
-import { ValiError } from 'valibot';
+
+/**
+ * Validation error code.
+ */
+export const VALIDATION_ERROR = -32402;
+
+/**
+ * Validation error class.
+ */
+export class ValidationError extends McpError {
+  public readonly errors: z.ZodError;
+  public readonly cause?: Error;
+
+  constructor(message: string, errors: z.ZodError, cause?: Error) {
+    super(VALIDATION_ERROR, message); // Use custom error code for validation errors
+    this.errors = errors;
+    this.cause = cause;
+  }
+
+  toJSON(): { code: number; message: string; data?: unknown } {
+    return {
+      code: this.code,
+      message: this.message,
+      ...(this.cause && { data: this.cause }),
+    };
+  }
+}
+
+/**
+ * Validation error details.
+ */
+export interface ValidationErrorDetails {
+  path: (string | number)[];
+  message: string;
+  type: string;
+  value?: unknown;
+}
 
 /**
  * Options for configuring validation behavior.
@@ -28,54 +64,6 @@ export interface ValidationOptions {
    * Custom error messages for specific validation failures.
    */
   messages?: Record<string, string>;
-}
-
-/**
- * Result of a validation operation.
- * Contains validation status and any error details.
- */
-export interface ValidationResult<T> {
-  /**
-   * Whether validation succeeded.
-   */
-  success: boolean;
-
-  /**
-   * Validated and potentially transformed data.
-   * Only present if validation succeeded.
-   */
-  data?: T;
-
-  /**
-   * Validation errors if validation failed.
-   * Contains detailed information about what went wrong.
-   */
-  errors?: ValidationError[];
-}
-
-/**
- * Detailed information about a validation error.
- */
-export interface ValidationError {
-  /**
-   * Path to the invalid property.
-   */
-  path: string[];
-
-  /**
-   * Error message describing the validation failure.
-   */
-  message: string;
-
-  /**
-   * Type of validation that failed.
-   */
-  type: string;
-
-  /**
-   * Value that failed validation.
-   */
-  value?: unknown;
 }
 
 /**
@@ -231,8 +219,8 @@ export const referenceSchema = z.discriminatedUnion('type', [
   z.object({
     /** Reference type for resources */
     type: z.literal('ref/resource'),
-    /** Resource URI */
-    uri: z.string().url(),
+    /** Resource URI template */
+    uriTemplate: z.string().min(1),
   }),
 ]);
 
@@ -299,9 +287,9 @@ export const createMessageParamsSchema = z.object({
 });
 
 /**
- * Validates a resource object.
- * @param resource The resource to validate
- * @throws {ValidationError} If the resource is invalid
+ * Validates a resource.
+ * @param resource Resource to validate
+ * @throws {ValidationError} If validation fails
  */
 export async function validateResource(resource: unknown): Promise<void> {
   try {
@@ -315,9 +303,9 @@ export async function validateResource(resource: unknown): Promise<void> {
 }
 
 /**
- * Validates a prompt object.
- * @param prompt The prompt to validate
- * @throws {ValidationError} If the prompt is invalid
+ * Validates a prompt.
+ * @param prompt Prompt to validate
+ * @throws {ValidationError} If validation fails
  */
 export async function validatePrompt(prompt: unknown): Promise<void> {
   try {
@@ -331,25 +319,25 @@ export async function validatePrompt(prompt: unknown): Promise<void> {
 }
 
 /**
- * Validates a sampling message object.
- * @param message The message to validate
- * @throws {ValidationError} If the message is invalid
+ * Validates a sampling message.
+ * @param message Message to validate
+ * @throws {ValidationError} If validation fails
  */
 export async function validateSamplingMessage(message: unknown): Promise<void> {
   try {
     await samplingMessageSchema.parseAsync(message);
   } catch (error) {
     if (error instanceof z.ZodError) {
-      throw new ValidationError('Invalid sampling message', error);
+      throw new ValidationError('Invalid message', error);
     }
     throw error;
   }
 }
 
 /**
- * Validates a tool object.
- * @param tool The tool to validate
- * @throws {ValidationError} If the tool is invalid
+ * Validates a tool.
+ * @param tool Tool to validate
+ * @throws {ValidationError} If validation fails
  */
 export async function validateTool(tool: unknown): Promise<void> {
   try {
@@ -363,59 +351,25 @@ export async function validateTool(tool: unknown): Promise<void> {
 }
 
 /**
- * Validates a reference object.
- * @param ref The reference to validate
- * @throws {ValidationError} If the reference is invalid
+ * Validates a reference.
+ * @param ref Reference to validate
+ * @throws {ValidationError} If validation fails
  */
-export async function validateReference(ref: {
-  type: string;
-  name?: string;
-  uriTemplate?: string;
-}): Promise<void> {
-  if (ref.type === 'ref/prompt') {
-    if (!ref.name) {
-      throw new ValidationError(
-        'Prompt reference must have a name',
-        new ValiError([
-          {
-            validation: 'required',
-            message: 'Missing name',
-            path: ['name'],
-          },
-        ])
-      );
+export async function validateReference(ref: unknown): Promise<void> {
+  try {
+    await referenceSchema.parseAsync(ref);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      throw new ValidationError('Invalid reference', error);
     }
-  } else if (ref.type === 'ref/resource') {
-    if (!ref.uriTemplate) {
-      throw new ValidationError(
-        'Resource reference must have a uriTemplate',
-        new ValiError([
-          {
-            validation: 'required',
-            message: 'Missing uriTemplate',
-            path: ['uriTemplate'],
-          },
-        ])
-      );
-    }
-  } else {
-    throw new ValidationError(
-      'Invalid reference type',
-      new ValiError([
-        {
-          validation: 'enum',
-          message: 'Unknown reference type',
-          path: ['type'],
-        },
-      ])
-    );
+    throw error;
   }
 }
 
 /**
- * Validates a logging level value.
- * @param level The logging level to validate
- * @throws {ValidationError} If the level is invalid
+ * Validates a logging level.
+ * @param level Level to validate
+ * @throws {ValidationError} If validation fails
  */
 export async function validateLoggingLevel(level: unknown): Promise<void> {
   try {
@@ -425,30 +379,5 @@ export async function validateLoggingLevel(level: unknown): Promise<void> {
       throw new ValidationError('Invalid logging level', error);
     }
     throw error;
-  }
-}
-
-/**
- * Custom validation error class.
- */
-export class ValidationError extends McpError {
-  public cause?: ValiError;
-
-  constructor(message: string, cause?: ValiError) {
-    super(-32402, message); // Use custom error code for validation errors
-    this.cause = cause;
-  }
-
-  /**
-   * Converts the error to a JSON-RPC error object.
-   * @returns JSON-RPC error object with validation details
-   */
-  toJSON(): { code: number; message: string; data?: unknown } {
-    return {
-      ...super.toJSON(),
-      data: {
-        errors: this.cause?.errors,
-      },
-    };
   }
 }

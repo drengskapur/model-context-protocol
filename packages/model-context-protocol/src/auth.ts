@@ -6,6 +6,7 @@
 
 import { SignJWT, jwtVerify } from 'jose';
 import { VError } from 'verror';
+import type { JSONRPCRequest, JSONRPCResponse } from './schema.js';
 
 /**
  * Authentication error.
@@ -182,6 +183,10 @@ export class Auth implements AuthProvider {
       throw new VError(error as Error, 'Failed to validate token');
     }
   }
+
+  async verify(token: string): Promise<TokenPayload> {
+    return await this.validateToken(token);
+  }
 }
 
 /**
@@ -217,3 +222,31 @@ export function withAuth(
     }
   };
 }
+
+export class AuthError extends Error {
+  constructor(message: string, cause?: Error) {
+    super(message);
+    this.name = 'AuthError';
+    if (cause) {
+      this.stack = cause.stack;
+    }
+  }
+}
+
+export const createAuthMiddleware = (auth: Auth) => {
+  return async (request: JSONRPCRequest, next: () => Promise<JSONRPCResponse>) => {
+    // Verify token
+    const token = request.params?.token as string;
+    if (!token) {
+      throw new AuthError('Missing authentication token');
+    }
+
+    try {
+      await auth.verify(token);
+    } catch (error) {
+      throw new AuthError('Invalid authentication token', error as Error);
+    }
+
+    return next();
+  };
+};

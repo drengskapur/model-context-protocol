@@ -1,3 +1,9 @@
+/**
+ * @file server.ts
+ * @description Server implementation for Model Context Protocol.
+ * Handles incoming requests, method registration, and response routing.
+ */
+
 import { VError } from 'verror';
 import type { Auth } from './auth';
 import type { McpTransport } from './transport';

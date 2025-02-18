@@ -1,3 +1,9 @@
+/**
+ * @file json-rpc.ts
+ * @description JSON-RPC transport implementation for Model Context Protocol.
+ * Provides base classes for JSON-RPC client and server communication.
+ */
+
 import { JSONRPCClient, JSONRPCServer } from 'json-rpc-2.0';
 import { VError } from 'verror';
 import type { JSONRPCRequest, JSONRPCResponse } from '../schema.js';

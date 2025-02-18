@@ -1,8 +1,8 @@
-import { Authentication } from './auth.js';
-import { McpClient } from './client.js';
-import { InMemoryTransport } from './in-memory.js';
-import { McpServer } from './server.js';
 import { describe, expect, it } from 'vitest';
+import { Authentication } from './auth';
+import { McpClient } from './client';
+import { InMemoryTransport } from './in-memory';
+import { McpServer } from './server';
 
 describe('Model Context Protocol', () => {
   it('should handle basic request/response', async () => {

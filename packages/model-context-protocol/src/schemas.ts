@@ -1,3 +1,9 @@
+/**
+ * @file schemas.ts
+ * @description Validation schemas for Model Context Protocol messages.
+ * Defines Zod schemas for request/response validation and type inference.
+ */
+
 import {
   any,
   array,

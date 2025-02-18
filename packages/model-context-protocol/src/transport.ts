@@ -4,21 +4,9 @@
  * Provides core transport functionality for message passing and event handling.
  */
 
-import {
-  JSONRPCClient,
-  JSONRPCServer,
-  JSONRPCRequest,
-  JSONRPCResponse,
-} from 'json-rpc-2.0';
+import { JSONRPCClient, JSONRPCServer } from 'json-rpc-2.0';
 import { EventEmitter } from 'eventemitter3';
 import type { JSONRPCRequest, JSONRPCResponse } from './schema';
-
-/**
- * Event handler types for different events
- */
-type MessageEventHandler = (message: JSONRPCRequest) => void;
-type ErrorEventHandler = (error: Error) => void;
-type ConnectionEventHandler = () => void;
 
 /**
  * Event types for transport events
@@ -56,6 +44,17 @@ export interface BaseEventEmitter {
 }
 
 /**
+ * Handler for receiving messages from a transport.
+ */
+export type MessageHandler = (message: unknown) => Promise<void>;
+
+/**
+ * Handler function type for receiving errors from a transport.
+ * @param error The error that occurred
+ */
+export type ErrorHandler = (error: Error) => void;
+
+/**
  * Transport interface for Model Context Protocol.
  */
 export interface McpTransport {
@@ -66,8 +65,6 @@ export interface McpTransport {
 
   /**
    * Subscribe to transport events.
-   * @param event Event name
-   * @param handler Event handler
    */
   on<K extends keyof TransportEventMap>(
     event: K,
@@ -76,8 +73,6 @@ export interface McpTransport {
 
   /**
    * Unsubscribe from transport events.
-   * @param event Event name
-   * @param handler Event handler
    */
   off<K extends keyof TransportEventMap>(
     event: K,
@@ -86,7 +81,6 @@ export interface McpTransport {
 
   /**
    * Sends a message through the transport.
-   * @param message Message to send
    */
   send(message: JSONRPCRequest | JSONRPCResponse): Promise<void>;
 
@@ -104,6 +98,21 @@ export interface McpTransport {
    * Whether the transport is currently connected.
    */
   isConnected(): boolean;
+
+  /**
+   * Register a handler for receiving messages.
+   */
+  onMessage(handler: MessageHandler): void;
+
+  /**
+   * Unregister a message handler.
+   */
+  offMessage(handler: MessageHandler): void;
+
+  /**
+   * Close the transport and clean up any resources.
+   */
+  close(): Promise<void>;
 }
 
 /**
@@ -112,6 +121,7 @@ export interface McpTransport {
 export abstract class BaseTransport implements McpTransport {
   public readonly events: BaseEventEmitter = new EventEmitter();
   protected connected = false;
+  private messageHandlers = new Set<MessageHandler>();
 
   /**
    * Sends a message through the transport.
@@ -161,11 +171,38 @@ export abstract class BaseTransport implements McpTransport {
   }
 
   /**
+   * Register a handler for receiving messages.
+   * @param handler The handler function to add
+   */
+  onMessage(handler: MessageHandler): void {
+    this.messageHandlers.add(handler);
+  }
+
+  /**
+   * Unregister a message handler.
+   * @param handler The handler function to remove
+   */
+  offMessage(handler: MessageHandler): void {
+    this.messageHandlers.delete(handler);
+  }
+
+  /**
+   * Close the transport and clean up any resources.
+   */
+  async close(): Promise<void> {
+    await this.disconnect();
+    this.messageHandlers.clear();
+  }
+
+  /**
    * Handles an incoming message.
    * @param message Message to handle
    */
   protected handleMessage(message: JSONRPCRequest): void {
     (this.events as EventEmitter).emit('message', message);
+    for (const handler of this.messageHandlers) {
+      handler(message).catch((error) => this.handleError(error));
+    }
   }
 
   /**
@@ -184,52 +221,6 @@ export abstract class BaseTransport implements McpTransport {
     this.connected = state;
     (this.events as EventEmitter).emit(state ? 'connect' : 'disconnect');
   }
-}
-
-/**
- * Handler for receiving messages from a transport.
- */
-export type MessageHandler = (message: unknown) => Promise<void>;
-
-/**
- * Handler function type for receiving errors from a transport.
- * @param error The error that occurred
- */
-export type ErrorHandler = (error: Error) => void;
-
-/**
- * Interface for a transport that can send and receive messages.
- */
-export interface McpTransport {
-  /**
-   * Connect to the transport.
-   */
-  connect(): Promise<void>;
-
-  /**
-   * Disconnect from the transport.
-   */
-  disconnect(): Promise<void>;
-
-  /**
-   * Send a message through the transport.
-   */
-  send(message: unknown): Promise<void>;
-
-  /**
-   * Register a handler for receiving messages.
-   */
-  onMessage(handler: MessageHandler): void;
-
-  /**
-   * Unregister a message handler.
-   */
-  offMessage(handler: MessageHandler): void;
-
-  /**
-   * Close the transport and clean up any resources.
-   */
-  close(): Promise<void>;
 }
 
 /**
