@@ -36,6 +36,19 @@ interface PendingRequest {
   timeout: NodeJS.Timeout;
 }
 
+interface ExperimentalCapabilities {
+  sampling?: {
+    createMessage: boolean;
+  };
+  roots?: {
+    listChanged: boolean;
+  };
+}
+
+interface ServerCapabilitiesWithExperimental extends ServerCapabilities {
+  experimental?: ExperimentalCapabilities;
+}
+
 export class McpClient {
   private transport: McpTransport | null = null;
   private readonly options: McpClientOptions;
@@ -46,7 +59,7 @@ export class McpClient {
     ProgressToken,
     (progress: number, total?: number) => void
   >();
-  private serverCapabilities: ServerCapabilities | null = null;
+  private serverCapabilities: ServerCapabilitiesWithExperimental | null = null;
   private initialized = false;
   private _authToken?: string;
 
@@ -131,15 +144,13 @@ export class McpClient {
   }
 
   private handleError(error: Error): void {
-    // Pass error to transport error handlers
     if (this.transport) {
       const errorHandler = (err: Error) => {
-        // Handle the error
         console.error('Error in message handler:', err);
       };
       this.transport.onError(errorHandler);
       errorHandler(error);
-      this.transport.offError(errorHandler); // Clean up the handler after use
+      this.transport.offError(errorHandler);
     }
   }
 
@@ -157,13 +168,14 @@ export class McpClient {
           notification.method === 'notifications/progress' &&
           notification.params
         ) {
-          this.handleProgressNotification(
-            notification.params as {
-              progressToken: ProgressToken;
-              progress: number;
-              total?: number;
-            }
-          );
+          const params = notification.params as {
+            progressToken: ProgressToken;
+            progress: number;
+            total?: number;
+          };
+          if (typeof params.progress === 'number' && params.progressToken) {
+            this.handleProgressNotification(params);
+          }
         } else if (
           notification.method === 'notifications/cancelled' &&
           notification.params
@@ -191,7 +203,6 @@ export class McpClient {
         try {
           await handler(message);
         } catch (error) {
-          // Log error but continue with other handlers
           if (error instanceof Error) {
             this.handleError(error);
           } else {
@@ -200,7 +211,6 @@ export class McpClient {
         }
       }
     } catch (error) {
-      // Log error but don't throw to avoid crashing the message handling loop
       if (error instanceof Error) {
         this.handleError(error);
       } else {
@@ -210,8 +220,7 @@ export class McpClient {
   };
 
   async send(message: JSONRPCRequest): Promise<unknown> {
-    const transport = this.transport;
-    if (!transport) {
+    if (!this.transport) {
       throw new RequestFailedError('Client not connected');
     }
 
@@ -236,7 +245,7 @@ export class McpClient {
       });
     });
 
-    await transport.send(message);
+    await this.transport.send(message);
     return promise;
   }
 
@@ -259,7 +268,7 @@ export class McpClient {
     this.progressHandlers.delete(token);
   }
 
-  public getServerCapabilities(): ServerCapabilities | null {
+  public getServerCapabilities(): ServerCapabilitiesWithExperimental | null {
     return this.serverCapabilities;
   }
 
@@ -349,7 +358,7 @@ export class McpClient {
       throw new ServerNotInitializedError('Client not initialized');
     }
 
-    if (!this.serverCapabilities?.sampling?.createMessage) {
+    if (!this.serverCapabilities?.experimental?.sampling?.createMessage) {
       throw new RequestFailedError('Server does not support sampling');
     }
 
@@ -385,7 +394,7 @@ export class McpClient {
       throw new ServerNotInitializedError('Client not initialized');
     }
 
-    if (!this.serverCapabilities?.sampling?.createMessage) {
+    if (!this.serverCapabilities?.experimental?.sampling?.createMessage) {
       throw new RequestFailedError('Server does not support sampling');
     }
 
@@ -396,11 +405,7 @@ export class McpClient {
     };
 
     this.onMessage(messageHandler);
-
-    // Return cleanup function
-    return () => {
-      this.offMessage(messageHandler);
-    };
+    return () => this.offMessage(messageHandler);
   }
 
   private async prepareRequest(method: string, params: unknown): Promise<JSONRPCRequest> {
@@ -555,7 +560,7 @@ export class McpClient {
       throw new ServerNotInitializedError('Client not initialized');
     }
 
-    if (!this.serverCapabilities?.roots?.listChanged) {
+    if (!this.serverCapabilities?.experimental?.roots?.listChanged) {
       throw new RequestFailedError('Server does not support roots');
     }
 
@@ -569,7 +574,7 @@ export class McpClient {
       throw new ServerNotInitializedError('Client not initialized');
     }
 
-    if (!this.serverCapabilities?.roots?.listChanged) {
+    if (!this.serverCapabilities?.experimental?.roots?.listChanged) {
       throw new RequestFailedError('Server does not support roots');
     }
 

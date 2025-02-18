@@ -71,7 +71,11 @@ class TestTransport implements McpTransport {
 
 describe('Server', () => {
   let server: Server;
-  let transport: InMemoryTransport;
+  let transport: McpTransport & {
+    simulateIncomingMessage(message: JSONRPCMessage): Promise<void>;
+    getMessages(): JSONRPCMessage[];
+    clearMessages(): void;
+  };
 
   beforeEach(() => {
     server = new Server({
@@ -625,13 +629,18 @@ describe('Server', () => {
     const updatedResource: ServerResource = {
       uri: 'test-resource',
       mimeType: 'text/plain',
-      content: newContent
+      content: newContent,
     };
-    server.resource(updatedResource, newContent);
+    server.resource(updatedResource, updatedResource.content);
 
     expect(messages[4]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
-      method: 'notifications/resourceChanged',
+      method: 'notifications/resources/list_changed',
+    });
+
+    expect(messages[5]).toMatchObject({
+      jsonrpc: JSONRPC_VERSION,
+      method: 'notifications/resources/updated',
       params: {
         uri: 'test-resource',
         content: newContent,
@@ -648,7 +657,7 @@ describe('Server', () => {
       },
     });
 
-    expect(messages[5]).toMatchObject({
+    expect(messages[6]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
       id: 5,
       result: {},

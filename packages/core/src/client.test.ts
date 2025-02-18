@@ -1416,10 +1416,10 @@ describe('McpClient', () => {
     // Simulate resource change
     const newContent = { key: 'new-value' };
     await transport.simulateIncomingMessage({
-      jsonrpc: '2.0',
-      method: 'notifications/resourceChanged',
+      jsonrpc: JSONRPC_VERSION,
+      method: 'notifications/resources/updated',
       params: {
-        name: 'test-resource',
+        uri: 'test-resource',
         content: newContent,
       },
     } as JSONRPCNotification);
@@ -1430,9 +1430,9 @@ describe('McpClient', () => {
     cleanup();
     await Promise.resolve();
 
-    const unsubscribeRequest = messages[messages.length - 1] as JSONRPCRequest;
+    const unsubscribeRequest = transport.getMessages()[transport.getMessages().length - 1] as JSONRPCRequest;
     expect(unsubscribeRequest.method).toBe('resources/unsubscribe');
-    expect(unsubscribeRequest.params).toEqual({ name: 'test-resource' });
+    expect(unsubscribeRequest.params).toEqual({ uri: 'test-resource' });
   });
 
   it('should reject resource operations when not supported', async () => {

@@ -1,10 +1,10 @@
 import { z } from 'zod';
 import { McpError } from './errors.js';
-import { type BaseSchema } from 'valibot';
+import { type BaseSchema, type BaseIssue } from 'valibot';
 
 export class AuthorizationError extends McpError {
   constructor(message: string) {
-    super(message);
+    super(-32401, message); // Use custom error code for authorization errors
     this.name = 'AuthorizationError';
   }
 }
@@ -51,8 +51,14 @@ export class Authorization {
   }
 
   async verifyToken(token: string): Promise<AuthToken> {
+    let decoded: unknown;
     try {
-      const decoded = JSON.parse(Buffer.from(token, 'base64').toString());
+      decoded = JSON.parse(Buffer.from(token, 'base64').toString());
+    } catch (error) {
+      throw new AuthorizationError('Invalid token format');
+    }
+
+    try {
       const validated = authTokenSchema.parse(decoded);
       
       const now = Math.floor(Date.now() / 1000);
@@ -62,7 +68,10 @@ export class Authorization {
       
       return validated;
     } catch (error) {
-      throw new AuthorizationError('Invalid token');
+      if (error instanceof AuthorizationError) {
+        throw error;
+      }
+      throw new AuthorizationError('Invalid token structure');
     }
   }
 
@@ -77,7 +86,7 @@ export interface AuthMiddlewareOptions {
   requiredRoles?: string[];
 }
 
-export function createAuthMiddleware<T extends BaseSchema>(
+export function createAuthMiddleware<T extends BaseSchema<unknown, unknown, BaseIssue<unknown>>>(
   options: AuthMiddlewareOptions,
   handler: (params: unknown) => Promise<unknown>
 ): (params: unknown) => Promise<unknown> {

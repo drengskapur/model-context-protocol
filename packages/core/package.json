@@ -33,11 +33,7 @@
       "require": "./dist/in-memory.cjs"
     }
   },
-  "files": [
-    "dist",
-    "src",
-    "README.md"
-  ],
+  "files": ["dist", "src", "README.md"],
   "scripts": {
     "build": "tsup",
     "clean": "rm -rf dist coverage",
