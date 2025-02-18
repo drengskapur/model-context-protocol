@@ -18,22 +18,23 @@ export class AuthorizationError extends McpError {
 }
 
 /**
- * Interface for authentication providers.
- * Implementations handle token generation and validation.
+ * Authentication provider interface.
  */
 export interface AuthProvider {
   /**
-   * Generates an authentication token.
-   * @returns Promise resolving to the generated token
+   * Generates a new authentication token.
+   * @param subject Subject identifier
+   * @param roles User roles
+   * @returns Promise that resolves with the token
    */
-  generateToken(): Promise<string>;
+  generateToken(subject: string, roles?: string[]): Promise<string>;
 
   /**
    * Validates an authentication token.
    * @param token Token to validate
-   * @returns Promise resolving to true if valid, false otherwise
+   * @returns Promise that resolves with token payload
    */
-  validateToken(token: string): Promise<boolean>;
+  validateToken(token: string): Promise<{ subject: string; roles: string[] }>;
 }
 
 /**
@@ -53,24 +54,10 @@ export interface AuthOptions {
 }
 
 /**
- * Token payload structure.
- */
-export interface AuthToken {
-  /** Subject (user ID) */
-  sub: string;
-  /** Issued at timestamp */
-  iat: number;
-  /** Expiration timestamp */
-  exp: number;
-  /** User roles */
-  roles: string[];
-}
-
-/**
  * Authentication class for Model Context Protocol.
  * Handles token generation and validation.
  */
-export class Authorization implements AuthProvider {
+export class Auth implements AuthProvider {
   private readonly options: Required<AuthOptions>;
 
   constructor(options: AuthOptions = {}) {
@@ -91,7 +78,7 @@ export class Authorization implements AuthProvider {
     roles: string[] = []
   ): Promise<string> {
     const now = Math.floor(Date.now() / 1000);
-    const token: AuthToken = {
+    const token: { sub: string; iat: number; exp: number; roles: string[] } = {
       sub: subject,
       iat: now,
       exp: now + this.options.tokenExpiration,
@@ -105,14 +92,14 @@ export class Authorization implements AuthProvider {
   /**
    * Validates an authentication token.
    * @param token Token to validate
-   * @returns Promise resolving to true if valid, false otherwise
+   * @returns Promise that resolves with token payload
    */
-  async validateToken(token: string): Promise<boolean> {
+  async validateToken(token: string): Promise<{ subject: string; roles: string[] }> {
     try {
       const decoded = this.verifyToken(token);
-      return true;
+      return { subject: decoded.sub, roles: decoded.roles };
     } catch (error) {
-      return false;
+      throw new AuthorizationError('Invalid token');
     }
   }
 
@@ -122,7 +109,7 @@ export class Authorization implements AuthProvider {
    * @returns Token payload if valid
    * @throws {AuthorizationError} If token is invalid or expired
    */
-  verifyToken(token: string): AuthToken {
+  verifyToken(token: string): { sub: string; iat: number; exp: number; roles: string[] } {
     let decoded: unknown;
     try {
       decoded = JSON.parse(Buffer.from(token, 'base64').toString());
@@ -151,18 +138,6 @@ export class Authorization implements AuthProvider {
       throw new AuthorizationError('Invalid token structure');
     }
   }
-
-  /**
-   * Verifies if a token has the required roles.
-   * @param token Token to verify
-   * @param requiredRoles Roles that are required
-   * @returns True if token has all required roles
-   * @throws {AuthorizationError} If token is invalid or expired
-   */
-  async verifyPermission(token: string, requiredRoles: string[]): Promise<boolean> {
-    const decoded = this.verifyToken(token);
-    return requiredRoles.some((role) => decoded.roles.includes(role));
-  }
 }
 
 /**
@@ -170,7 +145,7 @@ export class Authorization implements AuthProvider {
  */
 export interface AuthMiddlewareOptions {
   /** Authorization instance */
-  auth: Authorization;
+  auth: Auth;
   /** Required roles for the middleware */
   requiredRoles?: string[];
 }
@@ -201,8 +176,8 @@ export function createAuthMiddleware<T extends Record<string, unknown>>(
       throw new AuthorizationError('No authorization token provided');
     }
 
-    const hasPermission = await auth.verifyPermission(token, requiredRoles);
-    if (!hasPermission) {
+    const { subject, roles } = await auth.validateToken(token);
+    if (!requiredRoles.every((role) => roles.includes(role))) {
       throw new AuthorizationError('Insufficient permissions');
     }
 
