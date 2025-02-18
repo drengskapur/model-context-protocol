@@ -4,7 +4,7 @@
  * Provides shared types and type utilities.
  */
 
-import { z } from 'zod';
+import { object, string, number, union, literal, optional, never, unknown } from 'valibot';
 
 /**
  * Represents a unique identifier.
@@ -309,48 +309,48 @@ export interface JSONRPCNotification extends Notification {
   params?: unknown;
 }
 
-// Zod schemas for validation
-export const requestSchema = z.object({
-  jsonrpc: z.literal(JSONRPC_VERSION),
-  id: z.union([z.string(), z.number()]),
-  method: z.string(),
-  params: z.unknown().optional(),
+// Valibot schemas for validation
+export const requestSchema = object({
+  jsonrpc: literal(JSONRPC_VERSION),
+  id: union([string(), number()]),
+  method: string(),
+  params: optional(unknown()),
 });
 
-export const responseSchema = z.object({
-  jsonrpc: z.literal(JSONRPC_VERSION),
-  id: z.union([z.string(), z.number()]),
-  result: z.object({
-    result: z.unknown(),
+export const responseSchema = object({
+  jsonrpc: literal(JSONRPC_VERSION),
+  id: union([string(), number()]),
+  result: object({
+    result: unknown(),
   }),
-  method: z.never().optional(),
-  params: z.never().optional(),
-  error: z.never().optional(),
+  method: optional(never()),
+  params: optional(never()),
+  error: optional(never()),
 });
 
-export const errorResponseSchema = z.object({
-  jsonrpc: z.literal(JSONRPC_VERSION),
-  id: z.union([z.string(), z.number()]),
-  error: z.object({
-    code: z.number(),
-    message: z.string(),
-    data: z.unknown().optional(),
+export const errorResponseSchema = object({
+  jsonrpc: literal(JSONRPC_VERSION),
+  id: union([string(), number()]),
+  error: object({
+    code: number(),
+    message: string(),
+    data: optional(unknown()),
   }),
-  result: z.never().optional(),
-  method: z.never().optional(),
-  params: z.never().optional(),
+  result: optional(never()),
+  method: optional(never()),
+  params: optional(never()),
 });
 
-export const notificationSchema = z.object({
-  jsonrpc: z.literal(JSONRPC_VERSION),
-  method: z.string(),
-  params: z.unknown().optional(),
-  id: z.never().optional(),
-  result: z.never().optional(),
-  error: z.never().optional(),
+export const notificationSchema = object({
+  jsonrpc: literal(JSONRPC_VERSION),
+  method: string(),
+  params: optional(unknown()),
+  id: optional(never()),
+  result: optional(never()),
+  error: optional(never()),
 });
 
-export const messageSchema = z.union([
+export const messageSchema = union([
   requestSchema,
   responseSchema,
   errorResponseSchema,

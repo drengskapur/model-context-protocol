@@ -37,7 +37,7 @@ async function createConnectedPair() {
   await Promise.resolve();
 
   // Simulate server response to initialize request
-  await serverTransport.simulateIncomingMessage({
+  const response: JSONRPCResponse = {
     jsonrpc: JSONRPC_VERSION,
     id: clientTransport.getMessages()[0].id,
     result: {
@@ -48,7 +48,8 @@ async function createConnectedPair() {
       },
       capabilities: {},
     },
-  } satisfies JSONRPCResponse);
+  };
+  await serverTransport.simulateIncomingMessage(response);
 
   // Wait for initialization to complete
   await connectPromise;
@@ -88,7 +89,7 @@ describe('McpClient', () => {
     await Promise.resolve();
 
     // Simulate server response to initialize request
-    await serverTransport.simulateIncomingMessage({
+    const response: JSONRPCResponse = {
       jsonrpc: JSONRPC_VERSION,
       id: clientTransport.getMessages()[0].id,
       result: {
@@ -99,7 +100,8 @@ describe('McpClient', () => {
         },
         capabilities: {},
       },
-    } satisfies JSONRPCResponse);
+    };
+    await serverTransport.simulateIncomingMessage(response);
 
     // Wait for initialization to complete
     await connectPromise;
@@ -174,9 +176,14 @@ describe('McpClient', () => {
     // First initialize the client
     const connectPromise = client.connect();
     await Promise.resolve();
+
+    // Get the initialization message
+    const messages = clientTransport.getMessages();
+    const initMessage = messages[0];
+
     await serverTransport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
-      id: expect.any(String),
+      id: initMessage.id,
       result: {
         protocolVersion: LATEST_PROTOCOL_VERSION,
         serverInfo: {
@@ -185,14 +192,14 @@ describe('McpClient', () => {
         },
         capabilities: {},
       },
-    } as JSONRPCResponse);
+    } satisfies JSONRPCResponse);
     await connectPromise;
 
     const promise = client.callTool('test', {});
     await Promise.resolve();
 
-    const messages = clientTransport.getMessages();
-    const request = messages.at(-1) as JSONRPCRequest;
+    const toolMessages = clientTransport.getMessages();
+    const request = toolMessages.at(-1) as JSONRPCRequest;
 
     // Simulate cancellation notification
     await serverTransport.simulateIncomingMessage({
@@ -202,7 +209,7 @@ describe('McpClient', () => {
         requestId: request.id,
         reason: 'Test cancellation',
       },
-    } as JSONRPCNotification);
+    } satisfies JSONRPCNotification);
 
     // Wait a tick for the cancellation to be processed
     await Promise.resolve();

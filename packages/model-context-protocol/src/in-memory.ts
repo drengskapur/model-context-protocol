@@ -7,6 +7,7 @@
 import { EventEmitter } from 'eventemitter3';
 import { VError } from 'verror';
 import type { JSONRPCMessage, JSONRPCRequest, JSONRPCResponse } from './schema';
+import { JSONRPC_VERSION } from './schema';
 import type {
   McpTransport,
   MessageHandler,
@@ -130,6 +131,10 @@ export class InMemoryTransport implements McpTransport {
    * @param message Message to simulate
    */
   async simulateIncomingMessage(message: JSONRPCMessage): Promise<void> {
+    if (typeof message !== 'object' || message === null || message.jsonrpc !== JSONRPC_VERSION) {
+      throw new VError('Invalid message format');
+    }
+
     for (const handler of this.messageHandlers) {
       await handler(message);
     }

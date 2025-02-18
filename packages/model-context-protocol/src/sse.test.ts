@@ -4,6 +4,11 @@ import { SseTransport, type SseTransportOptions } from './sse.js';
 import type { Session, Channel } from 'better-sse';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { JSONRPCRequest } from './schema';
+import { JSONRPC_VERSION } from './schema';
+
+const CONNECT_ERROR_REGEX = /Failed to connect/;
+const TRANSPORT_NOT_CONNECTED_REGEX = /Transport not connected/;
+const SEND_ERROR_REGEX = /Failed to send message/;
 
 // Mock EventSource class
 class MockEventSource implements EventSource {
@@ -425,9 +430,9 @@ describe('SseTransport', () => {
       transport = new SseTransport({ req, res, headers });
       await transport.connect();
 
-      Object.entries(headers).forEach(([key, value]) => {
+      for (const [key, value] of Object.entries(headers)) {
         expect(res.setHeader).toHaveBeenCalledWith(key, value);
-      });
+      }
     });
 
     it('should set retry timeout', async () => {
@@ -444,7 +449,7 @@ describe('SseTransport', () => {
       const { createSession } = await import('better-sse');
       vi.mocked(createSession).mockRejectedValueOnce(error);
 
-      await expect(transport.connect()).rejects.toThrow(/Failed to connect/);
+      await expect(transport.connect()).rejects.toThrow(CONNECT_ERROR_REGEX);
       expect(transport.isConnected()).toBe(false);
     });
 
@@ -478,7 +483,7 @@ describe('SseTransport', () => {
 
     it('should send messages through session', async () => {
       const message: JSONRPCRequest = {
-        jsonrpc: '2.0',
+        jsonrpc: JSONRPC_VERSION,
         method: 'test',
         id: '1',
         params: { data: 'test' },
@@ -499,7 +504,7 @@ describe('SseTransport', () => {
       await transport.connect();
 
       const message: JSONRPCRequest = {
-        jsonrpc: '2.0',
+        jsonrpc: JSONRPC_VERSION,
         method: 'test',
         id: '1',
         params: { data: 'test' },
@@ -518,7 +523,7 @@ describe('SseTransport', () => {
     it('should reject messages when not connected', async () => {
       await transport.disconnect();
       await expect(transport.send({})).rejects.toThrow(
-        /Transport not connected/
+        TRANSPORT_NOT_CONNECTED_REGEX
       );
     });
 
@@ -527,9 +532,7 @@ describe('SseTransport', () => {
       const error = new Error('Send failed');
       vi.mocked(session?.push).mockRejectedValueOnce(error);
 
-      await expect(transport.send({})).rejects.toThrow(
-        /Failed to send message/
-      );
+      await expect(transport.send({})).rejects.toThrow(SEND_ERROR_REGEX);
     });
   });
 

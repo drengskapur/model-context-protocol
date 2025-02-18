@@ -8,6 +8,7 @@ import { EventEmitter } from 'node:events';
 import { VError } from 'verror';
 import { InMemoryTransport } from './in-memory.js';
 import type { JSONRPCMessage, JSONRPCRequest } from './schema.js';
+import { LATEST_PROTOCOL_VERSION, JSONRPC_VERSION } from './schema.js';
 import type { McpTransport, MessageHandler } from './transport.js';
 
 /**
@@ -110,7 +111,7 @@ export class McpClient {
     }
 
     const request: JSONRPCRequest = {
-      jsonrpc: '2.0',
+      jsonrpc: JSONRPC_VERSION,
       id: Math.random().toString(36).slice(2),
       method,
       params,
@@ -171,7 +172,7 @@ export class McpClient {
     }
 
     const request: JSONRPCRequest = {
-      jsonrpc: '2.0',
+      jsonrpc: JSONRPC_VERSION,
       id: Math.random().toString(36).slice(2),
       method,
       params,
@@ -411,7 +412,7 @@ export class McpClient {
         serverInfo: { name: string; version: string };
         capabilities: Record<string, unknown>;
       }>('initialize', {
-        protocolVersion: '2024-02-18',
+        protocolVersion: LATEST_PROTOCOL_VERSION,
         clientInfo: {
           name: this.name,
           version: this.version,
@@ -419,15 +420,15 @@ export class McpClient {
         capabilities: this.capabilities,
       });
 
-      if (response.protocolVersion !== '2024-02-18') {
+      if (response.protocolVersion !== LATEST_PROTOCOL_VERSION) {
         throw new VError(
-          `Protocol version mismatch. Server: ${response.protocolVersion}, Client: 2024-02-18`
+          `Protocol version mismatch. Server: ${response.protocolVersion}, Client: ${LATEST_PROTOCOL_VERSION}`
         );
       }
 
       this.serverCapabilities = response.capabilities;
       this.initialized = true;
-      await this.notify('notifications/initialized');
+      await this.notify('notifications/initialized', {});
     } catch (error) {
       throw new VError(error as Error, 'Failed to initialize client');
     }
@@ -439,14 +440,22 @@ export class McpClient {
    */
   private handleMessage(message: unknown): Promise<void> {
     if (!this.isJSONRPCMessage(message)) {
-      return Promise.resolve();
+      throw new VError('Invalid message format');
     }
 
     // Handle the message
     this.events.emit('message', message);
 
     if ('method' in message) {
-      // Handle method calls
+      // Handle notifications
+      if (message.method === 'notifications/progress' && 'params' in message) {
+        const params = message.params;
+        if (params && typeof params === 'object' && 'progressToken' in params) {
+          const { progressToken, progress, total } = params as { progressToken: string; progress: number; total: number };
+          this.events.emit(`progress:${progressToken}`, progress, total);
+        }
+      }
+      // Handle other notifications
       this.events.emit('method', message);
     }
     return Promise.resolve();
@@ -458,7 +467,26 @@ export class McpClient {
     }
 
     const msg = message as Record<string, unknown>;
-    return typeof msg.jsonrpc === 'string' && msg.jsonrpc === '2.0';
+    if (msg.jsonrpc !== JSONRPC_VERSION) {
+      return false;
+    }
+
+    // Check for request
+    if ('method' in msg && 'id' in msg) {
+      return typeof msg.method === 'string';
+    }
+
+    // Check for notification
+    if ('method' in msg && !('id' in msg)) {
+      return typeof msg.method === 'string';
+    }
+
+    // Check for response or error
+    if ('id' in msg) {
+      return 'result' in msg || 'error' in msg;
+    }
+
+    return false;
   }
 
   /**

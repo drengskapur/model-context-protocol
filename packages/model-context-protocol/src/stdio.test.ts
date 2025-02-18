@@ -1,6 +1,8 @@
 import { Readable, Writable } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StdioTransport } from './stdio';
+import type { JSONRPCRequest, JSONRPCResponse } from './schema';
+import { JSONRPC_VERSION } from './schema';
 
 const ALREADY_CONNECTED_REGEX = /already connected/;
 const WRITE_ERROR_REGEX = /Write error/;
@@ -62,14 +64,22 @@ describe('StdioTransport', () => {
     });
 
     it('should send messages', async () => {
-      const message = { jsonrpc: '2.0', method: 'test', id: 1 };
+      const message: JSONRPCRequest = {
+        jsonrpc: JSONRPC_VERSION,
+        method: 'test',
+        id: '1',
+      };
       await transport.send(message);
       expect(outputData).toHaveLength(1);
       expect(JSON.parse(outputData[0])).toEqual(message);
     });
 
     it('should receive messages', async () => {
-      const message = { jsonrpc: '2.0', method: 'test', id: 1 };
+      const message: JSONRPCRequest = {
+        jsonrpc: JSONRPC_VERSION,
+        method: 'test',
+        id: '1',
+      };
       const received = new Promise<unknown>((resolve) => {
         transport.onMessage((msg) => {
           resolve(msg);
@@ -82,9 +92,9 @@ describe('StdioTransport', () => {
     });
 
     it('should handle multiple messages in single chunk', async () => {
-      const messages = [
-        { jsonrpc: '2.0', method: 'test1', id: 1 },
-        { jsonrpc: '2.0', method: 'test2', id: 2 },
+      const messages: JSONRPCRequest[] = [
+        { jsonrpc: JSONRPC_VERSION, method: 'test1', id: '1' },
+        { jsonrpc: JSONRPC_VERSION, method: 'test2', id: '2' },
       ];
 
       const received: unknown[] = [];
@@ -100,7 +110,11 @@ describe('StdioTransport', () => {
     });
 
     it('should handle split messages across chunks', async () => {
-      const message = { jsonrpc: '2.0', method: 'test', id: 1 };
+      const message: JSONRPCRequest = {
+        jsonrpc: JSONRPC_VERSION,
+        method: 'test',
+        id: '1',
+      };
       const json = JSON.stringify(message);
 
       const received = new Promise<unknown>((resolve) => {
@@ -135,7 +149,7 @@ describe('StdioTransport', () => {
       const onError = vi.fn();
       transport.onError(onError);
 
-      input.push(`${JSON.stringify({ jsonrpc: '2.0', method: 'test' })}\n`);
+      input.push(`${JSON.stringify({ jsonrpc: JSONRPC_VERSION, method: 'test', id: '1' })}\n`);
       await new Promise(resolve => setTimeout(resolve, 10));
 
       expect(onError).toHaveBeenCalledWith(error);
@@ -149,9 +163,15 @@ describe('StdioTransport', () => {
 
     it('should handle write errors', async () => {
       const error = new Error('Write error');
-      output.write = vi.fn((_, __, cb) => cb(error));
+      const mockWrite = vi.fn().mockImplementation((_, __, cb) => cb(error));
+      output.write = mockWrite;
 
-      await expect(transport.send({})).rejects.toThrow(WRITE_ERROR_REGEX);
+      const message: JSONRPCRequest = {
+        jsonrpc: JSONRPC_VERSION,
+        method: 'test',
+        id: '1',
+      };
+      await expect(transport.send(message)).rejects.toThrow(WRITE_ERROR_REGEX);
     });
 
     it('should handle stream errors', () => {
@@ -176,7 +196,12 @@ describe('StdioTransport', () => {
 
       await transport.disconnect();
 
-      input.push(`${JSON.stringify({ jsonrpc: '2.0', method: 'test' })}\n`);
+      const message: JSONRPCRequest = {
+        jsonrpc: JSONRPC_VERSION,
+        method: 'test',
+        id: '1',
+      };
+      input.push(`${JSON.stringify(message)}\n`);
       await new Promise(resolve => setTimeout(resolve, 10));
 
       expect(messageCount).toBe(0);

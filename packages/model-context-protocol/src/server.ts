@@ -7,6 +7,8 @@
 import { VError } from 'verror';
 import type { Auth } from './auth';
 import type { McpTransport } from './transport';
+import { LATEST_PROTOCOL_VERSION, JSONRPC_VERSION } from './schema';
+import type { JSONRPCRequest, JSONRPCResponse, Result, JSONRPCError } from './schema';
 
 /**
  * Server options for Model Context Protocol.
@@ -54,9 +56,18 @@ export class McpServer {
    */
   private setupDefaultMethods(): void {
     // Initialize method
-    this.methods.set('initialize', (params: unknown) => {
+    this.methods.set('initialize', async (params: unknown) => {
       if (this.initialized) {
         throw new VError('Server already initialized');
+      }
+
+      if (
+        typeof params !== 'object' ||
+        params === null ||
+        !('protocolVersion' in params) ||
+        typeof params.protocolVersion !== 'string'
+      ) {
+        throw new VError('Invalid initialize parameters');
       }
 
       const initParams = params as {
@@ -65,9 +76,10 @@ export class McpServer {
         clientInfo: { name: string; version: string };
       };
 
-      if (initParams.protocolVersion !== '2024-02-18') {
+      if (initParams.protocolVersion !== LATEST_PROTOCOL_VERSION) {
         throw new VError(
-          'Protocol version mismatch. Server: 2024-02-18, Client: %s',
+          'Protocol version mismatch. Server: %s, Client: %s',
+          LATEST_PROTOCOL_VERSION,
           initParams.protocolVersion
         );
       }
@@ -75,17 +87,17 @@ export class McpServer {
       this.initialized = true;
 
       return {
-        protocolVersion: '2024-02-18',
+        protocolVersion: LATEST_PROTOCOL_VERSION,
         serverInfo: {
           name: this.options.name,
           version: this.options.version,
         },
-        capabilities: this.options.capabilities,
+        capabilities: this.options.capabilities ?? {},
       };
     });
 
     // Ping method
-    this.methods.set('ping', () => ({ pong: true }));
+    this.methods.set('ping', async () => ({ pong: true }));
   }
 
   /**
@@ -100,12 +112,12 @@ export class McpServer {
     roles?: string[]
   ): void {
     const wrappedMethod = async (params: unknown) => {
-      if (typeof params !== 'object' || params === null) {
+      if (params !== undefined && (typeof params !== 'object' || params === null)) {
         throw new VError('Invalid parameters: expected object');
       }
 
       if (roles && this.options.auth) {
-        const { token, ...rest } = params as { token?: string };
+        const { token, ...rest } = params as { token?: string } & Record<string, unknown>;
         if (!token) {
           throw new VError('Authentication token required');
         }
@@ -121,7 +133,7 @@ export class McpServer {
         }
       }
 
-      return method(params as Record<string, unknown>);
+      return method(params as Record<string, unknown> ?? {});
     };
 
     this.methods.set(name, wrappedMethod);
@@ -136,19 +148,34 @@ export class McpServer {
       if (
         typeof message !== 'object' ||
         message === null ||
-        !('method' in message) ||
-        typeof message.method !== 'string'
+        !('jsonrpc' in message) ||
+        message.jsonrpc !== JSONRPC_VERSION
       ) {
         throw new VError('Invalid message format');
       }
 
-      const method = this.methods.get(message.method);
-      if (!method) {
-        throw new VError('Method not found: %s', message.method);
+      const msg = message as Record<string, unknown>;
+
+      // Check for request
+      if ('method' in msg && typeof msg.method === 'string') {
+        const request = message as JSONRPCRequest;
+        const method = this.methods.get(request.method);
+        if (!method) {
+          throw new VError('Method not found: %s', request.method);
+        }
+
+        const params = 'params' in request ? request.params : undefined;
+        const response = await method(params);
+
+        return response;
       }
 
-      const params = 'params' in message ? message.params : undefined;
-      return await method(params);
+      // Check for response
+      if ('id' in msg && ('result' in msg || 'error' in msg)) {
+        return message;
+      }
+
+      throw new VError('Invalid message format: expected request or response');
     } catch (error) {
       throw new VError(error as Error, 'Failed to handle message');
     }
@@ -163,24 +190,40 @@ export class McpServer {
       transport.onMessage(async (message) => {
         try {
           const response = await this.handleMessage(message);
-          if ('id' in message) {
-            await transport.send({
-              jsonrpc: '2.0',
-              id: message.id,
-              result: response,
-            });
+          if (typeof message === 'object' && message !== null && 'id' in message) {
+            const request = message as JSONRPCRequest;
+            if (
+              typeof response === 'object' &&
+              response !== null &&
+              'error' in response &&
+              typeof response.error === 'object' &&
+              response.error !== null
+            ) {
+              await transport.send({
+                jsonrpc: JSONRPC_VERSION,
+                id: request.id,
+                error: response.error,
+              } as JSONRPCError);
+            } else {
+              await transport.send({
+                jsonrpc: JSONRPC_VERSION,
+                id: request.id,
+                result: response as Result,
+              } satisfies JSONRPCResponse);
+            }
           }
         } catch (error) {
-          if ('id' in message) {
+          if (typeof message === 'object' && message !== null && 'id' in message) {
+            const request = message as JSONRPCRequest;
             await transport.send({
-              jsonrpc: '2.0',
-              id: message.id,
+              jsonrpc: JSONRPC_VERSION,
+              id: request.id,
               error: {
                 code: -32000,
                 message: (error as Error).message,
                 data: error,
               },
-            });
+            } as JSONRPCError);
           }
         }
       });

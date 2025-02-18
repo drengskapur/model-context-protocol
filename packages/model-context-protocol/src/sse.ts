@@ -4,22 +4,33 @@
  * Provides a transport that uses SSE for communication.
  */
 
-import type { IncomingMessage, ServerResponse } from 'node:http';
-import { Channel, type Session, createSession } from 'better-sse';
 import { VError } from 'verror';
-import type { JSONRPCRequest, JSONRPCResponse } from './schema';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { Session } from 'better-sse';
+import { Channel, createSession } from 'better-sse';
 import { BaseTransport } from './transport';
+import type { JSONRPCRequest, JSONRPCResponse } from './schema';
 
 /**
  * Options for SSE transport.
  */
 export interface SseTransportOptions {
-  /** Request object from HTTP server */
+  /**
+   * HTTP request object.
+   */
   req: IncomingMessage;
-  /** Response object from HTTP server */
+
+  /**
+   * HTTP response object.
+   */
   res: ServerResponse;
-  /** Optional channel name for broadcasting */
+
+  /**
+   * Channel name for broadcasting.
+   * If provided, messages will be broadcast to all clients in the channel.
+   */
   channel?: string;
+
   /**
    * Whether to automatically reconnect.
    * @default true
@@ -51,6 +62,8 @@ export class SseTransport extends BaseTransport {
   private readonly options: Required<SseTransportOptions>;
   private session: Session | null = null;
   private channel: Channel | null = null;
+  private connecting = false;
+  private disconnecting = false;
 
   constructor(options: SseTransportOptions) {
     super();
@@ -69,6 +82,16 @@ export class SseTransport extends BaseTransport {
    * Connects to the SSE stream.
    */
   async connect(): Promise<void> {
+    if (this.isConnected()) {
+      throw new VError('Transport already connected');
+    }
+
+    if (this.connecting) {
+      throw new VError('Transport is already connecting');
+    }
+
+    this.connecting = true;
+
     try {
       // Set custom headers
       for (const [key, value] of Object.entries(this.options.headers)) {
@@ -77,41 +100,70 @@ export class SseTransport extends BaseTransport {
 
       // Create SSE session
       this.session = await createSession(this.options.req, this.options.res);
-
+      
       // Set retry timeout
       this.session.retry(this.options.retryTimeout);
 
       // Join channel if specified
       if (this.options.channel) {
-        this.channel = new Channel();
+        this.channel = new Channel(this.options.channel);
         this.channel.register(this.session);
       }
 
       // Handle session close
       this.session.on('close', () => {
-        this.handleError(new Error('SSE session closed'));
+        if (!this.disconnecting) {
+          this.handleError(new Error('SSE session closed unexpectedly'));
+        }
         this.setConnected(false);
+      });
+
+      // Handle session errors
+      this.session.on('error', (error) => {
+        this.handleError(new VError(error, 'SSE session error'));
       });
 
       this.setConnected(true);
     } catch (error) {
+      this.connecting = false;
       throw new VError(error as Error, 'Failed to connect SSE transport');
     }
+
+    this.connecting = false;
   }
 
   /**
    * Disconnects from the SSE stream.
    */
-  disconnect(): Promise<void> {
-    try {
-      this.session?.close();
-      this.channel?.close();
-      return Promise.resolve();
-    } catch (error) {
-      return Promise.reject(
-        new VError(error as Error, 'Failed to disconnect SSE transport')
-      );
+  async disconnect(): Promise<void> {
+    if (!this.isConnected()) {
+      return;
     }
+
+    if (this.disconnecting) {
+      throw new VError('Transport is already disconnecting');
+    }
+
+    this.disconnecting = true;
+
+    try {
+      if (this.channel) {
+        this.channel.close();
+        this.channel = null;
+      }
+
+      if (this.session) {
+        this.session.close();
+        this.session = null;
+      }
+
+      this.setConnected(false);
+    } catch (error) {
+      this.disconnecting = false;
+      throw new VError(error as Error, 'Failed to disconnect SSE transport');
+    }
+
+    this.disconnecting = false;
   }
 
   /**
@@ -124,14 +176,26 @@ export class SseTransport extends BaseTransport {
     }
 
     try {
+      const eventData = {
+        data: {
+          id: 'id' in message ? message.id : undefined,
+        },
+      };
+
       // If we have a channel, broadcast to all clients
       if (this.channel) {
-        await this.channel.broadcast('message', JSON.stringify(message));
+        await this.channel.broadcast(
+          'message',
+          JSON.stringify(message),
+          eventData
+        );
       } else if (this.session) {
         // Otherwise send to single client
-        await this.session.push('message', JSON.stringify(message), {
-          data: { id: 'id' in message ? message.id : undefined },
-        });
+        await this.session.push(
+          'message',
+          JSON.stringify(message),
+          eventData
+        );
       } else {
         throw new Error('No session or channel available');
       }

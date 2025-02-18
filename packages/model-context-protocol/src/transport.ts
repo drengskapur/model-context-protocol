@@ -6,7 +6,7 @@
 
 import { EventEmitter } from 'eventemitter3';
 import { JSONRPCClient, JSONRPCServer } from 'json-rpc-2.0';
-import type { JSONRPCRequest, JSONRPCResponse, RequestId } from './schema';
+import type { JSONRPCMessage, JSONRPCRequest, JSONRPCResponse, RequestId } from './schema.js';
 import { VError } from 'verror';
 
 /**
@@ -82,9 +82,10 @@ export interface McpTransport {
   ): void;
 
   /**
-   * Sends a message through the transport.
+   * Sends a message over the transport.
+   * @param message Message to send
    */
-  send(message: JSONRPCRequest | JSONRPCResponse): Promise<void>;
+  send(message: JSONRPCMessage): Promise<void>;
 
   /**
    * Connects the transport.
@@ -140,7 +141,7 @@ export abstract class BaseTransport implements McpTransport {
    * Sends a message through the transport.
    * @param message Message to send
    */
-  abstract send(message: JSONRPCRequest | JSONRPCResponse): Promise<void>;
+  abstract send(message: JSONRPCMessage): Promise<void>;
 
   /**
    * Connects the transport.
