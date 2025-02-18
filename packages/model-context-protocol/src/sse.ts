@@ -4,15 +4,8 @@
  * Provides a transport that uses SSE for communication.
  */
 
-import type { IncomingMessage, ServerResponse } from 'node:http';
-import type {
-  Channel,
-  DefaultChannelState,
-  DefaultSessionState,
-  Session,
-} from 'better-sse';
-import { createChannel, createSession } from 'better-sse';
 import { VError } from 'verror';
+import type { JSONRPCMessage } from './json-rpc';
 import { BaseTransport } from './transport';
 
 /**
@@ -20,38 +13,9 @@ import { BaseTransport } from './transport';
  */
 export interface SseTransportOptions {
   /**
-   * HTTP request object.
+   * URL of the SSE endpoint.
    */
-  req: IncomingMessage;
-
-  /**
-   * HTTP response object.
-   */
-  res: ServerResponse;
-
-  /**
-   * Channel name for broadcasting.
-   * If provided, messages will be broadcast to all clients in the channel.
-   */
-  channel?: string;
-
-  /**
-   * Whether to automatically reconnect.
-   * @default true
-   */
-  autoReconnect?: boolean;
-
-  /**
-   * Reconnection delay in milliseconds.
-   * @default 1000
-   */
-  reconnectDelay?: number;
-
-  /**
-   * Initial retry delay in milliseconds.
-   * @default 1000
-   */
-  retryTimeout?: number;
+  url: string;
 
   /**
    * Custom headers to include.
@@ -60,155 +24,113 @@ export interface SseTransportOptions {
 }
 
 /**
- * SSE transport implementation using better-sse.
+ * SSE transport implementation using EventSource.
  */
 export class SseTransport extends BaseTransport {
-  private readonly options: Required<SseTransportOptions>;
-  private session: Session<DefaultSessionState> | null = null;
-  private channel: Channel<DefaultChannelState, DefaultSessionState> | null =
-    null;
-  private connecting = false;
-  private disconnecting = false;
+  private readonly url: string;
+  private readonly headers: Record<string, string>;
+  private eventSource: EventSource | null = null;
+  private _connected = false;
 
   constructor(options: SseTransportOptions) {
     super();
-    this.options = {
-      req: options.req,
-      res: options.res,
-      channel: options.channel ?? 'default',
-      autoReconnect: options.autoReconnect ?? true,
-      reconnectDelay: options.reconnectDelay ?? 1000,
-      retryTimeout: options.retryTimeout ?? 1000,
-      headers: options.headers ?? {},
-    };
+    this.url = options.url;
+    this.headers = options.headers ?? {};
   }
 
   /**
    * Connects to the SSE stream.
    */
-  async connect(): Promise<void> {
-    if (this.isConnected()) {
+  public async connect(): Promise<void> {
+    if (this._connected) {
       throw new VError('Transport already connected');
     }
 
-    if (this.connecting) {
-      throw new VError('Transport is already connecting');
-    }
-
-    this.connecting = true;
-
     try {
-      // Set custom headers
-      for (const [key, value] of Object.entries(this.options.headers)) {
-        this.options.res.setHeader(key, value);
-      }
+      this.eventSource = new EventSource(this.url, {
+        withCredentials: true,
+      });
 
-      // Create SSE session
-      this.session = await createSession(this.options.req, this.options.res);
-
-      // Set retry timeout
-      this.session.retry(this.options.retryTimeout);
-
-      // Join channel if specified
-      if (this.options.channel) {
-        this.channel = createChannel();
-        this.channel.register(this.session);
-      }
-
-      // Handle session close
-      this.session.on('close', () => {
-        if (!this.disconnecting) {
-          this.handleError(new Error('SSE session closed unexpectedly'));
+      this.eventSource.onmessage = async (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          await this.handleMessage(message);
+        } catch (error) {
+          this.handleError(
+            error instanceof Error ? error : new VError(String(error))
+          );
         }
-        this.setConnected(false);
-      });
+      };
 
-      // Handle session errors
-      this.session.on('error', (error) => {
-        this.handleError(new VError(error, 'SSE session error'));
-      });
+      this.eventSource.onerror = (_error) => {
+        this.handleError(new VError('SSE connection error'));
+      };
 
+      this._connected = true;
       this.setConnected(true);
     } catch (error) {
-      this.connecting = false;
-      throw new VError(error as Error, 'Failed to connect SSE transport');
+      throw new VError(
+        {
+          name: 'SSEConnectionError',
+          cause: error instanceof Error ? error : undefined,
+        },
+        'Failed to connect to SSE endpoint'
+      );
     }
-
-    this.connecting = false;
   }
 
   /**
    * Disconnects from the SSE stream.
    */
-  async disconnect(): Promise<void> {
-    if (!this.isConnected()) {
-      return;
+  public async disconnect(): Promise<void> {
+    if (!this._connected) {
+      throw new VError('Transport not connected');
     }
 
-    if (this.disconnecting) {
-      throw new VError('Transport is already disconnecting');
+    if (this.eventSource) {
+      this.eventSource.close();
+      this.eventSource = null;
     }
 
-    this.disconnecting = true;
-
-    try {
-      this.channel = null;
-
-      if (this.session) {
-        // Send a final message to indicate closure
-        await this.session.push('close', '');
-        // End the response
-        this.options.res.end();
-        this.session = null;
-      }
-
-      this.setConnected(false);
-      this.disconnecting = false;
-    } catch (error) {
-      this.disconnecting = false;
-      throw new VError(error as Error, 'Failed to disconnect SSE transport');
-    }
+    this._connected = false;
+    this.setConnected(false);
   }
 
   /**
    * Sends a message through the transport.
    * @param message Message to send
    */
-  async send(message: unknown): Promise<void> {
-    if (!this.isConnected()) {
+  public async send(message: JSONRPCMessage): Promise<void> {
+    if (!this._connected) {
       throw new VError('Transport not connected');
     }
 
-    try {
-      const messageStr = JSON.stringify(message);
+    const response = await fetch(this.url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...this.headers,
+      },
+      body: JSON.stringify(message),
+    });
 
-      // If we have a channel, broadcast to all clients
-      if (this.channel) {
-        await this.channel.broadcast('message', messageStr);
-      } else if (this.session) {
-        // Otherwise send to single client
-        await this.session.push('message', messageStr);
-      } else {
-        throw new Error('No session or channel available');
-      }
-    } catch (error) {
-      throw new VError(error as Error, 'Failed to send message');
+    if (!response.ok) {
+      throw new VError(`Failed to send message: ${response.statusText}`);
     }
   }
 
   /**
-   * Gets the current session.
-   * @returns The current session or null if not connected
+   * Handles an error that occurred during communication.
+   * @param error Error that occurred
    */
-  getSession(): Session<DefaultSessionState> | null {
-    return this.session;
-  }
-
-  /**
-   * Gets the current channel.
-   * @returns The current channel or null if not using channels
-   */
-  getChannel(): Channel<DefaultChannelState, DefaultSessionState> | null {
-    return this.channel;
+  protected handleError(error: Error): void {
+    for (const handler of this.errorHandlers) {
+      try {
+        handler(error);
+      } catch (err) {
+        console.error('Error in error handler:', err);
+      }
+    }
+    this.events.emit('error', error);
   }
 }

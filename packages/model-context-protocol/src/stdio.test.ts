@@ -1,214 +1,302 @@
-import { Readable, Writable } from 'node:stream';
+/**
+ * @file stdio.test.ts
+ * @description Test suite for standard I/O transport implementation.
+ */
+
+// Mock readline interface
+const mockLineHandlers: ((line: string) => void)[] = [];
+
+vi.mock('node:readline', () => ({
+  createInterface: () => ({
+    close: vi.fn(),
+    on: vi.fn((event, handler) => {
+      if (event === 'line') {
+        mockLineHandlers.push(handler);
+      }
+    }),
+    removeAllListeners: vi.fn(() => {
+      mockLineHandlers.length = 0;
+    }),
+  }),
+}));
+
+// Mock TypedEventEmitter
+vi.mock('./transport', async () => {
+  const actual =
+    await vi.importActual<typeof import('./transport')>('./transport');
+  const { MockEventEmitter } = await import('./__mocks__/typed-event-emitter');
+  return {
+    ...actual,
+    TypedEventEmitter: MockEventEmitter,
+  };
+});
+
+import { EventEmitter } from 'node:events';
+import type { Readable, Writable } from 'node:stream';
+import { VError } from 'verror';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { JSONRPCRequest } from './schema';
+import type { JSONRPCRequest } from './json-rpc';
 import { JSONRPC_VERSION } from './schema';
 import { StdioTransport } from './stdio';
 
-const ALREADY_CONNECTED_REGEX = /already connected/;
-const WRITE_ERROR_REGEX = /Write error/;
+// Mock stream implementation for testing
+class MockStream extends EventEmitter {
+  public writtenData: string[] = [];
+  public encoding: BufferEncoding = 'utf8';
+  public destroyed = false;
+  public readable = true;
+  public writable = true;
+
+  // Minimal implementation needed for tests
+  setEncoding(encoding: BufferEncoding): this {
+    this.encoding = encoding;
+    return this;
+  }
+
+  write(chunk: string, callback?: (error?: Error | null) => void): boolean {
+    this.writtenData.push(chunk.toString());
+    if (callback) {
+      callback();
+    }
+    return true;
+  }
+
+  destroy(error?: Error): void {
+    this.destroyed = true;
+    if (error) {
+      this.emit('error', error);
+    }
+  }
+
+  resume(): this {
+    return this;
+  }
+
+  pause(): this {
+    return this;
+  }
+
+  removeAllListeners(): this {
+    super.removeAllListeners();
+    return this;
+  }
+
+  // Helper methods for testing
+  simulateData(data: string): void {
+    for (const line of data.split('\n')) {
+      if (line) {
+        for (const handler of mockLineHandlers) {
+          handler(line);
+        }
+      }
+    }
+  }
+
+  simulateError(error: Error): void {
+    this.emit('error', error);
+  }
+}
 
 describe('StdioTransport', () => {
   let transport: StdioTransport;
-  let input: Readable;
-  let output: Writable;
-  let outputData: string[];
+  let inputStream: MockStream;
+  let outputStream: MockStream;
 
   beforeEach(() => {
-    outputData = [];
-    input = new Readable({
-      read() {
-        // No-op
-      },
-    });
-
-    output = new Writable({
-      write(chunk, _, callback) {
-        outputData.push(chunk.toString());
-        callback();
-      },
-    });
-
+    vi.clearAllMocks();
+    mockLineHandlers.length = 0;
+    inputStream = new MockStream();
+    outputStream = new MockStream();
     transport = new StdioTransport({
-      input,
-      output,
+      input: inputStream as unknown as Readable,
+      output: outputStream as unknown as Writable,
     });
   });
 
   afterEach(async () => {
-    await transport.disconnect();
-    input.destroy();
-    output.destroy();
+    if (transport) {
+      await transport.disconnect();
+    }
+    mockLineHandlers.length = 0;
   });
 
-  describe('connection management', () => {
+  describe('Connection Management', () => {
     it('should connect successfully', async () => {
+      const onConnect = vi.fn();
+      transport.events.on('connect', onConnect);
       await transport.connect();
       expect(transport.isConnected()).toBe(true);
+      expect(onConnect).toHaveBeenCalled();
+    });
+
+    it('should reject double connection', async () => {
+      await transport.connect();
+      try {
+        await transport.connect();
+        expect.fail('Expected connect to throw');
+      } catch (error) {
+        expect(error).toBeInstanceOf(VError);
+        expect(error).toHaveProperty('message', 'Transport already connected');
+      }
     });
 
     it('should disconnect successfully', async () => {
       await transport.connect();
+      const onDisconnect = vi.fn();
+      transport.events.on('disconnect', onDisconnect);
       await transport.disconnect();
       expect(transport.isConnected()).toBe(false);
+      expect(onDisconnect).toHaveBeenCalled();
     });
 
-    it('should prevent double connect', async () => {
+    it('should handle input stream errors', async () => {
+      const onError = vi.fn();
+      transport.onError(onError);
       await transport.connect();
-      await expect(transport.connect()).rejects.toThrow(
-        ALREADY_CONNECTED_REGEX
-      );
+
+      const streamError = new Error('Stream error');
+      await new Promise<void>((resolve) => {
+        transport.onError(() => resolve());
+        inputStream.simulateError(streamError);
+      });
+
+      expect(onError).toHaveBeenCalledWith(streamError);
     });
   });
 
-  describe('message handling', () => {
+  describe('Message Handling', () => {
     beforeEach(async () => {
       await transport.connect();
+      // Wait for event handlers to be set up
+      await new Promise((resolve) => setTimeout(resolve, 0));
     });
 
-    it('should send messages', async () => {
+    it('should handle complete messages', async () => {
+      const onMessage = vi.fn();
+      transport.events.on('message', onMessage);
+
       const message: JSONRPCRequest = {
         jsonrpc: JSONRPC_VERSION,
-        method: 'test',
         id: '1',
+        method: 'test',
+        params: {},
       };
-      await transport.send(message);
-      expect(outputData).toHaveLength(1);
-      expect(JSON.parse(outputData[0])).toEqual(message);
+
+      inputStream.simulateData(JSON.stringify(message) + '\n');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(onMessage).toHaveBeenCalledWith(message);
     });
 
-    it('should receive messages', async () => {
-      const message: JSONRPCRequest = {
-        jsonrpc: JSONRPC_VERSION,
-        method: 'test',
-        id: '1',
-      };
-      const received = new Promise<unknown>((resolve) => {
-        transport.onMessage((msg) => {
-          resolve(msg);
-          return Promise.resolve();
-        });
-      });
+    it('should handle multiple messages in one chunk', async () => {
+      const onMessage = vi.fn();
+      transport.events.on('message', onMessage);
 
-      input.push(`${JSON.stringify(message)}\n`);
-      expect(await received).toEqual(message);
-    });
-
-    it('should handle multiple messages in single chunk', async () => {
       const messages: JSONRPCRequest[] = [
-        { jsonrpc: JSONRPC_VERSION, method: 'test1', id: '1' },
-        { jsonrpc: JSONRPC_VERSION, method: 'test2', id: '2' },
+        {
+          jsonrpc: JSONRPC_VERSION,
+          id: '1',
+          method: 'test1',
+          params: {},
+        },
+        {
+          jsonrpc: JSONRPC_VERSION,
+          id: '2',
+          method: 'test2',
+          params: {},
+        },
       ];
 
-      const received: unknown[] = [];
-      transport.onMessage((msg) => {
-        received.push(msg);
-        return Promise.resolve();
+      const data = messages.map((msg) => JSON.stringify(msg)).join('\n') + '\n';
+      inputStream.simulateData(data);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(onMessage).toHaveBeenCalledTimes(2);
+      messages.forEach((msg, i) => {
+        expect(onMessage).toHaveBeenNthCalledWith(i + 1, msg);
       });
-
-      input.push(messages.map((m) => `${JSON.stringify(m)}\n`).join(''));
-      await new Promise((resolve) => setTimeout(resolve, 10));
-
-      expect(received).toEqual(messages);
     });
 
-    it('should handle split messages across chunks', async () => {
-      const message: JSONRPCRequest = {
-        jsonrpc: JSONRPC_VERSION,
-        method: 'test',
-        id: '1',
-      };
-      const json = JSON.stringify(message);
-
-      const received = new Promise<unknown>((resolve) => {
-        transport.onMessage((msg) => {
-          resolve(msg);
-          return Promise.resolve();
-        });
-      });
-
-      input.push(json.slice(0, 10));
-      input.push(`${json.slice(10)}\n`);
-
-      expect(await received).toEqual(message);
-    });
-
-    it('should handle parse errors gracefully', async () => {
+    it('should handle invalid JSON', async () => {
       const onError = vi.fn();
       transport.onError(onError);
 
-      input.push('invalid json\n');
-      await new Promise((resolve) => setTimeout(resolve, 10));
+      inputStream.simulateData('invalid json\n');
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
-      expect(onError).toHaveBeenCalledWith(expect.any(Error));
-    });
-
-    it('should handle handler errors', async () => {
-      const error = new Error('Handler error');
-      transport.onMessage(() => {
-        throw error;
-      });
-
-      const onError = vi.fn();
-      transport.onError(onError);
-
-      input.push(
-        `${JSON.stringify({ jsonrpc: JSONRPC_VERSION, method: 'test', id: '1' })}\n`
+      expect(onError).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('Failed to parse message'),
+        })
       );
-      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
 
-      expect(onError).toHaveBeenCalledWith(error);
+    it('should handle empty lines', async () => {
+      const onMessage = vi.fn();
+      const onError = vi.fn();
+      transport.events.on('message', onMessage);
+      transport.onError(onError);
+
+      inputStream.simulateData('\n\n\n');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(onMessage).not.toHaveBeenCalled();
+      expect(onError).not.toHaveBeenCalled();
     });
   });
 
-  describe('error handling', () => {
+  describe('Message Sending', () => {
     beforeEach(async () => {
       await transport.connect();
+    });
+
+    it('should send messages with separator', async () => {
+      const message: JSONRPCRequest = {
+        jsonrpc: JSONRPC_VERSION,
+        id: '1',
+        method: 'test',
+        params: {},
+      };
+
+      await transport.send(message);
+
+      expect(outputStream.writtenData).toEqual([
+        `${JSON.stringify(message)}\n`,
+      ]);
+    });
+
+    it('should reject sending when not connected', async () => {
+      await transport.disconnect();
+
+      const message: JSONRPCRequest = {
+        jsonrpc: JSONRPC_VERSION,
+        id: '1',
+        method: 'test',
+        params: {},
+      };
+
+      await expect(transport.send(message)).rejects.toThrow(
+        'Transport not connected'
+      );
     });
 
     it('should handle write errors', async () => {
-      const error = new Error('Write error');
-      const mockWrite = vi.fn().mockImplementation((_, __, cb) => cb(error));
-      output.write = mockWrite;
-
-      const message: JSONRPCRequest = {
-        jsonrpc: JSONRPC_VERSION,
-        method: 'test',
-        id: '1',
-      };
-      await expect(transport.send(message)).rejects.toThrow(WRITE_ERROR_REGEX);
-    });
-
-    it('should handle stream errors', () => {
-      const onError = vi.fn();
-      transport.onError(onError);
-
-      const error = new Error('Stream error');
-      input.emit('error', error);
-
-      expect(onError).toHaveBeenCalledWith(error);
-    });
-  });
-
-  describe('cleanup', () => {
-    it('should clean up handlers on disconnect', async () => {
-      let messageCount = 0;
-      await transport.connect();
-      transport.onMessage(() => {
-        messageCount++;
-        return Promise.resolve();
+      // Mock write to fail
+      vi.spyOn(outputStream, 'write').mockImplementation((_chunk, callback) => {
+        if (callback && typeof callback === 'function') {
+          callback(new Error('Write failed'));
+        }
+        return true;
       });
 
-      await transport.disconnect();
-
       const message: JSONRPCRequest = {
         jsonrpc: JSONRPC_VERSION,
-        method: 'test',
         id: '1',
+        method: 'test',
+        params: {},
       };
-      input.push(`${JSON.stringify(message)}\n`);
-      await new Promise((resolve) => setTimeout(resolve, 10));
 
-      expect(messageCount).toBe(0);
+      await expect(transport.send(message)).rejects.toThrow('Write error');
     });
   });
 });

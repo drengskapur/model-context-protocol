@@ -8,9 +8,9 @@
  * Base error class for MCP errors.
  */
 export class McpError extends Error {
-  public readonly code: number;
-  public readonly data?: unknown;
-  public readonly cause?: Error;
+  readonly code: number;
+  readonly data?: unknown;
+  readonly cause?: Error;
 
   constructor(
     code: number,

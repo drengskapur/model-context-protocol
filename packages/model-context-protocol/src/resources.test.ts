@@ -1,25 +1,22 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { InMemoryTransport } from './in-memory';
-import { JSONRPC_VERSION, LATEST_PROTOCOL_VERSION } from './schema';
-import { Server } from './server';
-import type { Resource, ResourceTemplate } from './server';
+import {
+  JSONRPC_VERSION,
+  LATEST_PROTOCOL_VERSION,
+  type Resource,
+} from './schema';
+import { McpServer } from './server';
 
 describe('Resource Management', () => {
-  let server: Server;
+  let server: McpServer;
   let transport: InMemoryTransport;
 
   beforeEach(async () => {
     transport = new InMemoryTransport();
     await transport.connect();
-    server = new Server({
+    server = new McpServer({
       name: 'test-server',
       version: '1.0.0',
-      capabilities: {
-        resources: {
-          listChanged: true,
-          subscribe: true,
-        },
-      },
     });
     await server.connect(transport);
 
@@ -30,7 +27,16 @@ describe('Resource Management', () => {
       method: 'initialize',
       params: {
         protocolVersion: LATEST_PROTOCOL_VERSION,
-        capabilities: {},
+        capabilities: {
+          resources: {
+            listChanged: true,
+            subscribe: true,
+          },
+        },
+        clientInfo: {
+          name: 'test-client',
+          version: '1.0.0',
+        },
       },
     });
 
@@ -41,10 +47,10 @@ describe('Resource Management', () => {
   it('should list resources', async () => {
     const resource: Resource = {
       uri: 'test://resource1',
+      name: 'Test Resource',
       mimeType: 'text/plain',
-      content: 'test content',
     };
-    server.resource(resource, resource.content);
+    server.resource(resource);
 
     await transport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
@@ -64,15 +70,20 @@ describe('Resource Management', () => {
   });
 
   it('should list resource templates', async () => {
-    const template: ResourceTemplate = {
-      uriTemplate: 'test://{name}',
-      mimeType: 'text/plain',
-    };
-    server.resourceTemplate(template);
-
     await transport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
       id: 2,
+      method: 'resources/register',
+      params: {
+        name: 'Test Template',
+        uriTemplate: 'test://{name}',
+        mimeType: 'text/plain',
+      },
+    });
+
+    await transport.simulateIncomingMessage({
+      jsonrpc: JSONRPC_VERSION,
+      id: 3,
       method: 'resources/templates/list',
       params: {},
     });
@@ -80,9 +91,15 @@ describe('Resource Management', () => {
     const messages = transport.getMessages();
     expect(messages[1]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
-      id: 2,
+      id: 3,
       result: {
-        resourceTemplates: [template],
+        resourceTemplates: [
+          {
+            name: 'Test Template',
+            uriTemplate: 'test://{name}',
+            mimeType: 'text/plain',
+          },
+        ],
       },
     });
   });
@@ -90,10 +107,10 @@ describe('Resource Management', () => {
   it('should read a resource', async () => {
     const resource: Resource = {
       uri: 'test://resource1',
+      name: 'Test Resource',
       mimeType: 'text/plain',
-      content: 'test content',
     };
-    server.resource(resource, resource.content);
+    server.resource(resource);
 
     await transport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
@@ -111,7 +128,7 @@ describe('Resource Management', () => {
           {
             uri: resource.uri,
             mimeType: resource.mimeType,
-            text: resource.content,
+            text: 'test content',
           },
         ],
       },
@@ -121,10 +138,10 @@ describe('Resource Management', () => {
   it('should handle resource subscriptions', async () => {
     const resource: Resource = {
       uri: 'test://resource1',
+      name: 'Test Resource',
       mimeType: 'text/plain',
-      content: 'test content',
     };
-    server.resource(resource, resource.content);
+    server.resource(resource);
 
     // Subscribe to resource
     await transport.simulateIncomingMessage({
@@ -141,9 +158,12 @@ describe('Resource Management', () => {
       result: {},
     });
 
-    // Update resource and check notification
-    const newContent = 'updated content';
-    server.resource({ ...resource, content: newContent }, newContent);
+    // Update resource
+    const updatedResource: Resource = {
+      ...resource,
+      description: 'Updated resource',
+    };
+    server.resource(updatedResource);
 
     expect(messages[2]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,
@@ -155,7 +175,6 @@ describe('Resource Management', () => {
       method: 'notifications/resources/updated',
       params: {
         uri: resource.uri,
-        content: newContent,
       },
     });
   });
@@ -163,11 +182,11 @@ describe('Resource Management', () => {
   it('should handle resource list change notifications', () => {
     const resource: Resource = {
       uri: 'test://resource1',
+      name: 'Test Resource',
       mimeType: 'text/plain',
-      content: 'test content',
     };
 
-    server.resource(resource, resource.content);
+    server.resource(resource);
     const messages = transport.getMessages();
     expect(messages[0]).toMatchObject({
       jsonrpc: JSONRPC_VERSION,

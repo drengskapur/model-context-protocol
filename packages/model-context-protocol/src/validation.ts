@@ -34,7 +34,7 @@ export const VALIDATION_ERROR = -32402;
  * Custom validation error class.
  */
 export class ValidationError extends McpError {
-  public readonly errors?: ValiError['issues'];
+  readonly errors?: ValiError['issues'];
 
   constructor(message: string, cause?: ValiError) {
     super(VALIDATION_ERROR, message, {

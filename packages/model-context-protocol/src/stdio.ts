@@ -5,7 +5,9 @@
  */
 
 import type { Readable, Writable } from 'node:stream';
+import { createInterface, type Interface } from 'node:readline';
 import { VError } from 'verror';
+import type { JSONRPCMessage } from './json-rpc';
 import { BaseTransport } from './transport';
 
 /**
@@ -25,44 +27,36 @@ export interface StdioTransportOptions {
   output?: Writable;
 
   /**
-   * Buffer size for reading input.
-   * @default 4096
+   * Whether to process lines or not.
+   * @default true
    */
-  bufferSize?: number;
-
-  /**
-   * Line separator.
-   * @default '\n'
-   */
-  separator?: string;
+  processLines?: boolean;
 }
 
 /**
  * Transport implementation that uses standard I/O streams.
  */
 export class StdioTransport extends BaseTransport {
-  private readonly options: Required<StdioTransportOptions>;
+  private readonly input: Readable;
+  private readonly output: Writable;
+  private readonly rl: Interface;
+  private readonly processLines: boolean;
   private buffer = '';
-  private input: Readable;
-  private output: Writable;
   private alreadyConnected = false;
 
   constructor(options: StdioTransportOptions = {}) {
     super();
-    this.options = {
-      input: options.input ?? process.stdin,
-      output: options.output ?? process.stdout,
-      bufferSize: options.bufferSize ?? 4096,
-      separator: options.separator ?? '\n',
-    };
+    this.input = options.input ?? process.stdin;
+    this.output = options.output ?? process.stdout;
+    this.processLines = options.processLines ?? true;
 
-    this.input = this.options.input;
-    this.output = this.options.output;
+    this.rl = createInterface({
+      input: this.input,
+      output: this.output,
+      terminal: false,
+    });
 
-    // Set encoding for stdin if it's a raw stream
-    if (this.input === process.stdin) {
-      this.input.setEncoding('utf8');
-    }
+    this.setupEventHandlers();
   }
 
   /**
@@ -74,16 +68,6 @@ export class StdioTransport extends BaseTransport {
     }
 
     try {
-      // Setup input handling
-      this.input.on('data', (data: Buffer | string) => {
-        this.buffer += data.toString();
-        this.processBuffer();
-      });
-
-      this.input.on('error', (error: Error) => {
-        this.handleError(error);
-      });
-
       this.alreadyConnected = true;
       this.setConnected(true);
       return Promise.resolve();
@@ -97,6 +81,7 @@ export class StdioTransport extends BaseTransport {
    */
   disconnect(): Promise<void> {
     try {
+      this.rl.close();
       this.input.removeAllListeners();
       this.buffer = '';
       this.alreadyConnected = false;
@@ -117,11 +102,11 @@ export class StdioTransport extends BaseTransport {
     }
 
     try {
-      const data = JSON.stringify(message) + this.options.separator;
+      const data = `${JSON.stringify(message)}\n`;
       await new Promise<void>((resolve, reject) => {
         this.output.write(data, (error) => {
           if (error) {
-            reject(new VError('Write error'));
+            reject(new VError(error, 'Write error'));
           } else {
             resolve();
           }
@@ -135,19 +120,52 @@ export class StdioTransport extends BaseTransport {
     }
   }
 
-  /**
-   * Processes the input buffer.
-   */
-  private processBuffer(): void {
-    const lines = this.buffer.split(this.options.separator);
+  private setupEventHandlers(): void {
+    if (this.processLines) {
+      this.rl.on('line', async (line: string) => {
+        try {
+          await this.handleLine(line);
+        } catch (err) {
+          this.handleError(err instanceof Error ? err : new Error(String(err)));
+        }
+      });
+    } else {
+      this.input.on('data', async (chunk: Buffer) => {
+        try {
+          await this.handleData(chunk);
+        } catch (err) {
+          this.handleError(err instanceof Error ? err : new Error(String(err)));
+        }
+      });
+    }
+
+    this.input.on('end', () => {
+      this.disconnect().catch((err) => {
+        this.handleError(err instanceof Error ? err : new Error(String(err)));
+      });
+    });
+
+    this.input.on('error', (err: Error) => {
+      this.handleError(err);
+    });
+  }
+
+  private async handleLine(line: string): Promise<void> {
+    try {
+      const message = JSON.parse(line);
+      await this.handleMessage(message);
+    } catch (error) {
+      this.handleError(new VError(error as Error, 'Failed to parse message'));
+    }
+  }
+
+  private async handleData(chunk: Buffer): Promise<void> {
+    this.buffer += chunk.toString();
+    const lines = this.buffer.split('\n');
 
     // Keep the last line if it's incomplete
     this.buffer = lines.pop() || '';
 
-    this.processLines(lines);
-  }
-
-  private processLines(lines: string[]): void {
     for (const line of lines) {
       if (!line) {
         continue;
@@ -155,12 +173,21 @@ export class StdioTransport extends BaseTransport {
 
       try {
         const message = JSON.parse(line);
-        this.handleMessage(message).catch((error) => {
-          this.handleError(error);
-        });
+        await this.handleMessage(message);
       } catch (error) {
         this.handleError(new VError(error as Error, 'Failed to parse message'));
       }
     }
+  }
+
+  protected handleError(error: Error): void {
+    for (const handler of this.errorHandlers) {
+      try {
+        handler(error);
+      } catch (err) {
+        console.error('Error in error handler:', err);
+      }
+    }
+    this.events.emit('error', error);
   }
 }

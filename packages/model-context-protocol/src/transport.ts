@@ -4,67 +4,43 @@
  * Defines interfaces and base classes for different transport mechanisms.
  */
 
-import { EventEmitter } from 'eventemitter3';
+import { EventEmitter } from 'events';
 import { JSONRPCClient, JSONRPCServer } from 'json-rpc-2.0';
 import { VError } from 'verror';
+import { TypedEventEmitter } from './json-rpc';
 import type {
   JSONRPCMessage,
   JSONRPCRequest,
   JSONRPCResponse,
-  RequestId,
-} from './schema.js';
+} from './json-rpc.js';
 
 /**
  * Event types for transport events
  */
 export type TransportEventMap = {
-  message: [
-    message: JSONRPCRequest | (Omit<JSONRPCResponse, 'id'> & { id: RequestId }),
-  ];
-  error: [error: Error];
-  connect: never[];
-  disconnect: never[];
+  message: (message: JSONRPCMessage) => void;
+  error: (error: Error) => void;
+  connect: () => void;
+  disconnect: () => void;
 };
 
 /**
  * Base interface for event emitter functionality
  */
-export interface BaseEventEmitter {
-  /**
-   * Adds an event listener
-   * @param event Event name
-   * @param handler Event handler
-   */
-  on<K extends keyof TransportEventMap>(
-    event: K,
-    handler: K extends 'connect' | 'disconnect'
-      ? () => void
-      : (...args: TransportEventMap[K]) => void
-  ): void;
-
-  /**
-   * Removes an event listener
-   * @param event Event name
-   * @param handler Event handler
-   */
-  off<K extends keyof TransportEventMap>(
-    event: K,
-    handler: K extends 'connect' | 'disconnect'
-      ? () => void
-      : (...args: TransportEventMap[K]) => void
-  ): void;
-}
+export type BaseEventEmitter = TypedEventEmitter<TransportEventMap>;
 
 /**
  * Handler for receiving messages from a transport.
  */
-export type MessageHandler = (message: unknown) => Promise<void>;
+export type TransportMessageHandler = (
+  message: JSONRPCMessage
+) => void | Promise<void>;
 
 /**
  * Handler function type for receiving errors from a transport.
  * @param error The error that occurred
  */
-export type ErrorHandler = (error: Error) => void;
+export type TransportErrorHandler = (error: Error) => void | Promise<void>;
 
 /**
  * Transport interface for Model Context Protocol.
@@ -77,22 +53,22 @@ export interface McpTransport {
 
   /**
    * Subscribe to transport events.
+   * @param event Event name
+   * @param handler Event handler
    */
   on<K extends keyof TransportEventMap>(
     event: K,
-    handler: K extends 'connect' | 'disconnect'
-      ? () => void
-      : (...args: TransportEventMap[K]) => void
+    handler: TransportEventMap[K]
   ): void;
 
   /**
    * Unsubscribe from transport events.
+   * @param event Event name
+   * @param handler Event handler
    */
   off<K extends keyof TransportEventMap>(
     event: K,
-    handler: K extends 'connect' | 'disconnect'
-      ? () => void
-      : (...args: TransportEventMap[K]) => void
+    handler: TransportEventMap[K]
   ): void;
 
   /**
@@ -117,342 +93,180 @@ export interface McpTransport {
   isConnected(): boolean;
 
   /**
-   * Register a handler for receiving messages.
+   * Adds a message handler
+   * @param handler Handler to add
    */
-  onMessage(handler: MessageHandler): void;
+  onMessage(handler: TransportMessageHandler): void;
 
   /**
-   * Unregister a message handler.
+   * Removes a message handler
+   * @param handler Handler to remove
    */
-  offMessage(handler: MessageHandler): void;
+  offMessage(handler: TransportMessageHandler): void;
 
   /**
-   * Close the transport and clean up any resources.
+   * Adds an error handler
+   * @param handler Handler to add
+   */
+  onError(handler: TransportErrorHandler): void;
+
+  /**
+   * Removes an error handler
+   * @param handler Handler to remove
+   */
+  offError(handler: TransportErrorHandler): void;
+
+  /**
+   * Closes the transport and clean up any resources.
    */
   close(): Promise<void>;
-
-  /**
-   * Registers an error handler.
-   * @param handler Error handler function
-   */
-  onError(handler: ErrorHandler): void;
-
-  /**
-   * Unregisters an error handler.
-   * @param handler Error handler function
-   */
-  offError(handler: ErrorHandler): void;
 }
 
 /**
  * Base class for transport implementations.
  */
 export abstract class BaseTransport implements McpTransport {
-  protected readonly _events: EventEmitter = new EventEmitter();
-  public get events(): BaseEventEmitter {
-    return {
-      on: <K extends keyof TransportEventMap>(
-        event: K,
-        handler: K extends 'connect' | 'disconnect'
-          ? () => void
-          : (...args: TransportEventMap[K]) => void
-      ) => {
-        this._events.on(event, handler);
-      },
-      off: <K extends keyof TransportEventMap>(
-        event: K,
-        handler: K extends 'connect' | 'disconnect'
-          ? () => void
-          : (...args: TransportEventMap[K]) => void
-      ) => {
-        this._events.off(event, handler);
-      },
-    };
-  }
-  protected connected = false;
-  private messageHandlers = new Set<MessageHandler>();
-  private errorHandlers = new Set<ErrorHandler>();
+  private connected = false;
+  protected messageHandlers = new Set<TransportMessageHandler>();
+  protected errorHandlers = new Set<TransportErrorHandler>();
+  protected readonly _events: TypedEventEmitter<TransportEventMap>;
 
-  /**
-   * Sends a message through the transport.
-   * @param message Message to send
-   */
-  abstract send(message: JSONRPCMessage): Promise<void>;
-
-  /**
-   * Connects the transport.
-   */
-  abstract connect(): Promise<void>;
-
-  /**
-   * Disconnects the transport.
-   */
-  abstract disconnect(): Promise<void>;
-
-  /**
-   * Whether the transport is currently connected.
-   */
-  isConnected(): boolean {
-    return this.connected;
+  constructor() {
+    this._events = new TypedEventEmitter();
   }
 
-  /**
-   * Subscribe to transport events.
-   * @param event Event name
-   * @param handler Event handler
-   */
-  on<K extends keyof TransportEventMap>(
-    event: K,
-    handler: K extends 'connect' | 'disconnect'
-      ? () => void
-      : (...args: TransportEventMap[K]) => void
-  ): void {
-    this._events.on(event, handler);
+  public get events(): TypedEventEmitter<TransportEventMap> {
+    return this._events;
   }
 
-  /**
-   * Unsubscribe from transport events.
-   * @param event Event name
-   * @param handler Event handler
-   */
-  off<K extends keyof TransportEventMap>(
-    event: K,
-    handler: K extends 'connect' | 'disconnect'
-      ? () => void
-      : (...args: TransportEventMap[K]) => void
-  ): void {
-    this._events.off(event, handler);
+  protected abstract handleError(error: Error): void;
+
+  protected setConnected(value: boolean): void {
+    if (this.connected === value) {
+      return;
+    }
+
+    this.connected = value;
+    if (value) {
+      this.events.emit('connect');
+    } else {
+      this.events.emit('disconnect');
+    }
   }
 
-  /**
-   * Register a handler for receiving messages.
-   * @param handler The handler function to add
-   */
-  onMessage(handler: MessageHandler): void {
+  public abstract connect(): Promise<void>;
+  public abstract disconnect(): Promise<void>;
+  public abstract send(message: JSONRPCMessage): Promise<void>;
+
+  public onMessage(handler: TransportMessageHandler): void {
     this.messageHandlers.add(handler);
   }
 
-  /**
-   * Unregister a message handler.
-   * @param handler The handler function to remove
-   */
-  offMessage(handler: MessageHandler): void {
-    this.messageHandlers.delete(handler);
-  }
-
-  /**
-   * Registers an error handler.
-   * @param handler Error handler function
-   */
-  onError(handler: ErrorHandler): void {
+  public onError(handler: TransportErrorHandler): void {
     this.errorHandlers.add(handler);
   }
 
-  /**
-   * Unregisters an error handler.
-   * @param handler Error handler function
-   */
-  offError(handler: ErrorHandler): void {
+  public offMessage(handler: TransportMessageHandler): void {
+    this.messageHandlers.delete(handler);
+  }
+
+  public offError(handler: TransportErrorHandler): void {
     this.errorHandlers.delete(handler);
   }
 
-  /**
-   * Close the transport and clean up any resources.
-   */
-  async close(): Promise<void> {
+  protected async handleMessage(message: unknown): Promise<void> {
+    if (!this.isValidMessage(message)) {
+      this.handleError(new VError('Invalid message format'));
+      return;
+    }
+
+    for (const handler of this.messageHandlers) {
+      try {
+        await handler(message);
+      } catch (error) {
+        this.handleError(
+          error instanceof Error ? error : new VError(String(error))
+        );
+      }
+    }
+
+    this.events.emit('message', message);
+  }
+
+  protected isValidMessage(message: unknown): message is JSONRPCMessage {
+    if (!message || typeof message !== 'object') {
+      return false;
+    }
+
+    const msg = message as Record<string, unknown>;
+    return (
+      'jsonrpc' in msg &&
+      typeof msg.jsonrpc === 'string' &&
+      'id' in msg &&
+      (typeof msg.id === 'string' ||
+        typeof msg.id === 'number' ||
+        msg.id === null) &&
+      'method' in msg &&
+      typeof msg.method === 'string'
+    );
+  }
+
+  public on<K extends keyof TransportEventMap>(
+    event: K,
+    handler: TransportEventMap[K]
+  ): void {
+    this._events.on(event, handler as (...args: any[]) => void);
+  }
+
+  public off<K extends keyof TransportEventMap>(
+    event: K,
+    handler: TransportEventMap[K]
+  ): void {
+    this._events.off(event, handler as (...args: any[]) => void);
+  }
+
+  public isConnected(): boolean {
+    return this.connected;
+  }
+
+  public async close(): Promise<void> {
     await this.disconnect();
     this.messageHandlers.clear();
     this.errorHandlers.clear();
   }
-
-  /**
-   * Handles an incoming message.
-   * @param message Message to handle
-   */
-  protected async handleMessage(
-    message: JSONRPCRequest | JSONRPCResponse
-  ): Promise<void> {
-    this._events.emit(
-      'message',
-      message as
-        | JSONRPCRequest
-        | (Omit<JSONRPCResponse, 'id'> & { id: RequestId })
-    );
-    const promises = Array.from(this.messageHandlers).map((handler) =>
-      handler(message).catch((error) =>
-        this.handleError(new VError(error, 'Handler error'))
-      )
-    );
-    await Promise.all(promises);
-  }
-
-  /**
-   * Handles a transport error.
-   * @param error Error to handle
-   */
-  protected handleError(error: Error): void {
-    this._events.emit('error', error);
-    for (const handler of this.errorHandlers) {
-      try {
-        handler(error);
-      } catch (handlerError) {
-        // Log error but don't throw to avoid crashing the transport
-        this._events.emit(
-          'error',
-          new VError(handlerError as Error, 'Error in error handler')
-        );
-      }
-    }
-  }
-
-  /**
-   * Sets the connected state.
-   * @param state New connected state
-   */
-  protected setConnected(state: boolean): void {
-    this.connected = state;
-    this._events.emit(state ? 'connect' : 'disconnect');
-  }
 }
 
 /**
- * Base class for message processor implementations.
- * Handles common message processing functionality.
+ * RPC client implementation using JSON-RPC 2.0
  */
-export class MessageProcessor {
-  /** Set of registered message handlers */
-  private _handlers = new Set<MessageHandler>();
-  /** Error handler function */
-  private _errorHandler: ErrorHandler;
-
-  /**
-   * Creates a new MessageProcessor instance.
-   * @param errorHandler Function to call when an error occurs
-   */
-  constructor(errorHandler: ErrorHandler) {
-    this._errorHandler = errorHandler;
-  }
-
-  /**
-   * Adds a message handler.
-   * @param handler The handler function to add
-   */
-  addHandler(handler: MessageHandler): void {
-    this._handlers.add(handler);
-  }
-
-  /**
-   * Removes a message handler.
-   * @param handler The handler function to remove
-   */
-  removeHandler(handler: MessageHandler): void {
-    this._handlers.delete(handler);
-  }
-
-  /**
-   * Clears all message handlers.
-   */
-  clear(): void {
-    this._handlers.clear();
-  }
-
-  /**
-   * Processes a message by passing it to all registered handlers.
-   * @param message The message to process
-   * @returns A Promise that resolves when all handlers have processed the message
-   */
-  async processMessage(message: string): Promise<void> {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(message);
-    } catch (error) {
-      this._errorHandler(
-        error instanceof Error ? error : new Error(String(error))
-      );
-      return;
-    }
-
-    const promises = Array.from(this._handlers).map((handler) =>
-      handler(parsed).catch((error) => {
-        this._errorHandler(
-          error instanceof Error ? error : new Error(String(error))
-        );
-      })
-    );
-
-    await Promise.all(promises);
-  }
-}
-
-/**
- * Base class for error manager implementations.
- * Handles common error management functionality.
- */
-export class ErrorManager {
-  /** Set of registered error handlers */
-  private _handlers = new Set<ErrorHandler>();
-
-  /**
-   * Adds an error handler.
-   * @param handler The handler function to add
-   */
-  addHandler(handler: ErrorHandler): void {
-    this._handlers.add(handler);
-  }
-
-  /**
-   * Removes an error handler.
-   * @param handler The handler function to remove
-   */
-  removeHandler(handler: ErrorHandler): void {
-    this._handlers.delete(handler);
-  }
-
-  /**
-   * Clears all error handlers.
-   */
-  clear(): void {
-    this._handlers.clear();
-  }
-
-  /**
-   * Handles an error by passing it to all registered handlers.
-   * @param error The error to handle
-   */
-  handleError(error: Error): void {
-    for (const handler of this._handlers) {
-      try {
-        handler(error);
-      } catch (handlerError) {
-        // Log error but don't throw to avoid crashing the transport
-        this.handleError(
-          new VError(handlerError as Error, 'Error in error handler')
-        );
-      }
-    }
-  }
-}
-
 export class RpcClient {
-  private rpcClient: JSONRPCClient;
-  private transport: McpTransport;
+  private readonly rpcClient: JSONRPCClient;
+  private readonly transport: McpTransport;
 
   constructor(transport: McpTransport) {
     this.transport = transport;
-    this.rpcClient = new JSONRPCClient(async (jsonRPCRequest) => {
-      await this.transport.send(jsonRPCRequest);
-    });
+    this.rpcClient = new JSONRPCClient(
+      async (jsonRPCRequest: JSONRPCRequest) => {
+        await this.transport.send(jsonRPCRequest);
+      }
+    );
 
-    this.transport.onMessage(async (message) => {
+    this.transport.onMessage(async (message: JSONRPCMessage) => {
       if (this.isJsonRpcResponse(message)) {
         await this.rpcClient.receive(message);
       }
     });
   }
 
-  private isJsonRpcResponse(message: unknown): message is JSONRPCResponse {
+  private isJsonRpcResponse(
+    message: JSONRPCMessage
+  ): message is JSONRPCResponse {
     return (
-      typeof message === 'object' && message !== null && 'jsonrpc' in message
+      typeof message === 'object' &&
+      message !== null &&
+      'jsonrpc' in message &&
+      'id' in message &&
+      ('result' in message || 'error' in message)
     );
   }
 
@@ -474,28 +288,28 @@ export class RpcClient {
   }
 }
 
+/**
+ * RPC server implementation using JSON-RPC 2.0
+ */
 export class RpcServer {
-  private rpcServer: JSONRPCServer;
-  private transport: McpTransport;
+  private readonly rpcServer: JSONRPCServer;
+  private readonly transport: McpTransport;
 
   constructor(transport: McpTransport) {
     this.transport = transport;
     this.rpcServer = new JSONRPCServer();
 
-    this.transport.onMessage(async (message) => {
+    this.transport.onMessage(async (message: JSONRPCMessage) => {
       if (this.isJsonRpcRequest(message)) {
         const response = await this.rpcServer.receive(message);
         if (response) {
-          const validResponse = response as Omit<JSONRPCResponse, 'id'> & {
-            id: RequestId;
-          };
-          await this.transport.send(validResponse);
+          await this.transport.send(response);
         }
       }
     });
   }
 
-  private isJsonRpcRequest(message: unknown): message is JSONRPCRequest {
+  private isJsonRpcRequest(message: JSONRPCMessage): message is JSONRPCRequest {
     return (
       typeof message === 'object' &&
       message !== null &&

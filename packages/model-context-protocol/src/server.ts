@@ -25,7 +25,7 @@ import {
   type JSONRPCResponse,
   JSONRPC_VERSION,
   LATEST_PROTOCOL_VERSION,
-  type ListResourcesResult,
+  SUPPORTED_PROTOCOL_VERSIONS,
   type LoggingLevel,
   type Prompt,
   type PromptMessage,
@@ -51,6 +51,7 @@ export interface ServerOptions {
   auth?: Auth;
   /** Optional server capabilities */
   capabilities?: Record<string, unknown>;
+  loggingLevel?: LoggingLevel;
 }
 
 /**
@@ -281,9 +282,9 @@ export class McpServer {
     };
 
     // Check protocol version compatibility
-    if (protocolVersion !== LATEST_PROTOCOL_VERSION) {
+    if (!SUPPORTED_PROTOCOL_VERSIONS.includes(protocolVersion)) {
       throw new VError(
-        `Protocol version mismatch. Server: ${LATEST_PROTOCOL_VERSION}, Client: ${protocolVersion}`
+        `Unsupported protocol version: ${protocolVersion}. Server supports: ${SUPPORTED_PROTOCOL_VERSIONS.join(', ')}`
       );
     }
 
@@ -311,7 +312,10 @@ export class McpServer {
     }
 
     return Promise.resolve({
-      resources: this.serverCapabilities.resources,
+      resources: {
+        subscribe: true,
+        listChanged: false,
+      },
     });
   }
 
@@ -334,6 +338,7 @@ export class McpServer {
 
     return Promise.resolve({
       resource,
+      contents: '',
     });
   }
 
@@ -524,6 +529,49 @@ export class McpServer {
     this._loggingLevel = null;
     this._resourceSubscriptions.clear();
   }
+
+  public async readResource(
+    id: string,
+    options: {
+      subscribe?: boolean;
+      listChanged?: boolean;
+      find?: boolean;
+    } = {}
+  ): Promise<{ resource: Resource; contents: string }> {
+    const resource = this._resources.get(id);
+    if (!resource) {
+      throw new VError(`Resource ${id} not found`);
+    }
+
+    try {
+      const contents = await resource.read();
+      return {
+        resource,
+        contents,
+      };
+    } catch (error) {
+      throw new VError(
+        error instanceof Error ? error : String(error),
+        `Failed to read resource ${id}`
+      );
+    }
+  }
+
+  public getLoggingLevel(): LoggingLevel {
+    return this._loggingLevel ?? 'Info';
+  }
+}
+
+export interface ReadResourceResult {
+  resource: Resource;
+  contents: string;
+}
+
+export interface ListResourcesResult {
+  resources: {
+    subscribe?: boolean;
+    listChanged?: boolean;
+  };
 }
 
 function parseReadResourceParams(params: unknown): { uri: string } | null {

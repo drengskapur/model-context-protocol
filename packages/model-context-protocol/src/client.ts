@@ -430,7 +430,8 @@ export class McpClient {
   }
 
   /**
-   * Initializes the client.
+   * Initializes the client by sending an initialize request to the server.
+   * @throws {VError} If initialization fails
    */
   private async initialize(): Promise<void> {
     if (this.initialized) {
@@ -447,32 +448,40 @@ export class McpClient {
         capabilities: this.capabilities,
       });
 
-      // Check protocol version before proceeding with initialization
-      if (response.protocolVersion !== LATEST_PROTOCOL_VERSION) {
+      if (!response || typeof response !== 'object') {
+        throw new VError('Invalid initialization response');
+      }
+
+      const { protocolVersion, serverInfo, capabilities } = response;
+
+      if (protocolVersion !== LATEST_PROTOCOL_VERSION) {
         throw new VError(
-          `Protocol version mismatch. Server: ${response.protocolVersion}, Client: ${LATEST_PROTOCOL_VERSION}`
+          `Protocol version mismatch: server ${protocolVersion}, client ${LATEST_PROTOCOL_VERSION}`
         );
       }
 
-      this.serverCapabilities = response.capabilities;
+      this.serverCapabilities = {
+        ...capabilities,
+        ...serverInfo,
+      };
+
       this.initialized = true;
 
-      // Send initialized notification
-      await this.notify('notifications/initialized', {}).catch(() => {
-        // Ignore notification errors during initialization
-      });
+      // Notify server that initialization is complete
+      await this.notify('initialized');
     } catch (error) {
       // Reset initialization state on error
       this.initialized = false;
-      this.serverCapabilities = null;
+      this.serverCapabilities = {};
 
       if (
         error instanceof VError &&
         error.message.includes('Protocol version mismatch')
       ) {
-        throw error; // Re-throw protocol version mismatch errors directly
+        throw error;
       }
-      throw new VError(error as Error, 'Failed to initialize client');
+
+      throw new VError(error as Error, 'Initialization failed');
     }
   }
 
@@ -644,29 +653,15 @@ export class McpClient {
   }
 
   /**
-   * Checks if the server has a capability.
-   * @param path Capability path (dot-separated)
+   * Checks if the server has a specific capability
+   * @param capability Capability to check for
    */
-  private hasCapability(path: string): boolean {
-    if (!this.serverCapabilities) {
-      return false;
-    }
-
-    const parts = path.split('.');
-    let current: unknown = this.serverCapabilities;
-
-    for (const part of parts) {
-      if (
-        typeof current !== 'object' ||
-        current === null ||
-        !Object.prototype.hasOwnProperty.call(current, part)
-      ) {
-        return false;
-      }
-      current = (current as Record<string, unknown>)[part];
-    }
-
-    return true;
+  private hasCapability(capability: string): boolean {
+    return (
+      this.serverCapabilities !== null &&
+      typeof this.serverCapabilities === 'object' &&
+      capability in this.serverCapabilities
+    );
   }
 }
 

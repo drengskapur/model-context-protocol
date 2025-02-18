@@ -11,27 +11,23 @@ describe('Logging', () => {
   let serverTransport: InMemoryTransport;
 
   beforeEach(async () => {
-    [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    [clientTransport, serverTransport] = InMemoryTransport.createPair();
 
-    client = new McpClient({
-      name: 'test-client',
-      version: '1.0.0',
-      capabilities: {
-        logging: {},
+    client = new McpClient(
+      {
+        name: 'test-client',
+        version: '1.0.0',
       },
-    });
+      clientTransport
+    );
 
     server = new McpServer({
       name: 'test-server',
       version: '1.0.0',
-      capabilities: {
-        logging: {},
-      },
     });
 
     await server.connect(serverTransport);
-    await clientTransport.connect();
-    await client.connect(clientTransport);
+    await client.connect();
   });
 
   it('should set logging level', async () => {
@@ -76,21 +72,24 @@ describe('Logging', () => {
 
   it('should reject logging if not supported', async () => {
     // Create new client/server without logging capability
-    const newClient = new McpClient({
-      name: 'test-client',
-      version: '1.0.0',
-    });
+    const [newClientTransport, newServerTransport] =
+      InMemoryTransport.createPair();
+
+    const newClient = new McpClient(
+      {
+        name: 'test-client',
+        version: '1.0.0',
+      },
+      newClientTransport
+    );
 
     const newServer = new McpServer({
       name: 'test-server',
       version: '1.0.0',
     });
 
-    const [newClientTransport, newServerTransport] =
-      InMemoryTransport.createLinkedPair();
     await newServer.connect(newServerTransport);
-    await newClientTransport.connect();
-    await newClient.connect(newClientTransport);
+    await newClient.connect();
 
     await expect(newClient.setLoggingLevel('info')).rejects.toThrow(
       'Server does not support logging'

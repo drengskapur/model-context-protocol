@@ -10,8 +10,8 @@ import type { JSONRPCMessage, JSONRPCRequest } from './schema';
 import { JSONRPC_VERSION } from './schema';
 
 class TestBaseTransport extends BaseTransport {
-  public messages: JSONRPCMessage[] = [];
-  public shouldFail = false;
+  messages: JSONRPCMessage[] = [];
+  shouldFail = false;
 
   async send(message: JSONRPCMessage): Promise<void> {
     if (this.shouldFail) {
@@ -51,15 +51,15 @@ class TestBaseTransport extends BaseTransport {
     return {} as T;
   }
 
-  public simulateMessage(message: JSONRPCRequest): void {
+  simulateMessage(message: JSONRPCRequest): void {
     this.handleMessage(message);
   }
 
-  public simulateError(error: Error): void {
+  simulateError(error: Error): void {
     this.handleError(error);
   }
 
-  public getConnectedState(): boolean {
+  getConnectedState(): boolean {
     return this.connected;
   }
 }

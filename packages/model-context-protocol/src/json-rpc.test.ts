@@ -9,8 +9,8 @@ import { JsonRpcTransport } from './json-rpc';
 import type { JSONRPCMessage, JSONRPCRequest, JSONRPCResponse } from './schema';
 
 class TestTransport extends JsonRpcTransport {
-  public messages: (JSONRPCRequest | JSONRPCResponse)[] = [];
-  public shouldFail = false;
+  messages: (JSONRPCRequest | JSONRPCResponse)[] = [];
+  shouldFail = false;
 
   send(message: JSONRPCRequest | JSONRPCResponse): Promise<void> {
     if (this.shouldFail) {
@@ -36,7 +36,7 @@ class TestTransport extends JsonRpcTransport {
     return Promise.resolve();
   }
 
-  public simulateIncomingMessage(
+  simulateIncomingMessage(
     message: JSONRPCMessage,
     shouldFail = false
   ): void {

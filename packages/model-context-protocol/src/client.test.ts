@@ -7,13 +7,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { McpClient } from './client.js';
 import { InMemoryTransport } from './in-memory.js';
-import {
-  type JSONRPCNotification,
-  type JSONRPCRequest,
-  type JSONRPCResponse,
-  JSONRPC_VERSION,
-  LATEST_PROTOCOL_VERSION,
-} from './schema.js';
+import type {
+  JSONRPCErrorResponse,
+  JSONRPCMessage,
+  JSONRPCNotification,
+  JSONRPCRequest,
+  JSONRPCResponse,
+  JSONRPCSuccessResponse,
+  RequestId,
+} from './json-rpc.js';
+import { JSONRPC_VERSION, LATEST_PROTOCOL_VERSION } from './schema.js';
 import { McpServer } from './server.js';
 
 const PROTOCOL_VERSION_MISMATCH_REGEX = /Protocol version mismatch/;
@@ -24,28 +27,61 @@ describe('McpClient', () => {
   let serverTransport: InMemoryTransport;
   let server: McpServer;
 
-  beforeEach(async () => {
-    // Create fresh transport pair for each test
+  beforeEach(() => {
     [clientTransport, serverTransport] = InMemoryTransport.createPair();
+    server = new McpServer({
+      name: 'test-server',
+      version: '1.0.0',
+    });
 
     // Create fresh client and server instances
     client = new McpClient(
       {
         name: 'test-client',
         version: '1.0.0',
-        requestTimeout: 1000,
+        timeout: 1000,
       },
       clientTransport
     );
-
-    server = new McpServer({
-      name: 'test-server',
-      version: '1.0.0',
-    });
-
-    // Connect server first
-    await server.connect(serverTransport);
   });
+
+  function isInitMessage(message: JSONRPCMessage): message is JSONRPCRequest {
+    return isRequest(message) && message.method === 'initialize';
+  }
+
+  function createInitResponse(id: RequestId): JSONRPCSuccessResponse {
+    return {
+      jsonrpc: JSONRPC_VERSION,
+      id,
+      result: {
+        protocolVersion: LATEST_PROTOCOL_VERSION,
+        serverInfo: {
+          name: 'test-server',
+          version: '1.0.0',
+        },
+        capabilities: {},
+      },
+    };
+  }
+
+  function createErrorResponse(
+    id: RequestId,
+    code: number,
+    message: string
+  ): JSONRPCErrorResponse {
+    return {
+      jsonrpc: JSONRPC_VERSION,
+      id,
+      error: {
+        code,
+        message,
+      },
+    };
+  }
+
+  function isRequest(message: JSONRPCMessage): message is JSONRPCRequest {
+    return 'method' in message;
+  }
 
   afterEach(async () => {
     // Clean up in reverse order
@@ -79,20 +115,11 @@ describe('McpClient', () => {
     // Get the initialization message
     const messages = clientTransport.getMessages();
     const initMessage = messages[0];
+    expect(isInitMessage(initMessage)).toBe(true);
 
-    await serverTransport.simulateIncomingMessage({
-      jsonrpc: JSONRPC_VERSION,
-      id: initMessage.id,
-      result: {
-        protocolVersion: LATEST_PROTOCOL_VERSION,
-        serverInfo: {
-          name: 'test-server',
-          version: '1.0.0',
-        },
-        capabilities: {},
-      },
-    });
-
+    await serverTransport.simulateIncomingMessage(
+      createInitResponse(initMessage.id)
+    );
     await connectPromise;
 
     const promise = client.callTool('test', {});
@@ -387,7 +414,7 @@ describe('McpClient', () => {
       {
         name: 'test-client',
         version: '1.0.0',
-        requestTimeout: 100, // Very short timeout for testing
+        timeout: 100, // Very short timeout for testing
       },
       clientTransport
     );
@@ -644,7 +671,7 @@ describe('McpClient', () => {
     await client.connect();
     await Promise.resolve();
 
-    const response = {
+    const response: JSONRPCMessage = {
       jsonrpc: '0.1.0' as const,
       id: 1,
       result: {
@@ -658,9 +685,7 @@ describe('McpClient', () => {
     };
 
     await expect(
-      clientTransport.simulateIncomingMessage(
-        response as unknown as JSONRPCResponse
-      )
+      clientTransport.simulateIncomingMessage(response)
     ).rejects.toThrow('Invalid JSON-RPC version');
   });
 
@@ -668,39 +693,33 @@ describe('McpClient', () => {
     // First initialize the client
     const connectPromise = client.connect();
     await Promise.resolve();
-    await clientTransport.simulateIncomingMessage({
-      jsonrpc: JSONRPC_VERSION,
-      id: '1',
-      result: {
-        protocolVersion: LATEST_PROTOCOL_VERSION,
-        serverInfo: {
-          name: 'test-server',
-          version: '1.0.0',
-        },
-        capabilities: {},
-      },
-    });
+
+    const messages = clientTransport.getMessages();
+    const initMessage = messages[0];
+    expect(isInitMessage(initMessage)).toBe(true);
+
+    await serverTransport.simulateIncomingMessage(
+      createInitResponse(initMessage.id)
+    );
     await connectPromise;
 
-    // Make a request
     const promise = client.callTool('test', {});
     await Promise.resolve();
 
-    const messages = clientTransport.getMessages();
-    const request = messages.at(-1) as JSONRPCRequest;
+    // Get the request message
+    const requestMessage = clientTransport.getMessages()[1];
+    expect(isRequest(requestMessage)).toBe(true);
 
-    // Simulate response with neither result nor error
-    const invalidResponse = {
+    // Send an invalid response missing both result and error
+    const invalidResponse: JSONRPCMessage = {
       jsonrpc: JSONRPC_VERSION,
-      id: request.id,
-      result: {} as Record<string, unknown>,
-    };
-    await clientTransport.simulateIncomingMessage(invalidResponse);
+      id: requestMessage.id,
+    } as JSONRPCResponse;
 
-    // The promise should still be pending
-    const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 100));
-    await timeoutPromise;
-    expect(promise).not.toHaveProperty('_state', 'fulfilled');
+    await expect(async () => {
+      await serverTransport.simulateIncomingMessage(invalidResponse);
+      await promise;
+    }).rejects.toThrow('Invalid response format');
   });
 
   it('should provide access to server capabilities', async () => {
@@ -886,7 +905,7 @@ describe('McpClient', () => {
     // First initialize the client
     const connectPromise = client.connect();
     await Promise.resolve();
-    await clientTransport.simulateIncomingMessage({
+    await serverTransport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
       id: expect.any(String),
       result: {
@@ -927,7 +946,7 @@ describe('McpClient', () => {
     // First initialize the client
     const connectPromise = client.connect();
     await Promise.resolve();
-    await clientTransport.simulateIncomingMessage({
+    await serverTransport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
       id: expect.any(String),
       result: {
@@ -959,7 +978,7 @@ describe('McpClient', () => {
     // First initialize the client
     const connectPromise = client.connect();
     await Promise.resolve();
-    await clientTransport.simulateIncomingMessage({
+    await serverTransport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
       id: expect.any(String),
       result: {
@@ -974,7 +993,7 @@ describe('McpClient', () => {
     await connectPromise;
 
     // Send an unknown notification type
-    const notification = {
+    const notification: JSONRPCNotification = {
       jsonrpc: JSONRPC_VERSION,
       method: 'unknown/notification',
       params: { data: 'test' },
@@ -1055,7 +1074,7 @@ describe('McpClient', () => {
     // First initialize the client with prompts capability
     const connectPromise = client.connect();
     await Promise.resolve();
-    await clientTransport.simulateIncomingMessage({
+    await serverTransport.simulateIncomingMessage({
       jsonrpc: JSONRPC_VERSION,
       id: '1',
       result: {
@@ -1147,5 +1166,66 @@ describe('McpClient', () => {
 
     // Clean up
     client.offMessage(messageHandler);
+  });
+
+  it('should handle message formats', async () => {
+    // First initialize the client
+    const connectPromise = client.connect();
+    await Promise.resolve();
+
+    // Get the initialization message
+    const messages = clientTransport.getMessages();
+    const initMessage = messages[0];
+    if (!isInitMessage(initMessage)) {
+      throw new Error('Expected initialization message');
+    }
+
+    const initResponse: JSONRPCResponse = {
+      jsonrpc: JSONRPC_VERSION,
+      id: initMessage.id,
+      result: {
+        protocolVersion: LATEST_PROTOCOL_VERSION,
+        serverInfo: {
+          name: 'test-server',
+          version: '1.0.0',
+        },
+        capabilities: {},
+      },
+    };
+
+    await serverTransport.simulateIncomingMessage(initResponse);
+    await connectPromise;
+
+    // Test error response
+    const errorResponse: JSONRPCErrorResponse = {
+      jsonrpc: JSONRPC_VERSION,
+      id: '1',
+      error: {
+        code: -32601,
+        message: 'Method not found',
+      },
+    };
+
+    await serverTransport.simulateIncomingMessage(errorResponse);
+
+    // Test notification
+    const notification: JSONRPCNotification = {
+      jsonrpc: JSONRPC_VERSION,
+      method: 'notifications/message',
+      params: {
+        data: 'test message',
+      },
+    };
+
+    await serverTransport.simulateIncomingMessage(notification);
+
+    // Test invalid response
+    const invalidResponse: JSONRPCMessage = {
+      jsonrpc: JSONRPC_VERSION,
+      id: '1',
+      result: {} as Record<string, unknown>,
+    };
+
+    await serverTransport.simulateIncomingMessage(invalidResponse);
   });
 });

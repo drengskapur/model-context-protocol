@@ -53,7 +53,7 @@ export interface McpTransport {
  * Base class for transport implementations.
  */
 export abstract class BaseTransport implements McpTransport {
-  public readonly events: EventEmitter = new EventEmitter();
+  readonly events: EventEmitter = new EventEmitter();
   protected connected = false;
 
   /**
